@@ -1,6 +1,12 @@
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="{{ rootPath }}index.html">JSKim</a>
-    <p class="tagline">Nunjucks 静的 HTML ビルド</p>
+    <a class="brand" href="{{ rootPath }}index.html">
+      <img src="{{ rootPath }}assets/image/logo.svg" alt="" width="32" height="32">
+      <span>{{ site.name }}</span>
+    </a>
+    <nav class="site-nav" aria-label="サンプルページ">
+      <a href="{{ rootPath }}index.html">トップ</a>
+      <a href="{{ rootPath }}request/">依頼ページ</a>
+    </nav>
   </div>
 </header>

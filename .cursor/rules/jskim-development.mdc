@@ -19,7 +19,7 @@ alwaysApply: true
 
 ## 範囲
 
-- 現在対応: config、Nunjucks render、asset copy、clean、`rootPath`、watch、serve、dev（SSE live reload）、`jskim.config.js` hot reload（watch/dev）、`jskim` CLI package、`create-jskim` scaffold、Node 標準テスト
+- 現在対応: config、files pipeline、legacy Nunjucks render / asset copy、data、Nunjucks filters / globals、clean、`rootPath`、watch、serve、dev（SSE live reload）、`jskim.config.js` hot reload（watch/dev）、`jskim` CLI package、`create-jskim` scaffold、Node 標準テスト
 - ユーザーが明示しない限り、npm publish、増分 build、HMR、外部テスト framework、CI/CD、自動 npm install / git init を追加しない
 - HTML import / migration 機能を JSKim core へ追加しない。既存 HTML の移行は利用者の責任範囲。必要な場合は独立 package として別途検討し、core roadmap の未実装項目として扱わない
 
@@ -38,6 +38,14 @@ alwaysApply: true
 - npm パッケージとして実行する場合も `process.cwd()` をプロジェクトルートとして扱う
 - パッケージのインストール先をユーザーのプロジェクトルートとして扱わない
 - パスをハードコードしない
+- 推奨設定は `files` pipeline。`render` / `copy` は legacy mode として維持する
+- 同じ project で `files` と `render` / `copy` を同時に使わせない
+- `sourceDir` / `outputDir` はワークスペースルート基準、`files[].from` / `render[].from` / `templates[]` / `copy[].from` は sourceDir 基準、`files[].to` / `render[].to` / `copy[].to` は outputDir 基準
+- files mode では `*.njk` は末尾 `.njk` だけを外してレンダリングし、それ以外は byte copy する
+- files mode では出力パス衝突を検出し、`templates[]` 配下を直接出力しない
+- `data.rootPath` は予約語衝突として扱う
+- Nunjucks は `autoescape: true` を維持する。JS/JSON 埋め込み用 filter は `SafeString` を返す
+- `data` / sample / docs に secret、API key、token、内部 URL を含めない
 - `/_jskim/live-reload` は dev live reload の予約パス。serve や liveReload=false では無効
 
 ## build / watch / serve / dev
@@ -70,6 +78,8 @@ alwaysApply: true
 
 - engine とは独立した package として管理し、root engine 構造を不要に移動しない
 - 生成プロジェクトには `src/sample` を標準で含める
+- 生成 sample は files pipeline 構造（`src/sample/pages`、`layouts`、`components`）を標準にする
+- 生成 project の標準ファイル名は `index.html.njk`、`style.css.njk`、`main.js.njk` のように最終拡張子 + `.njk` を推奨する
 - 自動で `npm install` / `git init` を実行しない
 - 空ではない既存ディレクトリを上書きしない
 - `template/gitignore` を生成時に `.gitignore` へ変換する
@@ -98,4 +108,5 @@ alwaysApply: true
 ## スタック
 
 - CommonJS のみ。依存は最小限
+- formatter 機能や自動整形フローを JSKim の機能として追加・記載しない
 - ユーザー依頼なしに Git コマンドを実行しない

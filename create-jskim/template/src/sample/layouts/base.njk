@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="{{ site.language }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}JSKim{% endblock %}</title>
-  <meta name="description" content="{% block description %}Nunjucks ベースの静的 HTML ビルド環境{% endblock %}">
-  {% include "components/head.njk" %}
+  <title>{% block title %}{{ site.name }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}JSKim の files pipeline サンプル{% endblock %}">
+  <link rel="stylesheet" href="{{ rootPath }}assets/css/style.css">
+  {% block extraHead %}{% endblock %}
 </head>
 <body>
   {% include "components/header.njk" %}
-  <main class="main">
+  <main class="site-main">
     {% block content %}{% endblock %}
   </main>
   {% include "components/footer.njk" %}
+  <script src="{{ rootPath }}assets/js/main.js"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

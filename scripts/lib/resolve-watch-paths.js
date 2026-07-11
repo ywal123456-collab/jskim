@@ -5,15 +5,25 @@ const path = require('node:path');
 
 /**
  * 解決済みプロジェクト設定から監視ディレクトリを計算します。
- * sourceDir 配下の render[].from / templates[] / copy[].from を監視します。
+ * files mode: files[].from / templates[]
+ * legacy mode: render[].from / templates[] / copy[].from
  * outputDir / dist / node_modules は監視しません。
  *
  * @param {object} project
  * @returns {{ absolutePaths: string[], displayPaths: string[] }}
  */
 function resolveWatchPaths(project) {
-  const { name, sourceDir, outputDir, workspaceRoot, render, templates, copy } =
-    project;
+  const {
+    name,
+    sourceDir,
+    outputDir,
+    workspaceRoot,
+    render,
+    templates,
+    copy,
+    files,
+    pipelineMode,
+  } = project;
 
   const absolutePaths = [];
   const seen = new Set();
@@ -39,9 +49,23 @@ function resolveWatchPaths(project) {
     absolutePaths.push(resolved);
   }
 
-  for (const rule of render) {
-    if (rule && rule.from) {
-      addCandidate(path.join(sourceDir, rule.from));
+  if (pipelineMode === 'files') {
+    for (const rule of Array.isArray(files) ? files : []) {
+      if (rule && rule.from) {
+        addCandidate(path.join(sourceDir, rule.from));
+      }
+    }
+  } else {
+    for (const rule of Array.isArray(render) ? render : []) {
+      if (rule && rule.from) {
+        addCandidate(path.join(sourceDir, rule.from));
+      }
+    }
+
+    for (const rule of Array.isArray(copy) ? copy : []) {
+      if (rule && rule.from) {
+        addCandidate(path.join(sourceDir, rule.from));
+      }
     }
   }
 
@@ -51,16 +75,10 @@ function resolveWatchPaths(project) {
     }
   }
 
-  for (const rule of Array.isArray(copy) ? copy : []) {
-    if (rule && rule.from) {
-      addCandidate(path.join(sourceDir, rule.from));
-    }
-  }
-
   if (absolutePaths.length === 0) {
     throw new Error(
       `[JSKim] プロジェクト "${name}" の監視パスがありません。\n` +
-        `原因: render[].from / templates[] / copy[].from のいずれも既存パスに解決できませんでした。\n` +
+        `原因: files[].from / render[].from / templates[] / copy[].from のいずれも既存パスに解決できませんでした。\n` +
         `sourceDir: ${sourceDir}`
     );
   }

@@ -81,10 +81,26 @@ async function renderPages({ env, project }) {
         .join('/');
 
       const rootPath = computeRootPath(outputFile, outputDir);
+      const context = {
+        ...(project.data && typeof project.data === 'object'
+          ? project.data
+          : {}),
+        rootPath,
+      };
+
+      if (
+        project.data &&
+        Object.prototype.hasOwnProperty.call(project.data, 'rootPath')
+      ) {
+        throw new Error(
+          `[JSKim] data のキーが予約語と衝突しています: rootPath\n` +
+            `プロジェクト: ${name}`
+        );
+      }
 
       let html;
       try {
-        html = env.render(templatePath, { rootPath });
+        html = env.render(templatePath, context);
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
         throw new Error(

@@ -23,7 +23,14 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - npm パッケージとして実行する場合も `process.cwd()` をプロジェクトルートとして扱う
 - パッケージのインストール先をユーザーのプロジェクトルートとして扱わない
 - パスを build / watch / serve / dev コードにハードコードしない
-- `sourceDir` / `outputDir` はワークスペースルート基準、render/templates/copy の from は sourceDir 基準、to は outputDir 基準
+- 推奨設定は `files` pipeline とし、`render` / `copy` は legacy mode として継続サポートする
+- 同じ project で `files` と `render` / `copy` を同時に使わせない
+- `sourceDir` / `outputDir` はワークスペースルート基準、`files[].from` / `render[].from` / `templates[]` / `copy[].from` は sourceDir 基準、`files[].to` / `render[].to` / `copy[].to` は outputDir 基準
+- files mode では `*.njk` は末尾 `.njk` だけを外してレンダリングし、それ以外は byte copy する
+- files mode では出力パス衝突を検出し、`templates[]` 配下を直接出力しない
+- `data.rootPath` は予約語衝突として扱う
+- Nunjucks は `autoescape: true` を維持する。JS/JSON 埋め込み用 filter は `SafeString` を返す
+- `data` / sample / docs に secret、API key、token、内部 URL を含めない
 - Windows と POSIX の両方で `node:path` を使う。HTML 内パスは `/` を使う
 
 ## build / watch / serve / dev
@@ -33,7 +40,7 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - `serve` と `dev` は同じ静的サーバー core（`scripts/lib/create-static-server.js`）を使う
 - `bin/jskim.js` と既存 CLI（`scripts/*.js`）は同じ command runner（`scripts/commands/`）を使う
 - CLI を `child_process` で組み合わせない。`watch.js` / `serve.js` を require して side effect を起こさない
-- watch に render/copy パスやビルド規則をハードコードしない。監視パスもマージ済み config から計算する
+- watch に files/render/copy パスやビルド規則をハードコードしない。監視パスもマージ済み config から計算する
 - watch / dev 中の Nunjucks/レンダリングエラーでプロセスを不用意に終了させない
 - `serve` は `outputDir` だけを提供する。build / watch ロジックを再実装しない
 - `serve` のレスポンスは変換しない（ライブリロード script を入れない）
@@ -75,6 +82,8 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - 既存の空ではないディレクトリを上書きしない
 - `template/gitignore` を生成時に `.gitignore` へ変換する
 - root の `src/sample` を変更した場合は `create-jskim/template` も確認する
+- 生成 sample は files pipeline 構造（`src/sample/pages`、`layouts`、`components`）を標準にする
+- 生成 project の標準ファイル名は `index.html.njk`、`style.css.njk`、`main.js.njk` のように最終拡張子 + `.njk` を推奨する
 - create-jskim のコメント・文書・CLI メッセージは日本語で作成する
 - 識別子と command は英語を使用する
 - Cursor の完了報告は韓国語で作成する
@@ -84,6 +93,7 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - `dist/` を手編集しない。常にビルドで生成する
 - 不要な package と抽象化を追加しない
 - CommonJS を維持する。`"type": "module"` を追加しない
+- formatter 機能や自動整形フローを JSKim の機能として追加・記載しない
 - reusable core（`scripts/lib`）から `process.exit` を呼び出さない。終了は CLI entry が決める
 - process signal（SIGINT/SIGTERM）は CLI entry / command runner で管理する
 - 配布対象は `package.json` の `files` で明示する
@@ -123,5 +133,5 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 ## 変更時の注意
 
 - 範囲を超える改善は実装せず提案だけにする
-- sample は技術ドキュメント型を維持し、特定ドメインの業務画面のようにしない
+- sample は files pipeline、data、filter/global、layout/include、ページ別 assets を小さく示す技術サンプルに留め、特定ドメインの業務画面のようにしない
 - ユーザー依頼なしに Git コマンドを実行しない

@@ -25,13 +25,7 @@ npm install --global create-jskim
 create-jskim my-project
 ```
 
-ディレクトリ名を省略すると、プロジェクト名を尋ねます。
-
-```text
-プロジェクト名:
-```
-
-空のまま Enter すると既定値 `jskim-project` を使います。
+ディレクトリ名を省略すると、プロジェクト名を尋ねます。空のまま Enter すると既定値 `jskim-project` を使います。
 
 ## ヘルプ / バージョン
 
@@ -48,10 +42,19 @@ project/
 ├─ jskim.config.js
 ├─ README.md
 ├─ .gitignore
-└─ src/sample/
+└─ src/
+   └─ sample/
+      ├─ pages/
+      │  ├─ index.html.njk
+      │  ├─ assets/
+      │  └─ request/
+      ├─ layouts/base.njk
+      └─ components/
 ```
 
-生成プロジェクトは `@ywal123456/jskim` を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
+生成プロジェクトは `@ywal123456/jskim`（`^0.3.0`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
+
+標準 sample は files pipeline を使います。`pages` 配下の `.html.njk` / `.css.njk` / `.js.njk` はレンダリングされ、画像はそのままコピーされます。
 
 ## 生成後の手順
 
@@ -76,7 +79,6 @@ npm run dev
 
 ## ライセンス
 
-`create-jskim` は MIT License のもとで提供されます。
-詳細は [`LICENSE`](./LICENSE) を確認してください。
+`create-jskim` は MIT License のもとで提供されます。詳細は [`LICENSE`](./LICENSE) を確認してください。
 
 生成されるユーザープロジェクトの License はユーザー側で決定してください。このツールの MIT License を生成プロジェクトへ強制しません。

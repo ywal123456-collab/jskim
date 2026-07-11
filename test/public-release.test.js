@@ -96,7 +96,7 @@ describe('public release audit', () => {
     const engine = require(path.join(REPO_ROOT, 'package.json'));
     const creator = require(path.join(REPO_ROOT, 'create-jskim/package.json'));
     assert.equal(engine.name, '@ywal123456/jskim');
-    assert.equal(engine.version, '0.2.0');
+    assert.equal(engine.version, '0.3.0');
     assert.equal(Object.hasOwn(engine, 'private'), false);
     assert.equal(engine.publishConfig && engine.publishConfig.access, 'public');
     assert.equal(
@@ -104,9 +104,9 @@ describe('public release audit', () => {
       'https://registry.npmjs.org'
     );
     assert.equal(creator.name, 'create-jskim');
-    assert.equal(creator.version, '0.2.0');
+    assert.equal(creator.version, '0.3.0');
     assert.equal(creator.jskimEngine.packageName, '@ywal123456/jskim');
-    assert.equal(creator.jskimEngine.version, '^0.2.0');
+    assert.equal(creator.jskimEngine.version, '^0.3.0');
     assert.match(engine.repository.url, /ywal123456-collab\/jskim\.git$/);
     assert.match(engine.homepage, /ywal123456-collab\/jskim/);
     assert.match(engine.bugs.url, /ywal123456-collab\/jskim\/issues$/);

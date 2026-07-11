@@ -12,7 +12,7 @@ const { mergeConfig } = require('./merge-config');
  * @param {string} options.workspaceRoot
  * @param {string|undefined} options.projectName
  * @param {string} [options.commandName='build']
- * @param {string} [options.usageLine] プロジェクト名欠落時の使用方法行
+ * @param {string} [options.usageLine]
  * @returns {object} 解決済みプロジェクト
  */
 function resolveProject({
@@ -45,7 +45,8 @@ function resolveProject({
     );
   }
 
-  const merged = mergeConfig(config.defaults || {}, projectConfig);
+  const defaults = config.defaults || {};
+  const merged = mergeConfig(defaults, projectConfig);
 
   if (!merged.sourceDir || String(merged.sourceDir).trim() === '') {
     throw new Error(
@@ -79,39 +80,42 @@ function resolveProject({
     );
   }
 
-  if (!Array.isArray(merged.render) || merged.render.length === 0) {
+  validateData(merged.data, name);
+  validateNunjucks(merged.nunjucks, name);
+
+  const hasFiles = Array.isArray(merged.files) && merged.files.length > 0;
+  const hasRender = Array.isArray(merged.render) && merged.render.length > 0;
+  const hasCopy = Array.isArray(merged.copy) && merged.copy.length > 0;
+
+  if (hasFiles && (hasRender || hasCopy)) {
+    const conflict = [];
+    if (hasRender) {
+      conflict.push('render');
+    }
+    if (hasCopy) {
+      conflict.push('copy');
+    }
     throw new Error(
-      `[JSKim] プロジェクト "${name}" の render 設定が無い、または空です。\n` +
-        `jskim.config.js の defaults.render または projects.${name}.render を定義してください。`
+      `[JSKim] files と ${conflict.join(' / ')} を同時に設定できません。\n` +
+        `プロジェクト: ${name}\n` +
+        `files mode を使う場合は render / copy を空にしてください。\n` +
+        `legacy mode を使う場合は files を設定しないでください。`
     );
   }
 
-  for (let i = 0; i < merged.render.length; i += 1) {
-    const rule = merged.render[i];
-    if (!rule || typeof rule !== 'object') {
+  const pipelineMode = hasFiles ? 'files' : 'legacy';
+
+  if (pipelineMode === 'files') {
+    validateFilesRules(merged.files, name);
+  } else {
+    if (!hasRender) {
       throw new Error(
-        `[JSKim] プロジェクト "${name}" の render[${i}] が不正です。\n` +
-          `原因: 各 render ルールはオブジェクトである必要があります。`
+        `[JSKim] プロジェクト "${name}" の render 設定が無い、または空です。\n` +
+          `jskim.config.js の defaults.render または projects.${name}.render を定義してください。\n` +
+          `新しい files pipeline を使う場合は defaults.files を設定してください。`
       );
     }
-    if (!rule.from || String(rule.from).trim() === '') {
-      throw new Error(
-        `[JSKim] プロジェクト "${name}" の render[${i}].from が不正です。\n` +
-          `原因: from は必須です（sourceDir 基準）。`
-      );
-    }
-    if (!Array.isArray(rule.include) || rule.include.length === 0) {
-      throw new Error(
-        `[JSKim] プロジェクト "${name}" の render[${i}].include が不正です。\n` +
-          `原因: include は空でない glob パターン配列である必要があります。`
-      );
-    }
-    if (!rule.extension || String(rule.extension).trim() === '') {
-      throw new Error(
-        `[JSKim] プロジェクト "${name}" の render[${i}].extension が不正です。\n` +
-          `原因: extension は必須です（例: ".html"）。`
-      );
-    }
+    validateRenderRules(merged.render, name);
   }
 
   validateWatchConfig(merged.watch, name);
@@ -124,15 +128,135 @@ function resolveProject({
     outputDir,
     sourceDirConfig: merged.sourceDir,
     outputDirConfig: merged.outputDir,
+    pipelineMode,
     render: merged.render,
     templates: merged.templates,
     copy: merged.copy,
+    files: merged.files || [],
+    data: merged.data,
+    nunjucks: merged.nunjucks,
     build: merged.build,
     watch: merged.watch,
     serve: merged.serve,
     dev: merged.dev,
     workspaceRoot,
   };
+}
+
+function validateFilesRules(files, projectName) {
+  for (let i = 0; i < files.length; i += 1) {
+    const rule = files[i];
+    if (!rule || typeof rule !== 'object') {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の files[${i}] が不正です。\n` +
+          `原因: 各 files ルールはオブジェクトである必要があります。`
+      );
+    }
+    if (!rule.from || String(rule.from).trim() === '') {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の files[${i}].from が不正です。\n` +
+          `原因: from は必須です（sourceDir 基準）。`
+      );
+    }
+    if (rule.include !== undefined) {
+      if (!Array.isArray(rule.include) || rule.include.length === 0) {
+        throw new Error(
+          `[JSKim] プロジェクト "${projectName}" の files[${i}].include が不正です。\n` +
+            `原因: include は空でない glob 配列である必要があります。`
+        );
+      }
+    }
+    if (rule.exclude !== undefined && !Array.isArray(rule.exclude)) {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の files[${i}].exclude が不正です。\n` +
+          `原因: exclude は配列である必要があります。`
+      );
+    }
+  }
+}
+
+function validateRenderRules(render, projectName) {
+  for (let i = 0; i < render.length; i += 1) {
+    const rule = render[i];
+    if (!rule || typeof rule !== 'object') {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の render[${i}] が不正です。\n` +
+          `原因: 各 render ルールはオブジェクトである必要があります。`
+      );
+    }
+    if (!rule.from || String(rule.from).trim() === '') {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の render[${i}].from が不正です。\n` +
+          `原因: from は必須です（sourceDir 基準）。`
+      );
+    }
+    if (!Array.isArray(rule.include) || rule.include.length === 0) {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の render[${i}].include が不正です。\n` +
+          `原因: include は空でない glob パターン配列である必要があります。`
+      );
+    }
+    if (!rule.extension || String(rule.extension).trim() === '') {
+      throw new Error(
+        `[JSKim] プロジェクト "${projectName}" の render[${i}].extension が不正です。\n` +
+          `原因: extension は必須です（例: ".html"）。`
+      );
+    }
+  }
+}
+
+function validateData(data, projectName) {
+  if (data == null) {
+    return;
+  }
+  if (typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(
+      `[JSKim] 設定値が不正です: data\n` +
+        `プロジェクト: ${projectName}\n` +
+        `plain object を指定してください（null / array / primitive は不可）。\n` +
+        `受け取った値: ${Array.isArray(data) ? 'array' : typeof data}`
+    );
+  }
+}
+
+function validateNunjucks(nunjucks, projectName) {
+  if (nunjucks == null) {
+    return;
+  }
+  if (typeof nunjucks !== 'object' || Array.isArray(nunjucks)) {
+    throw new Error(
+      `[JSKim] 設定値が不正です: nunjucks\n` +
+        `プロジェクト: ${projectName}\n` +
+        `plain object を指定してください。`
+    );
+  }
+
+  const filters = nunjucks.filters || {};
+  if (typeof filters !== 'object' || Array.isArray(filters)) {
+    throw new Error(
+      `[JSKim] 設定値が不正です: nunjucks.filters\n` +
+        `プロジェクト: ${projectName}\n` +
+        `plain object を指定してください。`
+    );
+  }
+  for (const [key, value] of Object.entries(filters)) {
+    if (typeof value !== 'function') {
+      throw new Error(
+        `[JSKim] 設定値が不正です: nunjucks.filters.${key}\n` +
+          `プロジェクト: ${projectName}\n` +
+          `filter は function である必要があります。`
+      );
+    }
+  }
+
+  const globals = nunjucks.globals || {};
+  if (typeof globals !== 'object' || Array.isArray(globals)) {
+    throw new Error(
+      `[JSKim] 設定値が不正です: nunjucks.globals\n` +
+        `プロジェクト: ${projectName}\n` +
+        `plain object を指定してください。`
+    );
+  }
 }
 
 function validateWatchConfig(watch, projectName) {

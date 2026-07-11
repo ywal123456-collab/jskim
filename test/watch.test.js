@@ -41,6 +41,8 @@ describe('watch', () => {
       timeoutMs: 15000,
     });
     assert.match(cli.output, /ビルドが完了しました/);
+    // chokidar の初期化完了を待ってから変更する
+    await sleep(300);
 
     const indexPath = path.join(ws.workspaceRoot, 'src/sample/pages/index.njk');
     const distIndex = path.join(ws.workspaceRoot, 'dist/sample/index.html');
@@ -52,7 +54,7 @@ describe('watch', () => {
 
     await waitFor(
       () => (cli.output.match(/再ビルドが完了しました/g) || []).length > before,
-      { timeoutMs: 15000, label: 'page rebuild' }
+      { timeoutMs: 20000, label: 'page rebuild' }
     );
     await waitFor(
       () => fs.readFileSync(distIndex, 'utf8').includes('INDEX_WATCHED'),

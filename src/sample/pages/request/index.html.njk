@@ -1,0 +1,32 @@
+{% extends "layouts/base.njk" %}
+
+{% block title %}依頼ページ - {{ site.name }}{% endblock %}
+{% block description %}ページローカル assets を持つ JSKim サンプル{% endblock %}
+
+{% block extraHead %}
+  <link rel="stylesheet" href="{{ rootPath }}assets/css/request.css">
+{% endblock %}
+
+{% block content %}
+<section class="wrap request-hero">
+  <img src="{{ rootPath }}assets/image/request-logo.svg" alt="" width="72" height="72">
+  <div>
+    <p class="eyebrow">page-local assets</p>
+    <h1>依頼ページ</h1>
+    <p>
+      このページは <code>request/assets</code> の CSS / JS / 画像を使います。
+      <code>rootPath</code> により階層が変わってもリンクできます。
+    </p>
+  </div>
+</section>
+
+<section class="wrap card">
+  <h2>見積もり例</h2>
+  <p>基本料金は {{ samplePrice | formatPrice }} です。</p>
+  <p><a href="{{ rootPath }}index.html">トップへ戻る</a></p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ rootPath }}assets/js/request.js"></script>
+{% endblock %}

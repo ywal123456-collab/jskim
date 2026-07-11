@@ -1,0 +1,32 @@
+{% extends "layouts/base.njk" %}
+
+{% block title %}{{ site.name }} - files pipeline サンプル{% endblock %}
+{% block description %}JSKim v0.3.0 の files pipeline、data、filter、global の小さなサンプル{% endblock %}
+
+{% block content %}
+<section class="hero wrap">
+  <p class="eyebrow">JSKim v0.3.0</p>
+  <h1>{{ site.name }}</h1>
+  <p>
+    <code>files</code> は <code>pages</code> 配下の <code>.njk</code> をレンダリングし、
+    画像などの静的ファイルはそのままコピーします。
+  </p>
+</section>
+
+<section class="wrap card-grid" aria-label="設定データの例">
+  <article class="card">
+    <h2>data</h2>
+    <p>言語: <strong>{{ site.language }}</strong></p>
+    <p>サンプル価格: <strong>{{ samplePrice | formatPrice }}</strong></p>
+  </article>
+  <article class="card">
+    <h2>globals</h2>
+    <p>現在の年: <strong>{{ currentYear() }}</strong></p>
+    <p>この値は <code>jskim.config.js</code> の global 関数から来ています。</p>
+  </article>
+  <article class="card">
+    <h2>ページ別 assets</h2>
+    <p><a href="{{ rootPath }}request/">依頼ページ</a> は専用 CSS / JS / 画像を持っています。</p>
+  </article>
+</section>
+{% endblock %}

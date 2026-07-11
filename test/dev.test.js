@@ -208,8 +208,9 @@ describe('dev', () => {
       ws.workspaceRoot,
       'src/sample/assets/css/style.css'
     );
+    await sleep(150);
     const before = (cli.output.match(/再ビルドが完了しました/g) || []).length;
-    await fsp.writeFile(cssPath, '/* LR_OFF */\n', 'utf8');
+    await fsp.writeFile(cssPath, `/* LR_OFF_${Date.now()} */\n`, 'utf8');
     await waitFor(
       () => (cli.output.match(/再ビルドが完了しました/g) || []).length > before,
       { timeoutMs: 15000, label: 'rebuild without liveReload' }

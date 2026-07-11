@@ -94,7 +94,9 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
         'template/gitignore が含まれるべき'
       );
       assert.ok(
-        paths.some((p) => p.includes('template/src/sample/pages/index.njk')),
+        paths.some((p) =>
+          p.includes('template/src/sample/pages/index.html.njk')
+        ),
         'template sample が含まれるべき'
       );
       assert.ok(
@@ -174,7 +176,7 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     assert.ok(fs.existsSync(path.join(generatedRoot, 'package.json')));
     assert.ok(fs.existsSync(path.join(generatedRoot, '.gitignore')));
     assert.ok(
-      fs.existsSync(path.join(generatedRoot, 'src/sample/pages/index.njk'))
+      fs.existsSync(path.join(generatedRoot, 'src/sample/pages/index.html.njk'))
     );
 
     // 自動 install / git なし
@@ -228,12 +230,42 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const build = await runNpm(generatedRoot, ['run', 'build']);
     assert.match(build.stdout + build.stderr, /ビルドが完了しました/);
     const indexHtml = path.join(generatedRoot, 'dist/sample/index.html');
+    const mainJs = path.join(generatedRoot, 'dist/sample/assets/js/main.js');
     const css = path.join(generatedRoot, 'dist/sample/assets/css/style.css');
+    const logo = path.join(generatedRoot, 'dist/sample/assets/image/logo.svg');
+    const requestHtml = path.join(
+      generatedRoot,
+      'dist/sample/request/index.html'
+    );
+    const requestJs = path.join(
+      generatedRoot,
+      'dist/sample/request/assets/js/request.js'
+    );
+    const requestCss = path.join(
+      generatedRoot,
+      'dist/sample/request/assets/css/request.css'
+    );
+    const requestLogo = path.join(
+      generatedRoot,
+      'dist/sample/request/assets/image/request-logo.svg'
+    );
     assert.ok(fs.existsSync(indexHtml));
+    assert.ok(fs.existsSync(mainJs));
     assert.ok(fs.existsSync(css));
+    assert.ok(fs.existsSync(logo));
+    assert.ok(fs.existsSync(requestHtml));
+    assert.ok(fs.existsSync(requestJs));
+    assert.ok(fs.existsSync(requestCss));
+    assert.ok(fs.existsSync(requestLogo));
     const html = await fsp.readFile(indexHtml, 'utf8');
     assert.match(html, /JSKim/);
-    assert.match(html, /ようこそ/);
+    assert.match(html, /files pipeline/);
+    assert.match(html, /12,000円/);
+    assert.match(html, /JSKim Sample/);
+    assert.match(html, /20\d{2}/);
+    const js = await fsp.readFile(mainJs, 'utf8');
+    assert.match(js, /"name":"JSKim Sample"/);
+    assert.equal(js.includes('&quot;'), false);
 
     // free port に差し替え
     const port = await getFreePort();
@@ -249,7 +281,7 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
       cwd: generatedRoot,
       args: ['dev', 'sample'],
       ipc: true,
-      timeoutMs: 45000,
+      timeoutMs: 90000,
     });
     children.push(dev);
 
@@ -263,19 +295,19 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const root = await httpRequest({ port, path: '/' });
     assert.equal(root.status, 200);
     const body = root.body.toString('utf8');
-    assert.match(body, /ようこそ/);
+    assert.match(body, /files pipeline/);
     assert.match(body, /EventSource/);
 
     const indexPath = path.join(
       generatedRoot,
-      'src/sample/pages/index.njk'
+      'src/sample/pages/index.html.njk'
     );
     const distIndex = path.join(generatedRoot, 'dist/sample/index.html');
     let source = await fsp.readFile(indexPath, 'utf8');
-    assert.match(source, /\{\{\s*frameworkName\s*\}\}へようこそ/);
+    assert.match(source, /files pipeline/);
     await fsp.writeFile(
       indexPath,
-      source.replace('{{ frameworkName }}へようこそ', 'CREATE_E2E_OK'),
+      source.replace('files pipeline', 'CREATE_E2E_OK'),
       'utf8'
     );
 
@@ -296,17 +328,93 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     assert.match(after.body.toString('utf8'), /CREATE_E2E_OK/);
 
     // installed package での config hot reload smoke
+    const reloadCount = () =>
+      (dev.output.match(/設定を再読み込みしました/g) || []).length;
+    const watchUpdateCount = () =>
+      (dev.output.match(/監視対象を更新しました/g) || []).length;
+
+    const reloadsBeforeDebounce = reloadCount();
+    const watchesBeforeDebounce = watchUpdateCount();
     configText = await fsp.readFile(configPath, 'utf8');
     await fsp.writeFile(
       configPath,
       configText.replace(/debounce:\s*\d+/, 'debounce: 140'),
       'utf8'
     );
-    await waitForOutput(() => dev.output, '設定を再読み込みしました', {
-      timeoutMs: 15000,
-    });
+    await waitFor(
+      () =>
+        reloadCount() > reloadsBeforeDebounce &&
+        watchUpdateCount() > watchesBeforeDebounce,
+      {
+        timeoutMs: 20000,
+        label: 'generated debounce config reload',
+      }
+    );
     const afterReload = await httpRequest({ port, path: '/' });
     assert.equal(afterReload.status, 200);
+
+    const reloadsBeforeData = reloadCount();
+    const watchesBeforeData = watchUpdateCount();
+    configText = await fsp.readFile(configPath, 'utf8');
+    await fsp.writeFile(
+      configPath,
+      configText.replace("name: 'JSKim Sample'", "name: 'CREATE_SITE_OK'"),
+      'utf8'
+    );
+    await waitFor(
+      () =>
+        reloadCount() > reloadsBeforeData &&
+        watchUpdateCount() > watchesBeforeData,
+      {
+        timeoutMs: 20000,
+        label: 'generated data config reload',
+      }
+    );
+    await waitFor(
+      () => {
+        try {
+          return (
+            fs.readFileSync(indexHtml, 'utf8').includes('CREATE_SITE_OK') &&
+            fs.readFileSync(mainJs, 'utf8').includes('"name":"CREATE_SITE_OK"')
+          );
+        } catch {
+          return false;
+        }
+      },
+      { timeoutMs: 20000, label: 'generated config data reload' }
+    );
+    assert.equal(fs.readFileSync(mainJs, 'utf8').includes('&quot;'), false);
+
+    // watcher 再構成完了後に nested source を変更する
+    await sleep(300);
+
+    const requestSource = path.join(
+      generatedRoot,
+      'src/sample/pages/request/assets/js/request.js.njk'
+    );
+    source = await fsp.readFile(requestSource, 'utf8');
+    await fsp.writeFile(
+      requestSource,
+      `${source}\nconsole.info('REQUEST_E2E_OK');\n`,
+      'utf8'
+    );
+    await waitFor(
+      () => {
+        try {
+          return fs.readFileSync(requestJs, 'utf8').includes('REQUEST_E2E_OK');
+        } catch {
+          return false;
+        }
+      },
+      { timeoutMs: 30000, label: 'generated nested asset rebuild' }
+    );
+
+    const nestedAsset = await httpRequest({
+      port,
+      path: '/request/assets/js/request.js',
+    });
+    assert.equal(nestedAsset.status, 200);
+    assert.match(nestedAsset.body.toString('utf8'), /REQUEST_E2E_OK/);
 
     await dev.stop();
     assert.match(dev.output, /開発サーバーを停止しました/);

@@ -2,50 +2,33 @@
 
 `jskim.config.js` はワークスペースルート（コマンドを実行した `process.cwd()`）に置き、すべてのビルド動作の基準になります。npm パッケージとして入れた場合も、インストール先ではなく実行時のカレントディレクトリをルートとして扱います。
 
-## 全体例
+## 推奨設定例
 
 ```js
 module.exports = {
   defaults: {
-    render: [
-      {
-        from: 'pages',
-        to: '',
-        include: ['**/*.njk'],
-        extension: '.html',
+    files: [{ from: 'pages', to: '' }],
+    templates: ['layouts', 'components'],
+    data: {
+      site: { name: 'JSKim Sample', language: 'ja' },
+    },
+    nunjucks: {
+      filters: {
+        formatPrice(value) {
+          return `${Number(value).toLocaleString('ja-JP')}円`;
+        },
       },
-    ],
-
-    templates: [
-      'layouts',
-      'components',
-    ],
-
-    copy: [
-      {
-        from: 'assets',
-        to: 'assets',
+      globals: {
+        currentYear() {
+          return new Date().getFullYear();
+        },
       },
-    ],
-
-    build: {
-      clean: true,
     },
-
-    watch: {
-      debounce: 150,
-    },
-
-    serve: {
-      host: '127.0.0.1',
-      port: 3000,
-    },
-
-    dev: {
-      liveReload: true,
-    },
+    build: { clean: true },
+    watch: { debounce: 150 },
+    serve: { host: '127.0.0.1', port: 3000 },
+    dev: { liveReload: true },
   },
-
   projects: {
     sample: {
       sourceDir: 'src/sample',
@@ -55,15 +38,9 @@ module.exports = {
 };
 ```
 
-## defaults
+## defaults / projects
 
-すべてのプロジェクトに共通で適用される既定値です。
-
-プロジェクトに同じキーがあれば、プロジェクト側が優先されます。
-
-## projects
-
-プロジェクト名 → 設定オブジェクトのマップです。
+`defaults` はすべてのプロジェクトに共通で適用される既定値です。`projects` はプロジェクト名から設定オブジェクトへのマップです。
 
 ```bash
 npm run build -- sample
@@ -81,45 +58,74 @@ npm run dev -- sample
 
 任意:
 
-- `render`, `templates`, `copy`, `build`, `watch`, `serve`, `dev` — defaults の上書き
+- `files`, `render`, `templates`, `copy`, `data`, `nunjucks`, `build`, `watch`, `serve`, `dev`
 
-## sourceDir
+## mode selection
 
-プロジェクトのソースルートです。**ワークスペースルート**基準の相対パス（または絶対パス）です。
+JSKim には 2 つの build mode があります。
 
-例: `src/sample`
-
-## outputDir
-
-ビルド結果のルートです。**ワークスペースルート**基準です。
-
-例: `dist/sample`
-
-`serve` はこのディレクトリを静的サーバーのルートとして公開します。
-
-## render
-
-Nunjucks ファイルを HTML にレンダリングするルール配列です。
-
-| フィールド | 基準 | 説明 |
+| mode | 条件 | 用途 |
 |------|------|------|
-| `from` | sourceDir | 探索開始ディレクトリ |
-| `to` | outputDir | 出力基準ディレクトリ（`''` = 出力ルート） |
-| `include` | from 基準 | glob パターン配列 |
-| `extension` | — | 出力拡張子（例: `.html`） |
+| files mode | `files` が空でない配列 | v0.3.0 以降の推奨。Nunjucks と静的ファイルを同じルールで扱う |
+| legacy mode | `files` 未設定、かつ `render` が空でない配列 | 既存の `render` / `copy` 設定を継続する |
+
+同じプロジェクトで `files` と `render` / `copy` は同時に設定できません。files mode を使う場合は `render` / `copy` を空にしてください。legacy mode を使う場合は `files` を設定しないでください。
+
+## sourceDir / outputDir
+
+`sourceDir` はプロジェクトのソースルートです。`outputDir` はビルド結果のルートです。どちらも **ワークスペースルート** 基準の相対パス（または絶対パス）です。
+
+```js
+projects: {
+  sample: {
+    sourceDir: 'src/sample',
+    outputDir: 'dist/sample',
+  },
+},
+```
+
+`serve` は `outputDir` を静的サーバーのルートとして公開します。
+
+## files
+
+files mode の処理ルール配列です。
+
+| フィールド | 基準 | 必須 | 説明 |
+|------|------|------|------|
+| `from` | sourceDir | 必須 | 探索開始ディレクトリ |
+| `to` | outputDir | 任意 | 出力基準ディレクトリ。未指定または `''` は出力ルート |
+| `include` | from 基準 | 任意 | glob パターン配列。既定は `['**/*']` |
+| `exclude` | from 基準 | 任意 | 除外 glob パターン配列。既定は `[]` |
+
+処理:
+
+- 末尾が `.njk` のファイルは Nunjucks でレンダリングし、末尾の `.njk` だけを外して出力する
+- それ以外のファイルは byte copy する
+- 出力先が同じになるファイルが複数ある場合はエラーにする
+- `templates[]` 配下のファイルは直接出力しない
 
 例:
 
 ```text
-src/sample/pages/index.njk        → dist/sample/index.html
-src/sample/pages/guide/basic.njk  → dist/sample/guide/basic.html
+src/sample/pages/index.html.njk             → dist/sample/index.html
+src/sample/pages/assets/css/style.css.njk   → dist/sample/assets/css/style.css
+src/sample/pages/assets/image/logo.svg      → dist/sample/assets/image/logo.svg
 ```
 
-`layouts` と `components` は render 対象ではなく、直接出力されません。
+推奨命名:
+
+- HTML: `index.html.njk`
+- CSS: `style.css.njk`
+- JS: `main.js.njk`
+- Nunjucks 処理しない画像など: `logo.svg`
 
 ## templates
 
 Nunjucks loader の追加検索パスです。**sourceDir** 基準です。
+
+```js
+templates: ['layouts', 'components'],
+```
 
 `sourceDir` 自体も常に loader root に含まれるため、次が動作します。
 
@@ -128,7 +134,103 @@ Nunjucks loader の追加検索パスです。**sourceDir** 基準です。
 {% include "components/header.njk" %}
 ```
 
-## copy
+files mode では、`templates` に指定された既存ディレクトリ配下のファイルは直接出力から除外されます。layout / component を `files[].from` の範囲内に置いた場合でも、`templates` として指定しておけば出力対象になりません。
+
+## data
+
+`data` はすべての Nunjucks レンダリング context に渡される plain object です。
+
+```js
+data: {
+  site: {
+    name: 'JSKim Sample',
+    language: 'ja',
+    themeColor: '#222222',
+  },
+  samplePrice: 12000,
+},
+```
+
+テンプレートでは通常の変数として参照できます。
+
+```njk
+<html lang="{{ site.language }}">
+{{ samplePrice }}
+```
+
+`rootPath` は JSKim が注入する予約キーです。`data.rootPath` は使えません。
+
+機密情報を `data` に入れると、生成済み HTML / JS / CSS に出力される可能性があります。API key、token、社内 URL などの secret は入れないでください。
+
+## nunjucks.filters / nunjucks.globals
+
+Nunjucks のカスタム filter / global を `jskim.config.js` から登録できます。
+
+```js
+nunjucks: {
+  filters: {
+    formatPrice(value) {
+      return `${Number(value).toLocaleString('ja-JP')}円`;
+    },
+    toJson(value) {
+      const nunjucks = require('nunjucks');
+      return new nunjucks.runtime.SafeString(JSON.stringify(value));
+    },
+  },
+  globals: {
+    currentYear() {
+      return new Date().getFullYear();
+    },
+  },
+},
+```
+
+filter は function である必要があります。global は function 以外の値も登録できます。非同期 filter / global は現在サポートしていません。
+
+Nunjucks は `autoescape: true` です。JavaScript テンプレートへ JSON を埋め込む場合は、HTML escape されないよう `SafeString` を返す filter を使ってください。
+
+```njk
+const site = {{ site | toJson }};
+```
+
+## legacy render / copy
+
+既存プロジェクト向けに `render` / `copy` は継続サポートします。
+
+```js
+defaults: {
+  render: [
+    {
+      from: 'pages',
+      to: '',
+      include: ['**/*.njk'],
+      extension: '.html',
+    },
+  ],
+  templates: ['layouts', 'components'],
+  copy: [
+    {
+      from: 'assets',
+      to: 'assets',
+    },
+  ],
+},
+```
+
+### render
+
+Nunjucks ファイルを HTML などへレンダリングするルール配列です。
+
+| フィールド | 基準 | 説明 |
+|------|------|------|
+| `from` | sourceDir | 探索開始ディレクトリ |
+| `to` | outputDir | 出力基準ディレクトリ（`''` = 出力ルート） |
+| `include` | from 基準 | glob パターン配列 |
+| `extension` | — | 出力拡張子（例: `.html`） |
+
+legacy render では `pages/index.njk` を `index.html` のように出力する構成が一般的です。
+
+### copy
 
 静的ファイルを変換せずにコピーするルール配列です。
 
@@ -138,6 +240,25 @@ Nunjucks loader の追加検索パスです。**sourceDir** 基準です。
 | `to` | outputDir | コピー先 |
 
 `from` が無い場合は警告のみ出してビルドを続行します。
+
+## collision
+
+files mode では出力パスの衝突を検出します。たとえば同じ `files` 範囲に `about.html` と `about.html.njk` がある場合、どちらも `about.html` に出力されるためエラーになります。Windows では大文字小文字の違いだけの衝突も同じ出力として扱います。
+
+## rootPath
+
+各 `.njk` ファイルの最終出力位置を基準に `rootPath` が自動計算され、Nunjucks context に注入されます。
+
+```njk
+<link rel="stylesheet" href="{{ rootPath }}assets/css/style.css">
+<a href="{{ rootPath }}index.html">Home</a>
+```
+
+| 出力ファイル | rootPath |
+|-----------|----------|
+| `dist/sample/index.html` | `./` |
+| `dist/sample/request/index.html` | `../` |
+| `dist/sample/guide/syntax/index.html` | `../../` |
 
 ## build.clean
 
@@ -159,82 +280,18 @@ Nunjucks loader の追加検索パスです。**sourceDir** 基準です。
 |------|------|
 | 型 | `number`（有限の非負数） |
 | 既定値 | `150` |
-| マージ | `build` と同様にオブジェクト 1 段階マージ — プロジェクトで `watch.debounce` だけ上書き可能 |
+| マージ | `watch` オブジェクトの 1 段階マージ |
 
-プロジェクト別の上書き例:
+不正な値（負数、数値でない、`NaN` / `Infinity`）は設定エラーで終了します。
 
-```js
-projects: {
-  sample: {
-    sourceDir: 'src/sample',
-    outputDir: 'dist/sample',
-    watch: {
-      debounce: 300,
-    },
-  },
-},
-```
+## serve.host / serve.port
 
-不正な値:
+ローカル静的サーバーのバインドホストとポートです。
 
-- 負数
-- 数値でない
-- `NaN` / `Infinity`
-
-この場合は設定エラーで終了します。
-
-注意:
-
-- `watch` / `dev` 実行中は `jskim.config.js` 自体も監視します
-- 正常な設定変更は監視対象の再構成と全体ビルドに反映されます
-- 設定の読み込み / 検証エラー時は以前の正常な設定を継続します
-
-## serve.host
-
-ローカル静的サーバーのバインドホストです。
-
-| 項目 | 内容 |
-|------|------|
-| 型 | 空でない `string` |
-| 既定値 | `'127.0.0.1'` |
-| マージ | `serve` オブジェクトの 1 段階マージ |
-
-不正な値（空文字・非文字列）は設定エラーで終了します。
-
-## serve.port
-
-ローカル静的サーバーのポートです。
-
-| 項目 | 内容 |
-|------|------|
-| 型 | 整数 |
-| 範囲 | `1` 以上 `65535` 以下 |
-| 既定値 | `3000` |
-| マージ | `serve` オブジェクトの 1 段階マージ — `serve.port` だけ上書き可能 |
-
-プロジェクト別の上書き例:
-
-```js
-projects: {
-  sample: {
-    sourceDir: 'src/sample',
-    outputDir: 'dist/sample',
-    serve: {
-      port: 4000,
-    },
-  },
-},
-```
-
-不正な値の例: 文字列、小数、`NaN`、負数、`0`、`65536` 以上。
-
-エラー例:
-
-```text
-[JSKim] 設定値が不正です: serve.port
-1から65535までの整数を指定してください。
-受け取った値: -1
-```
+| 設定 | 型 | 既定値 |
+|------|------|------|
+| `serve.host` | 空でない `string` | `'127.0.0.1'` |
+| `serve.port` | `1` 以上 `65535` 以下の整数 | `3000` |
 
 `serve` は自動ビルドしません。`outputDir` が無い場合は先に `npm run build -- <name>` を実行してください。
 
@@ -252,7 +309,7 @@ projects: {
 
 - `GET /_jskim/live-reload` で SSE を提供
 - HTML レスポンスにだけ client script を一時注入（`dist` には書き込まない）
-- **成功した再ビルドのあとだけ** `reload` event を送信
+- 成功した再ビルドのあとだけ `reload` event を送信
 
 `false` のとき:
 
@@ -260,47 +317,11 @@ projects: {
 - HTML への script 注入なし
 - build + watch + serve 自体は動作
 
-### 予約パス `/_jskim/live-reload`
-
-`dev.liveReload: true` のときだけ有効になる内部 SSE endpoint です。
-
-- JSKim が予約するパスであり、プロジェクトの静的ファイルとしては使わないことを推奨します
-- `serve` コマンドでは有効になりません
-- `dev.liveReload: false` では有効になりません
-- パス自体を設定で変更するオプションはありません
-
-プロジェクト別の上書き例:
-
-```js
-projects: {
-  sample: {
-    sourceDir: 'src/sample',
-    outputDir: 'dist/sample',
-    dev: {
-      liveReload: false,
-    },
-  },
-},
-```
-
-不正な値（boolean 以外）は設定エラーで終了します。
-
-### dev が再利用する設定
-
-| 設定 | 用途 |
-|------|------|
-| `watch.debounce` | 変更後の再ビルド待ち時間 |
-| `serve.host` | 開発サーバーのホスト |
-| `serve.port` | 開発サーバーのポート |
-| `dev.liveReload` | ライブリロード on/off |
-
-`dev.host` / `dev.port` / `dev.debounce` は用意しません。
+`/_jskim/live-reload` は内部予約パスです。プロジェクトの静的ファイルとしては使わないことを推奨します。
 
 ## config hot reload
 
 `watch` と `dev` はワークスペースルートの `jskim.config.js` を監視します。
-
-### コマンド別
 
 | コマンド | 動作 |
 |----------|------|
@@ -309,25 +330,7 @@ projects: {
 | `watch` | config 変更を hot apply。`outputDir` 変更も可。以前の outputDir は自動削除しない |
 | `dev` | build / watch 関連設定を hot apply。一部 runtime 設定は再起動が必要 |
 
-### 正常な reload
-
-1. config 変更を検知
-2. fresh load（CommonJS require cache を `jskim.config.js` について削除）
-3. merge / project resolve / validation
-4. watcher 再構成
-5. 全体ビルド
-
-### エラー時
-
-| 状況 | 動作 |
-|------|------|
-| config load / resolve / validation エラー | 以前の正常な設定を維持。process は終了しない |
-| 新しい設定適用後の build エラー | 新しい設定 / watcher を維持。process は終了しない。修正後に再試行 |
-| config 一時削除（unlink） | 以前の設定を継続。再作成後に reload |
-
-### `dev` で再起動が必要な設定
-
-次の値が変わった candidate config は適用しません。
+`dev` では次の値が変わった candidate config は適用しません。
 
 - `outputDir`
 - `serve.host`
@@ -336,32 +339,26 @@ projects: {
 
 理由: server bind と serve root を安全に切り替えるには process 再起動が必要で、部分適用すると build output と serve root がずれるためです。
 
-### 制限
-
-- config hot reload は常に **全体ビルド** です（増分 build ではありません）
-- `jskim.config.js` が require した別 helper module だけの変更は自動反映しません。config を保存し直すか process を再起動してください
-- `node_modules` や JSKim package 自身の require cache は一括削除しません
-
 ## パス基準のまとめ
 
 | 設定 | 基準 |
 |------|------|
 | `sourceDir`, `outputDir` | ワークスペースルート（`jskim.config.js` の場所） |
-| `render[].from`, `templates[]`, `copy[].from` | `sourceDir` |
-| `render[].to`, `copy[].to` | `outputDir` |
+| `files[].from`, `render[].from`, `templates[]`, `copy[].from` | `sourceDir` |
+| `files[].to`, `render[].to`, `copy[].to` | `outputDir` |
+| `files[].include`, `files[].exclude`, `render[].include` | 各 `from` |
 
 Windows / POSIX とも `node:path` で解釈します。HTML 内パス（`rootPath` など）は `/` を使います。
 
-## 配列マージ規則
+## マージ規則
 
 - **通常値**: プロジェクト設定があれば優先、なければ defaults
-- **オブジェクト**（`build`, `watch`, `serve`, `dev` など）: 1 段階マージ — 例: `build.clean`、`watch.debounce`、`serve.port`、`dev.liveReload` だけ上書き可能
-- **配列**（`render`, `templates`, `copy`）: プロジェクトに同じ配列があれば **defaults 配列を丸ごと置き換え**。項目単位の自動マージなし
+- **オブジェクト**（`build`, `watch`, `serve`, `dev`, `data`, `nunjucks`）: 1 段階マージ
+- **`nunjucks.filters` / `nunjucks.globals`**: それぞれ 1 段階マージ
+- **配列**（`files`, `render`, `templates`, `copy`）: プロジェクトに同じ配列があれば defaults 配列を丸ごと置き換え。項目単位の自動マージなし
 
 元の `defaults` とプロジェクト設定オブジェクトは変更しません。
 
 ## 外部パス
 
-`sourceDir` / `outputDir` にワークスペース外のパスを使うことは禁止しません。
-フレームワークは Git 構成やフォルダ配置を強制しません。
-ただし clean の安全装置（上記）は常に適用されます。
+`sourceDir` / `outputDir` にワークスペース外のパスを使うことは禁止しません。フレームワークは Git 構成やフォルダ配置を強制しません。ただし clean の安全装置は常に適用されます。

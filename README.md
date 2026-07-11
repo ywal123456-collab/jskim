@@ -2,18 +2,15 @@
 
 Nunjucks を使った汎用の静的 HTML ビルド環境です。
 
-特定のアプリ構成、業務ロジック、CSS/JS 設計、Git 運用、デプロイ基盤を強制しません。
-Nunjucks ソースを設定に従って静的 HTML にレンダリングし、assets をコピーして配布可能な結果を作ります。
+特定のアプリ構成、業務ロジック、CSS/JS 設計、Git 運用、デプロイ基盤を強制しません。`jskim.config.js` に従ってソースを処理し、配布可能な静的ファイルを `outputDir` に生成します。
 
 ## 現在の対応範囲
 
-- `jskim.config.js` による設定
-- defaults とプロジェクト設定のマージ
-- Nunjucks ページのレンダリング
-- 静的ファイルのコピー
-- outputDir の clean
+- `files` pipeline による Nunjucks レンダリングと静的ファイルコピー
+- legacy `render` / `copy` 設定の継続サポート
+- `data`、Nunjucks `filters` / `globals`
 - `rootPath` の自動注入
-- プロジェクトごとの出力分離
+- outputDir の clean
 - ファイル監視（`watch`）後の全体再ビルド
 - ビルド結果のローカル静的サーバー（`serve`）
 - 開発サーバー（`dev` = build + watch + serve）
@@ -25,14 +22,13 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 
 - ブラウザ自動起動
 - HMR / CSS だけのホット更新
-- JSON データの自動読み込み
+- JSON / YAML などの外部データファイル自動読み込み
 - API / Mock API
 - 増分ビルド
 - SPA fallback / proxy
+- formatter 機能
 
-既存 HTML の自動 import / migration は JSKim core の責任範囲外です。
-既存 source の移行は利用者が project に合わせて行います。
-将来必要になった場合も、JSKim 本体ではなく独立した tool / package として検討します。
+既存 HTML の自動 import / migration は JSKim core の責任範囲外です。既存 source の移行は利用者が project に合わせて行います。将来必要になった場合も、JSKim 本体ではなく独立した tool / package として検討します。
 
 ## パッケージの役割
 
@@ -48,6 +44,7 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 
 詳細:
 
+- [docs/configuration.md](docs/configuration.md)
 - [docs/create-jskim.md](docs/create-jskim.md)
 - [docs/publishing.md](docs/publishing.md)（maintainer 向け release 手順）
 
@@ -68,6 +65,8 @@ npm create jskim@latest
 ```bash
 npx create-jskim my-project
 ```
+
+生成器は自動で `npm install` / `git init` を実行しません。空ではない既存ディレクトリも上書きしません。
 
 ## CLI
 
@@ -93,8 +92,6 @@ jskim dev <project>
 
 要点:
 
-- npm package 名は `@ywal123456/jskim`（scoped）
-- インストール後の CLI binary 名は `jskim`
 - コマンドは実行したディレクトリの `process.cwd()` をプロジェクトルートとして扱う
 - パッケージのインストール先（`node_modules/@ywal123456/jskim`）を作業空間とはみなさない
 - プロジェクトルートに `jskim.config.js` が必要
@@ -106,44 +103,89 @@ jskim --help
 jskim --version
 ```
 
-## プロジェクト生成（create-jskim）
+## files pipeline
 
-```bash
-npm create jskim@latest
-# または
-npx create-jskim my-project
+v0.3.0 以降の推奨設定は `files` です。`files[].from` 配下を走査し、末尾が `.njk` のファイルは Nunjucks でレンダリングして末尾の `.njk` だけを外します。それ以外のファイルは byte copy します。
+
+```js
+module.exports = {
+  defaults: {
+    files: [{ from: 'pages', to: '' }],
+    templates: ['layouts', 'components'],
+  },
+  projects: {
+    sample: {
+      sourceDir: 'src/sample',
+      outputDir: 'dist/sample',
+    },
+  },
+};
 ```
 
-```bash
-cd my-project
-npm install
-npm run dev
+例:
+
+```text
+src/sample/pages/index.html.njk        → dist/sample/index.html
+src/sample/pages/assets/css/style.css.njk → dist/sample/assets/css/style.css
+src/sample/pages/assets/image/logo.svg → dist/sample/assets/image/logo.svg
 ```
 
-- 自動で `npm install` / `git init` は実行しません
-- 空ではない既存ディレクトリは上書きしません
+推奨命名:
+
+- HTML は `index.html.njk`、`request/index.html.njk` のように最終拡張子を含める
+- CSS / JS を Nunjucks で処理する場合は `style.css.njk`、`main.js.njk` のように書く
+- 画像などテンプレート処理しないファイルは通常の拡張子のまま置く
+
+`templates` に指定した `layouts` / `components` は loader の検索パスになり、直接出力されません。
+
+legacy の `render` / `copy` も引き続き使えます。ただし同じプロジェクトで `files` と `render` / `copy` は同時に設定できません。詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
+
+## data / filters / globals
+
+`defaults.data` と project の `data` はテンプレート context に渡されます。Nunjucks の filter / global も `jskim.config.js` から登録できます。
+
+```js
+data: {
+  site: { name: 'JSKim Sample', language: 'ja' },
+},
+nunjucks: {
+  filters: {
+    formatPrice(value) {
+      return `${Number(value).toLocaleString('ja-JP')}円`;
+    },
+  },
+  globals: {
+    currentYear() {
+      return new Date().getFullYear();
+    },
+  },
+},
+```
+
+Nunjucks は `autoescape: true` です。JavaScript に JSON を埋め込む filter は `nunjucks.runtime.SafeString` を返してください。
+
+```js
+toJson(value) {
+  const nunjucks = require('nunjucks');
+  return new nunjucks.runtime.SafeString(JSON.stringify(value));
+}
+```
+
+機密情報を `data` やテンプレートへ入れると、生成済み HTML / JS / CSS に含まれる可能性があります。API key、token、社内 URL などの secret は公開成果物に混入しないよう確認してください。
 
 ## このリポジトリでの開発コマンド
 
 開発リポジトリでは従来どおり `npm run` も使えます。
 
-## インストール（開発リポジトリ）
-
 ```bash
 npm install
-```
-
-## ビルド
-
-```bash
 npm run build -- sample
-# または（インストール済み binary）
-jskim build sample
+npm run dev -- sample
 ```
 
 `sample` は `jskim.config.js` の `projects` に登録されたプロジェクト名です。
 
-## ウォッチ
+## watch
 
 ```bash
 npm run watch -- sample
@@ -158,93 +200,28 @@ jskim watch sample
 3. 変更検知後、debounce して全体ビルドを再実行
 4. ビルドエラーがあってもウォッチャーは維持し、次の保存で再試行
 
-### 監視対象
+監視対象はマージ済みプロジェクト設定から計算します。
 
-マージ済みプロジェクト設定から計算します。
+- files mode: `sourceDir` + `files[].from`、`sourceDir` + `templates[]`
+- legacy mode: `sourceDir` + `render[].from`、`sourceDir` + `templates[]`、`sourceDir` + `copy[].from`
+- `dist/`、`node_modules/`、`outputDir` は監視しません
 
-- `sourceDir` + `render[].from`（例: `src/sample/pages`）
-- `sourceDir` + `templates[]`（例: `src/sample/layouts`, `src/sample/components`）
-- `sourceDir` + `copy[].from`（例: `src/sample/assets`）
+`watch` / `dev` は `jskim.config.js` の変更を検知し、正常なら監視対象を更新して全体ビルドします。`dev` で `outputDir` / `serve.host` / `serve.port` / `dev.liveReload` を変えた場合は process 再起動が必要です。
 
-`dist/`、`node_modules/`、`outputDir` は監視しません。
+## serve / dev
 
-### 現在の方針
-
-- 関連する変更はすべて **全体ビルド** です（増分 render / 単一 asset copy なし）。
-- `build.clean: true` のとき、再ビルドで outputDir を消して作り直すため、ソース削除も結果に反映されます。
-- `jskim.config.js` の変更は **watch / dev が検知** し、正常なら監視対象を更新して全体ビルドします。
-- 設定の読み込み / 検証に失敗しても process は終了せず、以前の正常な設定を継続します。
-- `serve` は config を監視しません。設定変更後は serve process の再起動が必要です。
-- 終了: `Ctrl+C`（SIGINT）または SIGTERM → `[JSKim] ウォッチを停止しました。`
-
-#### config hot reload（watch / dev）
-
-- 対象ファイル: ワークスペースルートの `jskim.config.js`
-- 正常な変更: watcher 再構成 → 全体ビルド
-- 不正な設定: 以前の正常な設定を維持し、修正後に自動で再試行
-- `watch` では `outputDir` 変更も適用できます（以前の outputDir は自動削除しません）
-- `dev` では次の変更は process 再起動が必要です:
-  - `outputDir`
-  - `serve.host`
-  - `serve.port`
-  - `dev.liveReload`
-- `dev` で対応できる設定変更が成功し、build も成功した場合だけ browser reload を 1 回送ります
-
-debounce の既定値は `watch.debounce: 150`（ms）で、プロジェクトごとに上書きできます。詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
-
-## 静的サーバー（serve）
+`serve` は **すでにビルドされた** `outputDir` をローカルで確認するためのコマンドです。
 
 ```bash
 npm run build -- sample
 npm run serve -- sample
-# または
-jskim build sample
-jskim serve sample
 ```
 
-`serve` は **すでにビルドされた** `outputDir` をローカルで確認するためのコマンドです。
-
-- 自動で build / watch は実行しません
-- サーバールートは `outputDir`（例: `dist/sample`）
-- 対応 HTTP メソッドは `GET` と `HEAD` のみ
-- ライブリロードはありません（HTML を変換しません）
-- ローカル確認用です（本番サーバー機能ではありません）
-
-既定の接続先:
-
-```text
-http://127.0.0.1:3000/
-```
-
-`host` / `port` は `jskim.config.js` の `serve` で変更できます。
-
-`outputDir` が無い場合は、先に build するよう案内して終了します。
-
-終了: `Ctrl+C` → `[JSKim] 静的サーバーを停止しました。`
-
-## 開発サーバー（dev）
+`dev` は build + watch + serve を統合します。
 
 ```bash
 npm run dev -- sample
-# または
-jskim dev sample
 ```
-
-`dev` は次を統合します。
-
-1. 初回に全体ビルド
-2. 実際の `outputDir`（`dist`）を静的サーバーで提供
-3. ファイル監視と全体再ビルド（`watch` と同じ debounce / 直列化）
-4. **成功した再ビルドのあとだけ** ブラウザを全体リロード（SSE）
-
-ポイント:
-
-- メモリ専用レンダリングではなく、常に実際の `dist` を提供します
-- ライブリロードは HMR ではなく **ページ全体の reload** です
-- `dist` ファイルへ script を書き込みません。dev の HTML レスポンスにだけ一時注入します
-- ビルドエラー時も watcher / server は維持し、reload は送りません
-- ブラウザ自動起動はサポートしません
-- `watch.debounce` / `serve.host` / `serve.port` / `dev.liveReload` を使います
 
 既定 URL:
 
@@ -252,74 +229,39 @@ jskim dev sample
 http://127.0.0.1:3000/
 ```
 
-`dev.liveReload: false` にすると SSE endpoint と script 注入を無効化できます。
+ポイント:
 
-`jskim.config.js` の build / watch 関連設定は hot reload されます。
-`outputDir` / `serve.host` / `serve.port` / `dev.liveReload` を変えた場合は `dev` を再起動してください。
+- `serve` は自動で build / watch を実行しません
+- サーバールートは `outputDir`（例: `dist/sample`）
+- `serve` は HTML を変換せず、ライブリロード script を注入しません
+- `dev` は成功した再ビルドのあとだけ SSE でページ全体 reload を送ります
+- `dev` でも `dist` ファイルへ script は書き込みません
+- ブラウザ自動起動はサポートしません
 
-終了: `Ctrl+C` → `[JSKim] 開発サーバーを停止しました。`
-
-### 予約パス `/_jskim/live-reload`
-
-`dev.liveReload: true` のとき、JSKim が内部で使う予約パスです。
-
-- 実際の静的ファイルパスとして使わないことを推奨します
-- `serve` ではこの endpoint は有効になりません
-- `dev.liveReload: false` のときも有効になりません
-
-## テスト
-
-```bash
-npm test
-```
-
-Node 標準の `node:test` / `node:assert` を使います。外部テスト framework は使いません。
-
-- 実際の `src/sample` と `dist/sample` は変更しません
-- 各テストは一時ワークスペース（`os.tmpdir`）で実行します
-- build / watch / serve / dev / 言語ポリシーの回帰を検証します
+`/_jskim/live-reload` は `dev.liveReload: true` のときだけ使う内部予約パスです。実際の静的ファイルパスとしては使わないことを推奨します。
 
 ## 基本ディレクトリ構成
 
 ```text
 jskim/
 ├─ bin/
-│  └─ jskim.js
 ├─ jskim.config.js
 ├─ scripts/
-│  ├─ build.js
-│  ├─ watch.js
-│  ├─ serve.js
-│  ├─ dev.js
-│  └─ commands/
 ├─ src/
 │  └─ sample/
 │     ├─ pages/
+│     │  ├─ index.html.njk
+│     │  ├─ assets/
+│     │  └─ request/
 │     ├─ layouts/
-│     ├─ components/
-│     └─ assets/
+│     └─ components/
 └─ dist/
    └─ sample/
 ```
 
-## jskim.config.js の役割
-
-コマンドを実行したディレクトリ（`process.cwd()`）をワークスペースルートとし、そこに置いた `jskim.config.js` がビルド動作の基準です。
-
-- `defaults`: 全プロジェクト共通の render / templates / copy / build / watch / serve / dev
-- `projects`: プロジェクトごとの `sourceDir`、`outputDir`、および任意の上書き
-
-詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
-
-## src と dist の関係
-
-- `sourceDir`（例: `src/sample`）に Nunjucks ソースと assets を置きます
-- `outputDir`（例: `dist/sample`）にレンダリング済み HTML とコピーされた静的ファイルが生成されます
-- `dist/` はビルド成果物なので手編集しないでください
-
 ## rootPath の使い方
 
-各ページの最終出力位置を基準に `rootPath` が自動計算され、Nunjucks context に注入されます。
+各 `.njk` ファイルの最終出力位置を基準に `rootPath` が自動計算され、Nunjucks context に注入されます。
 
 ```njk
 <link rel="stylesheet" href="{{ rootPath }}assets/css/style.css">
@@ -329,12 +271,14 @@ jskim/
 | 出力ファイル | rootPath |
 |-----------|----------|
 | `dist/sample/index.html` | `./` |
-| `dist/sample/guide/basic.html` | `../` |
-| `dist/sample/guide/syntax/loop.html` | `../../` |
+| `dist/sample/request/index.html` | `../` |
+| `dist/sample/guide/syntax/index.html` | `../../` |
+
+`data.rootPath` は予約語のため使えません。
 
 ## sample
 
-`src/sample` は JSKim の紹介と Nunjucks 構文例を含む技術ドキュメント型の単一ページです。
+`src/sample` は files pipeline、`data`、custom filter、global、ページ別 assets を示す小さなサンプルです。
 
 ```bash
 npm run build -- sample
@@ -345,6 +289,14 @@ npm run dev -- sample
 
 ビルド後、`dist/sample/index.html` または `http://127.0.0.1:3000/` で確認できます。
 
+## テスト
+
+```bash
+npm test
+```
+
+Node 標準の `node:test` / `node:assert` を使います。外部テスト framework は使いません。
+
 ## リポジトリ
 
 - Repository: https://github.com/ywal123456-collab/jskim
@@ -352,6 +304,4 @@ npm run dev -- sample
 
 ## ライセンス
 
-JSKim は MIT License のもとで提供されます。
-自由に使用・修正・再配布・商用利用できます。著作権表示と License 文言の保持が必要であり、無保証です。
-詳細は [`LICENSE`](./LICENSE) を確認してください。
+JSKim は MIT License のもとで提供されます。自由に使用・修正・再配布・商用利用できます。著作権表示と License 文言の保持が必要であり、無保証です。詳細は [`LICENSE`](./LICENSE) を確認してください。

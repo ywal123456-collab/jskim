@@ -57,7 +57,9 @@ describe('create-jskim', () => {
     assert.ok(fs.existsSync(path.join(project, 'jskim.config.js')));
     assert.ok(fs.existsSync(path.join(project, 'README.md')));
     assert.ok(fs.existsSync(path.join(project, '.gitignore')));
-    assert.ok(fs.existsSync(path.join(project, 'src/sample/pages/index.njk')));
+    assert.ok(
+      fs.existsSync(path.join(project, 'src/sample/pages/index.html.njk'))
+    );
     assert.equal(fs.existsSync(path.join(project, 'dist')), false);
     assert.equal(fs.existsSync(path.join(project, 'node_modules')), false);
     assert.equal(fs.existsSync(path.join(project, 'package-lock.json')), false);
@@ -189,10 +191,10 @@ describe('create-jskim', () => {
     const cwd = await makeCwd();
     await runCreate(['lang-check'], { cwd });
     const index = await fsp.readFile(
-      path.join(cwd, 'lang-check/src/sample/pages/index.njk'),
+      path.join(cwd, 'lang-check/src/sample/pages/index.html.njk'),
       'utf8'
     );
-    assert.match(index, /ようこそ/);
+    assert.match(index, /files pipeline/);
     // ハングル文字クラスをソースに直書きしない（language テスト対象のため）
     const hangul = new RegExp(
       `[${String.fromCharCode(0xac00)}-${String.fromCharCode(0xd7a3)}]`

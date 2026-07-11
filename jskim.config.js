@@ -3,39 +3,50 @@
  *
  * パスの基準:
  * - sourceDir / outputDir → ワークスペースルート（このファイルの場所）
- * - render[].from, templates[], copy[].from → sourceDir 基準
- * - render[].to, copy[].to → outputDir 基準
+ * - files[].from / templates[] → sourceDir 基準
+ * - files[].to → outputDir 基準
  *
- * マージ規則:
- * - スカラー / オブジェクト: プロジェクト設定が優先（必要な範囲で shallow merge）
- * - 配列: プロジェクト側の配列が defaults を丸ごと置き換え
+ * files pipeline:
+ * - *.njk は末尾の .njk だけを外してレンダリング
+ * - それ以外のファイルはそのままコピー
+ * - templates[] 配下は直接出力せず、extends / include 用に使う
  */
 module.exports = {
   // 各プロジェクトに共通で適用されるデフォルト設定
   defaults: {
-    // Nunjucks で HTML にレンダリングする対象
-    render: [
-      {
-        from: 'pages', // sourceDir 配下
-        to: '', // outputDir 配下（'' は出力ルート）
-        include: ['**/*.njk'],
-        extension: '.html',
-      },
-    ],
+    // pages 配下の HTML / CSS / JS / 画像をまとめて処理する
+    files: [{ from: 'pages', to: '' }],
 
     // Nunjucks の追加検索パス（sourceDir 配下）
-    templates: [
-      'layouts',
-      'components',
-    ],
+    templates: ['layouts', 'components'],
 
-    // 変換せずにコピーする静的ファイル
-    copy: [
-      {
-        from: 'assets',
-        to: 'assets',
+    // 全テンプレートへ渡す共通データ
+    data: {
+      site: {
+        name: 'JSKim Sample',
+        language: 'ja',
+        themeColor: '#222222',
       },
-    ],
+      samplePrice: 12000,
+    },
+
+    // Nunjucks のカスタム filter / global
+    nunjucks: {
+      filters: {
+        formatPrice(value) {
+          return `${Number(value).toLocaleString('ja-JP')}円`;
+        },
+        toJson(value) {
+          const nunjucks = require('nunjucks');
+          return new nunjucks.runtime.SafeString(JSON.stringify(value));
+        },
+      },
+      globals: {
+        currentYear() {
+          return new Date().getFullYear();
+        },
+      },
+    },
 
     build: {
       // ビルド前に outputDir を削除する
@@ -47,14 +58,13 @@ module.exports = {
       debounce: 150,
     },
 
-    // ローカル確認用の静的サーバー設定です。
+    // ローカル確認用の静的サーバー設定
     serve: {
       host: '127.0.0.1',
       port: 3000,
     },
 
-    // 開発サーバー（build + watch + serve）設定です。
-    // host / port / debounce は serve / watch を再利用します。
+    // 開発サーバー（build + watch + serve）設定
     dev: {
       liveReload: true,
     },

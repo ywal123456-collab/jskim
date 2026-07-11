@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>JSKim Sample</title>
+  <rect width="64" height="64" rx="16" fill="#222222"/>
+  <path d="M18 38c0 5 3 8 8 8 4 0 7-2 8-5l-5-3c-1 2-2 3-4 3s-3-1-3-4V18h-4v20z" fill="#ffffff"/>
+  <path d="M38 46h5V18h-5v28zm5-15 9 15h6L48 30l9-12h-6l-8 11z" fill="#ffffff"/>
+</svg>
