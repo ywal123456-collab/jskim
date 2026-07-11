@@ -71,10 +71,15 @@ describe('create-jskim', () => {
     assert.equal(pkg.name, 'my-project');
     assert.equal(Object.hasOwn(pkg, 'license'), false);
     assert.equal(pkg.scripts.build, 'jskim build sample');
+    assert.equal(pkg.scripts.watch, 'jskim watch sample');
+    assert.equal(pkg.scripts.serve, 'jskim serve sample');
+    assert.equal(pkg.scripts.dev, 'jskim dev sample');
     assert.equal(
       pkg.devDependencies[CREATE_PKG.jskimEngine.packageName],
       CREATE_PKG.jskimEngine.version
     );
+    assert.equal(CREATE_PKG.jskimEngine.packageName, '@ywal123456/jskim');
+    assert.equal(Object.hasOwn(pkg.devDependencies, 'jskim'), false);
 
     const gitignore = await fsp.readFile(path.join(project, '.gitignore'), 'utf8');
     assert.match(gitignore, /node_modules\//);
@@ -150,7 +155,7 @@ describe('create-jskim', () => {
 
   it('JSKIM_ENGINE_SPEC で dependency を上書きできる', async () => {
     const cwd = await makeCwd();
-    const spec = 'file:C:/temp/jskim-0.1.0.tgz';
+    const spec = 'file:C:/temp/ywal123456-jskim-0.1.0.tgz';
     const result = await runCreate(['spec-project'], {
       cwd,
       env: { JSKIM_ENGINE_SPEC: spec },
@@ -163,6 +168,7 @@ describe('create-jskim', () => {
       pkg.devDependencies[CREATE_PKG.jskimEngine.packageName],
       spec
     );
+    assert.equal(Object.hasOwn(pkg.devDependencies, 'jskim'), false);
   });
 
   it('template/src/sample は root src/sample と一致する', async () => {

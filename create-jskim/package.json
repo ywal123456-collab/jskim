@@ -35,7 +35,7 @@
     "LICENSE"
   ],
   "jskimEngine": {
-    "packageName": "jskim",
+    "packageName": "@ywal123456/jskim",
     "version": "^0.1.0"
   },
   "engines": {

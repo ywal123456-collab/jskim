@@ -149,7 +149,7 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
       await fse.remove(workDir).catch(() => {});
     }
     for (const name of fs.readdirSync(REPO_ROOT)) {
-      if (/^(jskim|create-jskim)-.*\.tgz$/i.test(name)) {
+      if (/^(jskim|create-jskim|ywal123456-jskim)-.*\.tgz$/i.test(name)) {
         // eslint-disable-next-line no-await-in-loop
         await fse.remove(path.join(REPO_ROOT, name)).catch(() => {});
       }
@@ -188,10 +188,14 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const generatedPkg = JSON.parse(
       await fsp.readFile(path.join(generatedRoot, 'package.json'), 'utf8')
     );
+    assert.equal(ENGINE_PKG.name, '@ywal123456/jskim');
     assert.equal(
       generatedPkg.devDependencies[ENGINE_PKG.name],
       engineSpec
     );
+    assert.equal(Object.hasOwn(generatedPkg.devDependencies, 'jskim'), false);
+    assert.equal(generatedPkg.scripts.build, 'jskim build sample');
+    assert.equal(generatedPkg.scripts.dev, 'jskim dev sample');
 
     assert.equal(fs.existsSync(path.join(generatedRoot, 'LICENSE')), false);
     assert.equal(
@@ -205,12 +209,19 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const engineDir = path.join(
       generatedRoot,
       'node_modules',
-      ENGINE_PKG.name
+      ...ENGINE_PKG.name.split('/')
     );
     assert.ok(fs.existsSync(engineDir), 'engine がローカル tgz から入るべき');
     assert.ok(
       fs.existsSync(path.join(engineDir, 'bin/jskim.js')),
       'jskim binary が使えるべき'
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'node_modules', '.bin', 'jskim')) ||
+        fs.existsSync(
+          path.join(generatedRoot, 'node_modules', '.bin', 'jskim.cmd')
+        ),
+      'node_modules/.bin/jskim が使えるべき'
     );
 
     // build

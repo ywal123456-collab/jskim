@@ -2,7 +2,7 @@
 
 JSKim プロジェクトを作成する scaffold CLI です。
 
-Package 名は `create-jskim` です。コマンド構造は公開後の利用を想定して整えていますが、**このリポジトリ作業では registry への publish は行っていません**。実際の `npm create` / registry インストールは publish 後に利用できます。
+Package 名は `create-jskim` です。生成されるプロジェクトの engine dependency は `@ywal123456/jskim` です。コマンド構造は公開後の利用を想定して整えていますが、**このリポジトリ作業では registry への publish は行っていません**。実際の `npm create` / registry インストールは publish 後に利用できます。
 
 ## 使い方（公開後）
 
@@ -44,7 +44,7 @@ project/
 └─ src/sample/
 ```
 
-生成プロジェクトは `jskim` を `devDependencies` に持ちます（公開後は `npm install` で registry から取得）。
+生成プロジェクトは `@ywal123456/jskim` を `devDependencies` に持ちます（公開後は `npm install` で registry から取得）。scripts の実行名は binary `jskim` のままです。
 
 ## 生成後の手順
 

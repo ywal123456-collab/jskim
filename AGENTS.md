@@ -44,6 +44,17 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - `jskim.config.js` 変更の hot reload はこの段階では行わない。watch / dev は再起動する
 - ブラウザ自動起動や HMR は要求された段階でのみ検討する
 
+## package 名と binary 名
+
+- engine package 名は `@ywal123456/jskim` とする
+- CLI binary 名は `jskim` のまま維持する
+- `create-jskim` package 名は変更しない
+- `npm create jskim@latest` の利用形態を維持する
+- 生成 project の `devDependencies` には `@ywal123456/jskim` を設定する
+- scoped engine の初回 publish では `--access public` を指定する
+- root package の `publishConfig` は public npm registry と public access を指定する
+- package 名と binary 名を混同しない
+
 ## create-jskim
 
 - `create-jskim` は JSKim engine とは独立した package として管理する
@@ -89,7 +100,7 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 
 ## 公開 metadata / License
 
-- `jskim` と `create-jskim` は MIT License で公開する
+- `@ywal123456/jskim` と `create-jskim` は MIT License で公開する
 - `LICENSE` の標準文面を省略または変更しない
 - Copyright 表記は `2026 Jeongsub Kim` とする
 - 生成されるユーザープロジェクトへ License を強制しない

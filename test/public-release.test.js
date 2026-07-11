@@ -95,6 +95,16 @@ describe('public release audit', () => {
   it('公開 repository metadata と一致する', () => {
     const engine = require(path.join(REPO_ROOT, 'package.json'));
     const creator = require(path.join(REPO_ROOT, 'create-jskim/package.json'));
+    assert.equal(engine.name, '@ywal123456/jskim');
+    assert.equal(Object.hasOwn(engine, 'private'), false);
+    assert.equal(engine.publishConfig && engine.publishConfig.access, 'public');
+    assert.equal(
+      engine.publishConfig && engine.publishConfig.registry,
+      'https://registry.npmjs.org'
+    );
+    assert.equal(creator.name, 'create-jskim');
+    assert.equal(creator.jskimEngine.packageName, '@ywal123456/jskim');
+    assert.equal(creator.jskimEngine.version, '^0.1.0');
     assert.match(engine.repository.url, /ywal123456-collab\/jskim\.git$/);
     assert.match(engine.homepage, /ywal123456-collab\/jskim/);
     assert.match(engine.bugs.url, /ywal123456-collab\/jskim\/issues$/);
@@ -110,6 +120,31 @@ describe('public release audit', () => {
       'create-jskim/template/LICENSE'
     );
     assert.equal(fs.existsSync(templateLicense), false);
+  });
+
+  it('ユーザー向け文書に unscoped engine インストール命令が残っていない', () => {
+    const docs = [
+      'README.md',
+      'docs/publishing.md',
+      'docs/create-jskim.md',
+      'create-jskim/README.md',
+    ];
+    const forbidden = [
+      'npm install --save-dev jskim',
+      'npm install jskim@0.1.0',
+      'npm view jskim@0.1.0',
+      'node_modules/jskim',
+    ];
+    const hits = [];
+    for (const rel of docs) {
+      const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+      for (const needle of forbidden) {
+        if (text.includes(needle)) {
+          hits.push(`${rel}: ${needle}`);
+        }
+      }
+    }
+    assert.deepEqual(hits, [], `旧 unscoped 命令: ${hits.join(', ')}`);
   });
 });
 

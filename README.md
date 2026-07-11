@@ -35,12 +35,15 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 
 ## パッケージの役割
 
-| package | 役割 |
-|---------|------|
-| `jskim` | `jskim build` / `watch` / `serve` / `dev` |
-| `create-jskim` | 新しい JSKim 作業空間の生成 |
+| 名称 | 種類 | 役割 |
+|------|------|------|
+| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` |
+| `create-jskim` | npm creator package | 新しい JSKim 作業空間の生成 |
+| `jskim` | CLI binary | インストール後に実行するコマンド名 |
 
-Package 名・CLI 構造は公開名に合わせてあります。**このリポジトリ作業では registry への publish は行っていません**。registry からのインストールは publish 後に可能です。
+製品名は **JSKim**、CLI binary は **`jskim`**、npm engine package は **`@ywal123456/jskim`** です。package 名と binary 名を混同しないでください。
+
+Package 名・CLI 構造は公開名に合わせてあります。**このリポジトリ作業では registry への publish は行っていません**。registry からのインストールは publish 後に可能です。scoped engine は公開 MIT package として配布する予定です。
 
 詳細:
 
@@ -52,7 +55,7 @@ Package 名・CLI 構造は公開名に合わせてあります。**このリポ
 公開後のインストール例:
 
 ```bash
-npm install --save-dev jskim
+npm install --save-dev @ywal123456/jskim
 ```
 
 ```bash
@@ -64,13 +67,27 @@ jskim dev sample
 npx jskim build sample
 ```
 
+`package.json` の scripts 例:
+
+```json
+{
+  "scripts": {
+    "build": "jskim build sample",
+    "watch": "jskim watch sample",
+    "serve": "jskim serve sample",
+    "dev": "jskim dev sample"
+  }
+}
+```
+
 要点:
 
-- CLI binary 名は `jskim`
+- npm package 名は `@ywal123456/jskim`（scoped）
+- インストール後の CLI binary 名は `jskim`（変更なし）
 - コマンドは実行したディレクトリの `process.cwd()` をプロジェクトルートとして扱う
-- パッケージのインストール先（`node_modules/...`）を作業空間とはみなさない
+- パッケージのインストール先（`node_modules/@ywal123456/jskim`）を作業空間とはみなさない
 - プロジェクトルートに `jskim.config.js` が必要
-
+- `create-jskim` package と `npm create jskim@latest` コマンドは維持します
 ヘルプ / バージョン:
 
 ```bash

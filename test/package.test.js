@@ -164,12 +164,24 @@ describe('package pack and consumer', { timeout: 180000 }, () => {
     configText = configText.replace(/port:\s*\d+/, `port: ${consumerPort}`);
     await fsp.writeFile(configPath, configText, 'utf8');
 
+    assert.equal(meta.name, PKG.name, 'pack metadata の name が scoped engine であるべき');
+
     await runNpm(consumerRoot, ['install', tarballPath]);
 
-    const pkgDir = path.join(consumerRoot, 'node_modules', PKG.name);
+    const pkgDir = path.join(consumerRoot, 'node_modules', ...PKG.name.split('/'));
     assert.ok(fs.existsSync(pkgDir), `${PKG.name} がインストールされるべき`);
     installedBin = path.join(pkgDir, 'bin/jskim.js');
     assert.ok(fs.existsSync(installedBin), 'インストール先 bin が存在するべき');
+
+    const installedPkg = JSON.parse(
+      await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8')
+    );
+    assert.equal(installedPkg.name, PKG.name);
+    assert.equal(installedPkg.publishConfig && installedPkg.publishConfig.access, 'public');
+    assert.equal(
+      installedPkg.publishConfig && installedPkg.publishConfig.registry,
+      'https://registry.npmjs.org'
+    );
   });
 
   after(async () => {
@@ -185,10 +197,10 @@ describe('package pack and consumer', { timeout: 180000 }, () => {
       await fse.remove(consumerRoot).catch(() => {});
     }
 
-    // リポジトリ直下に残った tgz を掃除
+    // リポジトリ直下に残った tgz を掃除（scoped pack 名含む）
     const leftovers = fs
       .readdirSync(REPO_ROOT)
-      .filter((name) => /^jskim-.*\.tgz$/i.test(name));
+      .filter((name) => /^(jskim|ywal123456-jskim)-.*\.tgz$/i.test(name));
     for (const name of leftovers) {
       // eslint-disable-next-line no-await-in-loop
       await fse.remove(path.join(REPO_ROOT, name)).catch(() => {});

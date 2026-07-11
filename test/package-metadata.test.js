@@ -19,13 +19,20 @@ const EXPECTED = {
   bugs: 'https://github.com/ywal123456-collab/jskim/issues',
   creatorHomepage:
     'https://github.com/ywal123456-collab/jskim/tree/main/create-jskim#readme',
+  engineName: '@ywal123456/jskim',
 };
 
 describe('package metadata', () => {
-  it('engine package は公開名 jskim である', () => {
-    assert.equal(ENGINE_PKG.name, 'jskim');
+  it('engine package は公開名 @ywal123456/jskim である', () => {
+    assert.equal(ENGINE_PKG.name, EXPECTED.engineName);
     assert.equal(Object.hasOwn(ENGINE_PKG, 'private'), false);
     assert.equal(ENGINE_PKG.bin && ENGINE_PKG.bin.jskim, 'bin/jskim.js');
+    assert.equal(ENGINE_PKG.version, '0.1.0');
+    assert.equal(ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.access, 'public');
+    assert.equal(
+      ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.registry,
+      'https://registry.npmjs.org'
+    );
     assert.ok(Array.isArray(ENGINE_PKG.files));
     assert.ok(ENGINE_PKG.files.includes('bin/'));
     assert.ok(ENGINE_PKG.files.includes('scripts/'));
@@ -39,7 +46,7 @@ describe('package metadata', () => {
       CREATE_PKG.bin && CREATE_PKG.bin['create-jskim'],
       'bin/create-jskim.js'
     );
-    assert.equal(CREATE_PKG.jskimEngine.packageName, 'jskim');
+    assert.equal(CREATE_PKG.jskimEngine.packageName, EXPECTED.engineName);
     assert.equal(CREATE_PKG.jskimEngine.version, '^0.1.0');
     assert.ok(CREATE_PKG.files.includes('LICENSE'));
   });
