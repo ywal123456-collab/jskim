@@ -27,7 +27,7 @@ describe('package metadata', () => {
     assert.equal(ENGINE_PKG.name, EXPECTED.engineName);
     assert.equal(Object.hasOwn(ENGINE_PKG, 'private'), false);
     assert.equal(ENGINE_PKG.bin && ENGINE_PKG.bin.jskim, 'bin/jskim.js');
-    assert.equal(ENGINE_PKG.version, '0.1.1');
+    assert.equal(ENGINE_PKG.version, '0.2.0');
     assert.equal(ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.access, 'public');
     assert.equal(
       ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.registry,
@@ -41,14 +41,14 @@ describe('package metadata', () => {
 
   it('creator package は公開名 create-jskim である', () => {
     assert.equal(CREATE_PKG.name, 'create-jskim');
-    assert.equal(CREATE_PKG.version, '0.1.1');
+    assert.equal(CREATE_PKG.version, '0.2.0');
     assert.equal(Object.hasOwn(CREATE_PKG, 'private'), false);
     assert.equal(
       CREATE_PKG.bin && CREATE_PKG.bin['create-jskim'],
       'bin/create-jskim.js'
     );
     assert.equal(CREATE_PKG.jskimEngine.packageName, EXPECTED.engineName);
-    assert.equal(CREATE_PKG.jskimEngine.version, '^0.1.0');
+    assert.equal(CREATE_PKG.jskimEngine.version, '^0.2.0');
     assert.ok(CREATE_PKG.files.includes('LICENSE'));
   });
 

@@ -1,8 +1,6 @@
 'use strict';
 
-const { loadConfig } = require('../lib/load-config');
-const { resolveProject } = require('../lib/resolve-project');
-const { createProjectWatcher } = require('../lib/create-project-watcher');
+const { createWatchRuntime } = require('../lib/create-watch-runtime');
 const { registerShutdown } = require('./register-shutdown');
 
 /**
@@ -18,32 +16,13 @@ async function runWatchCommand(options = {}) {
   const usageLine =
     options.usageLine || 'npm run watch -- <project-name>';
 
-  const { config } = loadConfig(workspaceRoot);
-  const project = resolveProject({
-    config,
+  const runtime = createWatchRuntime({
+    mode: 'watch',
     workspaceRoot,
     projectName: options.projectName,
     commandName: 'watch',
     usageLine,
   });
-
-  const projectWatcher = createProjectWatcher(project, {
-    runInitialBuild: true,
-    logChanges: true,
-  });
-
-  projectWatcher.on('ready', ({ displayPaths, debounceMs }) => {
-    console.log(`[JSKim] プロジェクトを監視しています: ${project.name}`);
-    console.log('パス:');
-    for (const display of displayPaths) {
-      console.log(`- ${display}`);
-    }
-    console.log('');
-    console.log(`Debounce: ${debounceMs}ms`);
-    console.log('終了するには Ctrl+C を押してください。');
-  });
-
-  await projectWatcher.start();
 
   let stopping = false;
 
@@ -54,7 +33,7 @@ async function runWatchCommand(options = {}) {
     stopping = true;
 
     try {
-      await projectWatcher.close();
+      await runtime.close();
     } catch {
       // 終了時エラーは無視
     }
@@ -64,6 +43,17 @@ async function runWatchCommand(options = {}) {
   }
 
   registerShutdown(shutdown);
+
+  try {
+    await runtime.start();
+  } catch (err) {
+    try {
+      await runtime.close();
+    } catch {
+      // ignore
+    }
+    throw err;
+  }
 }
 
 module.exports = {

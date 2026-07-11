@@ -185,8 +185,9 @@ projects: {
 
 注意:
 
-- この段階では `jskim.config.js` 自体は watch しません
-- 設定を変えた場合は watch コマンドを再起動してください
+- `watch` / `dev` 実行中は `jskim.config.js` 自体も監視します
+- 正常な設定変更は監視対象の再構成と全体ビルドに反映されます
+- 設定の読み込み / 検証エラー時は以前の正常な設定を継続します
 
 ## serve.host
 
@@ -295,7 +296,51 @@ projects: {
 
 `dev.host` / `dev.port` / `dev.debounce` は用意しません。
 
-設定変更後は実行中の watcher/server は自動再構成されないため、`dev` / `watch` / `serve` を再起動してください。
+## config hot reload
+
+`watch` と `dev` はワークスペースルートの `jskim.config.js` を監視します。
+
+### コマンド別
+
+| コマンド | 動作 |
+|----------|------|
+| `build` | 実行時に config を 1 回読み込む。監視しない |
+| `serve` | 実行時に config を 1 回読み込む。監視しない。変更後は process 再起動が必要 |
+| `watch` | config 変更を hot apply。`outputDir` 変更も可。以前の outputDir は自動削除しない |
+| `dev` | build / watch 関連設定を hot apply。一部 runtime 設定は再起動が必要 |
+
+### 正常な reload
+
+1. config 変更を検知
+2. fresh load（CommonJS require cache を `jskim.config.js` について削除）
+3. merge / project resolve / validation
+4. watcher 再構成
+5. 全体ビルド
+
+### エラー時
+
+| 状況 | 動作 |
+|------|------|
+| config load / resolve / validation エラー | 以前の正常な設定を維持。process は終了しない |
+| 新しい設定適用後の build エラー | 新しい設定 / watcher を維持。process は終了しない。修正後に再試行 |
+| config 一時削除（unlink） | 以前の設定を継続。再作成後に reload |
+
+### `dev` で再起動が必要な設定
+
+次の値が変わった candidate config は適用しません。
+
+- `outputDir`
+- `serve.host`
+- `serve.port`
+- `dev.liveReload`
+
+理由: server bind と serve root を安全に切り替えるには process 再起動が必要で、部分適用すると build output と serve root がずれるためです。
+
+### 制限
+
+- config hot reload は常に **全体ビルド** です（増分 build ではありません）
+- `jskim.config.js` が require した別 helper module だけの変更は自動反映しません。config を保存し直すか process を再起動してください
+- `node_modules` や JSKim package 自身の require cache は一括削除しません
 
 ## パス基準のまとめ
 

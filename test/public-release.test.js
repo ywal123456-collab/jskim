@@ -96,7 +96,7 @@ describe('public release audit', () => {
     const engine = require(path.join(REPO_ROOT, 'package.json'));
     const creator = require(path.join(REPO_ROOT, 'create-jskim/package.json'));
     assert.equal(engine.name, '@ywal123456/jskim');
-    assert.equal(engine.version, '0.1.1');
+    assert.equal(engine.version, '0.2.0');
     assert.equal(Object.hasOwn(engine, 'private'), false);
     assert.equal(engine.publishConfig && engine.publishConfig.access, 'public');
     assert.equal(
@@ -104,9 +104,9 @@ describe('public release audit', () => {
       'https://registry.npmjs.org'
     );
     assert.equal(creator.name, 'create-jskim');
-    assert.equal(creator.version, '0.1.1');
+    assert.equal(creator.version, '0.2.0');
     assert.equal(creator.jskimEngine.packageName, '@ywal123456/jskim');
-    assert.equal(creator.jskimEngine.version, '^0.1.0');
+    assert.equal(creator.jskimEngine.version, '^0.2.0');
     assert.match(engine.repository.url, /ywal123456-collab\/jskim\.git$/);
     assert.match(engine.homepage, /ywal123456-collab\/jskim/);
     assert.match(engine.bugs.url, /ywal123456-collab\/jskim\/issues$/);
@@ -194,6 +194,51 @@ describe('public release audit', () => {
     assert.match(rootReadme, /npm create jskim@latest/);
     assert.match(creatorReadme, /npm create jskim@latest/);
     assert.match(rootReadme, /公開済み/);
+  });
+
+  it('HTML import/migration を core roadmap に載せていない', () => {
+    const docs = [
+      'README.md',
+      'docs/configuration.md',
+      'docs/create-jskim.md',
+      'docs/publishing.md',
+      'create-jskim/README.md',
+      'AGENTS.md',
+      '.cursor/rules/jskim-development.mdc',
+    ];
+    // 直書きするとこのテスト自身が検出対象になるため分割する
+    const forbiddenRoadmap = [
+      `HTML ${'移行'}`,
+      `HTML${'インポート'}`,
+      `HTML ${'import'}`,
+      `HTML ${'migration'}`,
+    ];
+    const hits = [];
+    for (const rel of docs) {
+      const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+      for (const needle of forbiddenRoadmap) {
+        // 「責任範囲外」説明に含まれる否定表現は許可する
+        if (!text.includes(needle)) {
+          continue;
+        }
+        const idx = text.indexOf(needle);
+        const window = text.slice(Math.max(0, idx - 40), idx + needle.length + 40);
+        if (
+          window.includes('責任範囲外') ||
+          window.includes('追加しない') ||
+          window.includes('扱わない')
+        ) {
+          continue;
+        }
+        hits.push(`${rel}: ${needle}`);
+      }
+    }
+    assert.deepEqual(hits, [], `HTML import roadmap: ${hits.join(', ')}`);
+
+    const readme = fs.readFileSync(path.join(REPO_ROOT, 'README.md'), 'utf8');
+    assert.match(readme, /責任範囲外/);
+    const agents = fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /HTML import \/ migration/);
   });
 });
 

@@ -41,7 +41,12 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - ライブリロード用 script を `dist` に書き込まない。dev の HTML レスポンスだけに注入する
 - ビルド成功時だけ reload event を送信する
 - `outputDir` 外のファイルを絶対に提供しない
-- `jskim.config.js` 変更の hot reload はこの段階では行わない。watch / dev は再起動する
+- `jskim.config.js` 変更の hot reload は `watch` / `dev` で行う
+- `serve` / `build` は config を監視しない
+- HTML import / migration 機能を JSKim core へ追加しない
+- 既存 HTML の移行は利用者の責任範囲とする
+- 必要な場合は独立 package として別途検討する
+- core roadmap の未実装項目として扱わない
 - ブラウザ自動起動や HMR は要求された段階でのみ検討する
 
 ## package 名と binary 名

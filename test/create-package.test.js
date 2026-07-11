@@ -295,6 +295,19 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const after = await httpRequest({ port, path: '/' });
     assert.match(after.body.toString('utf8'), /CREATE_E2E_OK/);
 
+    // installed package での config hot reload smoke
+    configText = await fsp.readFile(configPath, 'utf8');
+    await fsp.writeFile(
+      configPath,
+      configText.replace(/debounce:\s*\d+/, 'debounce: 140'),
+      'utf8'
+    );
+    await waitForOutput(() => dev.output, '設定を再読み込みしました', {
+      timeoutMs: 15000,
+    });
+    const afterReload = await httpRequest({ port, path: '/' });
+    assert.equal(afterReload.status, 200);
+
     await dev.stop();
     assert.match(dev.output, /開発サーバーを停止しました/);
   });

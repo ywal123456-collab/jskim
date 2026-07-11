@@ -19,8 +19,9 @@ alwaysApply: true
 
 ## 範囲
 
-- 現在対応: config、Nunjucks render、asset copy、clean、`rootPath`、watch、serve、dev（SSE live reload）、`jskim` CLI package、`create-jskim` scaffold、Node 標準テスト
-- ユーザーが明示しない限り、npm publish、config hot reload、増分 build、HMR、HTML 移行、外部テスト framework、CI/CD、自動 npm install / git init を追加しない
+- 現在対応: config、Nunjucks render、asset copy、clean、`rootPath`、watch、serve、dev（SSE live reload）、`jskim.config.js` hot reload（watch/dev）、`jskim` CLI package、`create-jskim` scaffold、Node 標準テスト
+- ユーザーが明示しない限り、npm publish、増分 build、HMR、外部テスト framework、CI/CD、自動 npm install / git init を追加しない
+- HTML import / migration 機能を JSKim core へ追加しない。既存 HTML の移行は利用者の責任範囲。必要な場合は独立 package として別途検討し、core roadmap の未実装項目として扱わない
 
 ## Core / CLI 境界
 
@@ -44,7 +45,8 @@ alwaysApply: true
 - 共通 core を再利用し、CLI を `child_process` で組み合わせない
 - `dist` に live reload script を書き込まない。dev の HTML レスポンスだけに注入する
 - ビルド成功時だけ reload event を送る
-- config 変更時は watch / dev を再起動する
+- `watch` / `dev` は `jskim.config.js` を hot reload する。`outputDir` / `serve.host` / `serve.port` / `dev.liveReload` の変更は `dev` では process 再起動が必要
+- `build` / `serve` は config を監視しない
 
 ## パッケージ配布
 

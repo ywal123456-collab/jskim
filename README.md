@@ -25,12 +25,14 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 
 - ブラウザ自動起動
 - HMR / CSS だけのホット更新
-- HTML 移行
 - JSON データの自動読み込み
 - API / Mock API
-- config の hot reload
 - 増分ビルド
 - SPA fallback / proxy
+
+既存 HTML の自動 import / migration は JSKim core の責任範囲外です。
+既存 source の移行は利用者が project に合わせて行います。
+将来必要になった場合も、JSKim 本体ではなく独立した tool / package として検討します。
 
 ## パッケージの役割
 
@@ -170,8 +172,23 @@ jskim watch sample
 
 - 関連する変更はすべて **全体ビルド** です（増分 render / 単一 asset copy なし）。
 - `build.clean: true` のとき、再ビルドで outputDir を消して作り直すため、ソース削除も結果に反映されます。
-- `jskim.config.js` を変更した場合は **watch / dev を再起動** してください（config hot reload なし）。
+- `jskim.config.js` の変更は **watch / dev が検知** し、正常なら監視対象を更新して全体ビルドします。
+- 設定の読み込み / 検証に失敗しても process は終了せず、以前の正常な設定を継続します。
+- `serve` は config を監視しません。設定変更後は serve process の再起動が必要です。
 - 終了: `Ctrl+C`（SIGINT）または SIGTERM → `[JSKim] ウォッチを停止しました。`
+
+#### config hot reload（watch / dev）
+
+- 対象ファイル: ワークスペースルートの `jskim.config.js`
+- 正常な変更: watcher 再構成 → 全体ビルド
+- 不正な設定: 以前の正常な設定を維持し、修正後に自動で再試行
+- `watch` では `outputDir` 変更も適用できます（以前の outputDir は自動削除しません）
+- `dev` では次の変更は process 再起動が必要です:
+  - `outputDir`
+  - `serve.host`
+  - `serve.port`
+  - `dev.liveReload`
+- `dev` で対応できる設定変更が成功し、build も成功した場合だけ browser reload を 1 回送ります
 
 debounce の既定値は `watch.debounce: 150`（ms）で、プロジェクトごとに上書きできます。詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
 
@@ -237,7 +254,8 @@ http://127.0.0.1:3000/
 
 `dev.liveReload: false` にすると SSE endpoint と script 注入を無効化できます。
 
-設定を変えた場合は `dev` を再起動してください。
+`jskim.config.js` の build / watch 関連設定は hot reload されます。
+`outputDir` / `serve.host` / `serve.port` / `dev.liveReload` を変えた場合は `dev` を再起動してください。
 
 終了: `Ctrl+C` → `[JSKim] 開発サーバーを停止しました。`
 
