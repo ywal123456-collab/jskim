@@ -1,0 +1,53 @@
+{
+  "name": "jskim",
+  "version": "0.1.0",
+  "description": "Nunjucks-based static HTML build environment with watch, serve, and live reload",
+  "keywords": [
+    "nunjucks",
+    "static-html",
+    "static-site",
+    "build-tool",
+    "template-engine",
+    "live-reload",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Jeongsub Kim",
+    "email": "ywal123456@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ywal123456-collab/jskim.git"
+  },
+  "homepage": "https://github.com/ywal123456-collab/jskim#readme",
+  "bugs": {
+    "url": "https://github.com/ywal123456-collab/jskim/issues"
+  },
+  "bin": {
+    "jskim": "bin/jskim.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "docs/",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "watch": "node scripts/watch.js",
+    "serve": "node scripts/serve.js",
+    "dev": "node scripts/dev.js",
+    "test": "node --test --test-concurrency=1 test/**/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "fast-glob": "^3.3.3",
+    "fs-extra": "^11.3.0",
+    "nunjucks": "^3.2.4"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "create-jskim",
+  "version": "0.1.0",
+  "description": "Scaffold a new JSKim static HTML project",
+  "keywords": [
+    "jskim",
+    "nunjucks",
+    "static-html",
+    "scaffold",
+    "cli",
+    "create"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Jeongsub Kim",
+    "email": "ywal123456@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ywal123456-collab/jskim.git",
+    "directory": "create-jskim"
+  },
+  "homepage": "https://github.com/ywal123456-collab/jskim/tree/main/create-jskim#readme",
+  "bugs": {
+    "url": "https://github.com/ywal123456-collab/jskim/issues"
+  },
+  "bin": {
+    "create-jskim": "bin/create-jskim.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "template/",
+    "README.md",
+    "LICENSE"
+  ],
+  "jskimEngine": {
+    "packageName": "jskim",
+    "version": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

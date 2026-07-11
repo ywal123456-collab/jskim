@@ -1,0 +1,87 @@
+---
+description: JSKim 開発用 Cursor ルール
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# JSKim 開発ルール
+
+このリポジトリは、汎用 Nunjucks 静的 HTML ビルド環境 **JSKim** を開発します。
+
+`AGENTS.md` と `.cursor/` は **開発専用** であり、将来の npm パッケージ配布対象ではありません。
+
+## 言語ポリシー
+
+- コード識別子（ファイル名、変数名、関数名、設定 key、CLI、HTTP 識別子）は **英語**
+- 人が読む説明（コメント、ドキュメント、ログ、エラー、sample 画面、テスト名）は **日本語**
+- Cursor の完了報告は **韓国語**
+
+## 範囲
+
+- 現在対応: config、Nunjucks render、asset copy、clean、`rootPath`、watch、serve、dev（SSE live reload）、`jskim` CLI package、`create-jskim` scaffold、Node 標準テスト
+- ユーザーが明示しない限り、npm publish、config hot reload、増分 build、HMR、HTML 移行、外部テスト framework、CI/CD、自動 npm install / git init を追加しない
+
+## Core / CLI 境界
+
+- CLI entry（`bin/jskim.js` / `scripts/build.js` など）: argv、Usage、signal、exitCode、終了順序
+- command runner（`scripts/commands/`）: bin と既存 CLI が共有する実行ロジック
+- reusable core（`scripts/lib`）: build/watch/serve/live-reload 処理、close API、エラーの throw/reject
+- `scripts/lib` から `process.exit` / `process.exitCode` / SIGINT・SIGTERM 登録をしない
+- bin と既存 CLI は同じ command runner を使う。CLI を `child_process` で組み合わせない
+- 内部検証用 IPC `jskim:stop` は CLI のみ。公開機能として README に載せない
+
+## 設定が唯一の真実
+
+- 動作はすべて `jskim.config.js` から来る
+- npm パッケージとして実行する場合も `process.cwd()` をプロジェクトルートとして扱う
+- パッケージのインストール先をユーザーのプロジェクトルートとして扱わない
+- パスをハードコードしない
+- `/_jskim/live-reload` は dev live reload の予約パス。serve や liveReload=false では無効
+
+## build / watch / serve / dev
+
+- 共通 core を再利用し、CLI を `child_process` で組み合わせない
+- `dist` に live reload script を書き込まない。dev の HTML レスポンスだけに注入する
+- ビルド成功時だけ reload event を送る
+- config 変更時は watch / dev を再起動する
+
+## パッケージ配布
+
+- 配布対象は `package.json` の `files` で明示する
+- `AGENTS.md`、`.cursor`、`src`、`dist`、`test` はエンジンパッケージへ含めない
+- `create-jskim` は独立 package。engine の `files` に含めない
+
+## create-jskim
+
+- engine とは独立した package として管理し、root engine 構造を不要に移動しない
+- 生成プロジェクトには `src/sample` を標準で含める
+- 自動で `npm install` / `git init` を実行しない
+- 空ではない既存ディレクトリを上書きしない
+- `template/gitignore` を生成時に `.gitignore` へ変換する
+- root の `src/sample` を変更したら `create-jskim/template` も確認する
+- コメント・文書・CLI メッセージは日本語、識別子と command は英語
+- Cursor 完了報告は韓国語
+- 生成ユーザープロジェクトへ License を強制しない
+
+## 公開 metadata / License
+
+- `jskim` と `create-jskim` は MIT License で公開する
+- `LICENSE` の標準文面を省略または変更しない
+- Copyright 表記は `2026 Jeongsub Kim` とする
+- author email は `ywal123456@gmail.com`
+- repository は `https://github.com/ywal123456-collab/jskim`
+- 公開前に会社固有情報、顧客情報、secret、内部 URL を確認する
+- 検出した secret らしき値を完了報告へそのまま出力しない
+
+## テスト
+
+- 新機能・新しい CLI 機能には関連する回帰テストを追加する
+- 実際の `src/sample` / `dist/sample` をテスト中に変更しない。一時ワークスペースを使う
+- `node:test` / `node:assert` を優先し、Jest 等は追加しない
+- テスト終了後に child process / server / 一時ディレクトリを必ず整理する
+
+## スタック
+
+- CommonJS のみ。依存は最小限
+- ユーザー依頼なしに Git コマンドを実行しない

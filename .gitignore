@@ -1,0 +1,30 @@
+# 依存とビルド成果物
+node_modules/
+dist/
+
+# npm pack / 一時成果物
+*.tgz
+*.log
+coverage/
+.nyc_output/
+
+# 環境変数と認証（公開リポジトリに含めない）
+.env
+.env.*
+.npmrc
+
+# 鍵・証明書
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_rsa.pub
+
+# OS / エディタ一時ファイル
+.DS_Store
+Thumbs.db
+*.swp
+*~

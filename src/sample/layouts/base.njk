@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}JSKim{% endblock %}</title>
+  <meta name="description" content="{% block description %}Nunjucks ベースの静的 HTML ビルド環境{% endblock %}">
+  {% include "components/head.njk" %}
+</head>
+<body>
+  {% include "components/header.njk" %}
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+  {% include "components/footer.njk" %}
+</body>
+</html>

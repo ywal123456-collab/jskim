@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}JSKim Fixture{% endblock %}</title>
+  {% include "components/head.njk" %}
+</head>
+<body>
+  {% include "components/header.njk" %}
+  <main>{% block content %}{% endblock %}</main>
+  {% include "components/footer.njk" %}
+</body>
+</html>
