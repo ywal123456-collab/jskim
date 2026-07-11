@@ -1,18 +1,22 @@
 # 公開手順（publishing）
 
-この文書は **将来の実際の publish 手順** をまとめたものです。
+この文書は **maintainer 向けの release / publish 手順** です。
 開発リポジトリの通常作業では `npm publish` を実行しません。
 
-## 前提
+## 現在公開中
 
-- npm アカウントと認証（2FA ポリシーを含む）
-- 公開 package 名
-  - engine: `@ywal123456/jskim`（scoped・公開 MIT）
-  - creator: `create-jskim`（unscoped）
+```text
+engine: @ywal123456/jskim
+creator: create-jskim
+CLI binary: jskim / create-jskim
+license: MIT
+```
+
+初回公開（v0.1.0）は完了しています。以降の patch / minor release でも、同じ手順で engine を先に、creator を後に公開します。
 
 ### 過去の失敗（参考）
 
-unscoped 名 `jskim@0.1.0` の初回 publish は、npm の package name similarity ポリシーにより **E403** で拒否されました。registry には反映されていません。現在の engine 公開名は `@ywal123456/jskim` です。
+unscoped 名での初回 engine publish は、npm の package name similarity ポリシーにより拒否されました。現在の engine 公開名は `@ywal123456/jskim` です。
 
 ### 確定済み metadata
 
@@ -38,15 +42,7 @@ Root `package.json` の `publishConfig`:
 }
 ```
 
-`publishConfig` があっても、scoped engine の初回 publish では手動コマンドの `--access public` を省略しないでください。
-
-### 残りの運用判断
-
-```text
-- 実際の npm publish 時点
-- npm アカウントのログイン状態
-- npm 2FA 状態
-```
+scoped engine の publish では手動コマンドの `--access public` を省略しないでください。
 
 ## 認証とセキュリティ
 
@@ -55,51 +51,41 @@ Root `package.json` の `publishConfig`:
 - token をソースコードや文書に記録しないでください
 - `.npmrc` の認証情報を repository に含めないでください
 - publish 直前に `npm whoami` でログイン状態を確認してください
-- 公開前に会社固有情報・secret・内部 URL が残っていないことを確認してください
+- 公開作業の前に会社固有情報・secret・内部 URL が残っていないことを確認してください
 
-## 推奨順序
+## 推奨順序（patch / minor）
 
 Engine を先に publish します。生成プロジェクトの `package.json` が `@ywal123456/jskim` を参照するため、creator だけ先に公開すると生成直後の `npm install` が失敗し得ます。
 
-1. npm account と認証状態を確認する
-2. package 名を再確認する（`@ywal123456/jskim` / `create-jskim`）
-3. リポジトリ root で `npm test` を実行する
-4. engine の `npm pack` / `npm publish --dry-run --access public` を確認する
-5. creator の `npm pack` / `npm publish --dry-run` を確認する
-6. **engine を先に publish** する（`--access public` 必須）
+1. version を決定する
+2. リポジトリ root で `npm test` を実行する
+3. engine / creator の `npm pack` を確認する
+4. `npm publish --dry-run` を確認する
+5. Git commit / push する
+6. **engine を先に publish** する（`--access public`）
 7. registry から engine をインストールできることを確認する
 8. creator を publish する
 9. `npm create jskim@latest` を検証する
+10. Git tag と GitHub Release を作成する
 
-## コマンド例（ユーザーが実行）
+同じ name / version を再 publish できると仮定しないでください。
 
-リポジトリ root（PowerShell）:
+## コマンド例（PowerShell）
+
+Engine（リポジトリ root）:
 
 ```powershell
 npm.cmd whoami --registry=https://registry.npmjs.org
-npm.cmd view @ywal123456/jskim name version --registry=https://registry.npmjs.org
-npm.cmd view create-jskim name version --registry=https://registry.npmjs.org
 npm.cmd test
 npm.cmd publish --dry-run --access public --registry=https://registry.npmjs.org
 npm.cmd publish --access public --registry=https://registry.npmjs.org
 ```
 
-期待する成功出力:
-
-```text
-+ @ywal123456/jskim@0.1.0
-```
-
-Registry 確認:
+Registry / インストール確認:
 
 ```powershell
-npm.cmd view @ywal123456/jskim@0.1.0 name version license bin repository --registry=https://registry.npmjs.org
-```
-
-外部インストール:
-
-```powershell
-npm.cmd install --save-dev @ywal123456/jskim@0.1.0 --registry=https://registry.npmjs.org
+npm.cmd view @ywal123456/jskim name version dist-tags --registry=https://registry.npmjs.org
+npm.cmd install --save-dev @ywal123456/jskim --registry=https://registry.npmjs.org
 ```
 
 Creator:
@@ -110,25 +96,19 @@ npm.cmd publish --dry-run --registry=https://registry.npmjs.org
 npm.cmd publish --registry=https://registry.npmjs.org
 ```
 
-期待する成功出力:
-
-```text
-+ create-jskim@0.1.0
-```
-
 最終ユーザー検証:
 
 ```powershell
 npm.cmd create jskim@latest generated-project
-npx create-jskim my-project
 ```
 
 ## 注意
 
-- unscoped engine 向けの `npm publish`（`--access public` なし・旧 package 名）は使わないでください
-- lifecycle script（`prepublishOnly` など）は、creator を別 cwd から publish する構成との相性を考えて必須化していません
+- unscoped engine 向けの旧 package 名では publish しません
+- lifecycle script（`prepublishOnly` など）は必須化していません
 - publish 前チェックリストとして **手動の `npm test`** を必須とします
 - token 生成・login・owner / dist-tag 変更は運用者が責任を持って行います
 - 生成プロジェクトへ License を強制しません（ユーザー側で決定）
 - creator は unscoped public package のため、creator `package.json` に `access: public` は追加していません
-- dry-run 成功は、creator の similarity 審査通過を保証しません
+- 文書のみの修正でも npm package README を更新する場合は patch version を使います
+- 既存の公開 tag（例: `v0.1.0`）を移動または再作成しません

@@ -51,9 +51,15 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - `create-jskim` package 名は変更しない
 - `npm create jskim@latest` の利用形態を維持する
 - 生成 project の `devDependencies` には `@ywal123456/jskim` を設定する
-- scoped engine の初回 publish では `--access public` を指定する
+- `@ywal123456/jskim` と `create-jskim` は npm registry で公開済みである
+- README と docs で未公開または公開予定と表現しない
+- engine package 名と CLI binary 名を区別する
+- release 時は engine を creator より先に公開する
+- 同じ name / version を再 publish できると仮定しない
+- 文書のみの修正でも npm package README を更新する場合は patch version を使用する
+- `v0.1.0` tag を移動または再作成しない
+- scoped engine の publish では `--access public` を指定する
 - root package の `publishConfig` は public npm registry と public access を指定する
-- package 名と binary 名を混同しない
 
 ## create-jskim
 

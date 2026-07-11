@@ -54,7 +54,13 @@ alwaysApply: true
 - engine package 名は `@ywal123456/jskim`。CLI binary 名は `jskim` のまま
 - `create-jskim` package 名と `npm create jskim@latest` は変更しない
 - 生成 project の `devDependencies` には `@ywal123456/jskim` を設定する
-- scoped engine の初回 publish では `--access public` を指定する
+- `@ywal123456/jskim` と `create-jskim` は npm registry で公開済み
+- README と docs で未公開または公開予定と表現しない
+- release 時は engine を creator より先に公開する
+- 同じ name / version を再 publish できると仮定しない
+- 文書のみの修正でも npm package README を更新する場合は patch version を使用する
+- `v0.1.0` tag を移動または再作成しない
+- scoped engine の publish では `--access public` を指定する
 - root `publishConfig` は public access と `https://registry.npmjs.org` を指定する
 - package 名と binary 名を混同しない
 

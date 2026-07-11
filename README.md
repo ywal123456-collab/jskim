@@ -28,7 +28,6 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 - HTML 移行
 - JSON データの自動読み込み
 - API / Mock API
-- 実際の npm registry publish（手順は準備済み）
 - config の hot reload
 - 増分ビルド
 - SPA fallback / proxy
@@ -43,28 +42,38 @@ Nunjucks ソースを設定に従って静的 HTML にレンダリングし、as
 
 製品名は **JSKim**、CLI binary は **`jskim`**、npm engine package は **`@ywal123456/jskim`** です。package 名と binary 名を混同しないでください。
 
-Package 名・CLI 構造は公開名に合わせてあります。**このリポジトリ作業では registry への publish は行っていません**。registry からのインストールは publish 後に可能です。scoped engine は公開 MIT package として配布する予定です。
+`@ywal123456/jskim` と `create-jskim` は npm registry で公開済みの MIT package です。
 
 詳細:
 
 - [docs/create-jskim.md](docs/create-jskim.md)
-- [docs/publishing.md](docs/publishing.md)
+- [docs/publishing.md](docs/publishing.md)（maintainer 向け release 手順）
 
-## パッケージとしての利用
-
-公開後のインストール例:
+## インストール
 
 ```bash
 npm install --save-dev @ywal123456/jskim
 ```
 
-```bash
-jskim build sample
-jskim watch sample
-jskim serve sample
-jskim dev sample
+## 新規 project の作成
 
-npx jskim build sample
+```bash
+npm create jskim@latest
+```
+
+代替:
+
+```bash
+npx create-jskim my-project
+```
+
+## CLI
+
+```bash
+jskim build <project>
+jskim watch <project>
+jskim serve <project>
+jskim dev <project>
 ```
 
 `package.json` の scripts 例:
@@ -83,11 +92,11 @@ npx jskim build sample
 要点:
 
 - npm package 名は `@ywal123456/jskim`（scoped）
-- インストール後の CLI binary 名は `jskim`（変更なし）
+- インストール後の CLI binary 名は `jskim`
 - コマンドは実行したディレクトリの `process.cwd()` をプロジェクトルートとして扱う
 - パッケージのインストール先（`node_modules/@ywal123456/jskim`）を作業空間とはみなさない
 - プロジェクトルートに `jskim.config.js` が必要
-- `create-jskim` package と `npm create jskim@latest` コマンドは維持します
+
 ヘルプ / バージョン:
 
 ```bash
@@ -97,18 +106,13 @@ jskim --version
 
 ## プロジェクト生成（create-jskim）
 
-公開後の例:
-
 ```bash
 npm create jskim@latest
 # または
 npx create-jskim my-project
 ```
 
-ローカル / 開発時:
-
 ```bash
-create-jskim my-project
 cd my-project
 npm install
 npm run dev
@@ -116,7 +120,6 @@ npm run dev
 
 - 自動で `npm install` / `git init` は実行しません
 - 空ではない既存ディレクトリは上書きしません
-- 実際の registry インストールは publish 後に利用できます
 
 ## このリポジトリでの開発コマンド
 

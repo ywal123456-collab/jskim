@@ -96,6 +96,7 @@ describe('public release audit', () => {
     const engine = require(path.join(REPO_ROOT, 'package.json'));
     const creator = require(path.join(REPO_ROOT, 'create-jskim/package.json'));
     assert.equal(engine.name, '@ywal123456/jskim');
+    assert.equal(engine.version, '0.1.1');
     assert.equal(Object.hasOwn(engine, 'private'), false);
     assert.equal(engine.publishConfig && engine.publishConfig.access, 'public');
     assert.equal(
@@ -103,6 +104,7 @@ describe('public release audit', () => {
       'https://registry.npmjs.org'
     );
     assert.equal(creator.name, 'create-jskim');
+    assert.equal(creator.version, '0.1.1');
     assert.equal(creator.jskimEngine.packageName, '@ywal123456/jskim');
     assert.equal(creator.jskimEngine.version, '^0.1.0');
     assert.match(engine.repository.url, /ywal123456-collab\/jskim\.git$/);
@@ -127,7 +129,9 @@ describe('public release audit', () => {
       'README.md',
       'docs/publishing.md',
       'docs/create-jskim.md',
+      'docs/configuration.md',
       'create-jskim/README.md',
+      'create-jskim/template/README.md',
     ];
     const forbidden = [
       'npm install --save-dev jskim',
@@ -145,6 +149,51 @@ describe('public release audit', () => {
       }
     }
     assert.deepEqual(hits, [], `旧 unscoped 命令: ${hits.join(', ')}`);
+  });
+
+  it('ユーザー向け文書に未公開案内が残っていない', () => {
+    const docs = [
+      'README.md',
+      'docs/publishing.md',
+      'docs/create-jskim.md',
+      'docs/configuration.md',
+      'create-jskim/README.md',
+      'create-jskim/template/README.md',
+    ];
+    // 直書きするとこのテスト自身が検出対象になるため分割する
+    const forbidden = [
+      `publish ${'は行っていません'}`,
+      `配布する${'予定'}`,
+      `実際の npm registry publish${'（手順は準備済み）'}`,
+      `registry への実際の publish は${'別手順'}`,
+      `将来の実際の ${'publish'}`,
+      `registryへ公開して${'いません'}`,
+      `local tarball${'のみ'}`,
+      `jskim${'-'}local`,
+      `create-jskim${'-'}local`,
+    ];
+    const hits = [];
+    for (const rel of docs) {
+      const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+      for (const needle of forbidden) {
+        if (text.includes(needle)) {
+          hits.push(`${rel}: ${needle}`);
+        }
+      }
+    }
+    assert.deepEqual(hits, [], `未公開案内: ${hits.join(', ')}`);
+  });
+
+  it('ユーザー向け文書に公開インストール案内がある', () => {
+    const rootReadme = fs.readFileSync(path.join(REPO_ROOT, 'README.md'), 'utf8');
+    const creatorReadme = fs.readFileSync(
+      path.join(REPO_ROOT, 'create-jskim/README.md'),
+      'utf8'
+    );
+    assert.match(rootReadme, /npm install --save-dev @ywal123456\/jskim/);
+    assert.match(rootReadme, /npm create jskim@latest/);
+    assert.match(creatorReadme, /npm create jskim@latest/);
+    assert.match(rootReadme, /公開済み/);
   });
 });
 
