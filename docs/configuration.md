@@ -293,7 +293,23 @@ files mode では出力パスの衝突を検出します。たとえば同じ `f
 | `serve.host` | 空でない `string` | `'127.0.0.1'` |
 | `serve.port` | `1` 以上 `65535` 以下の整数 | `3000` |
 
-`serve` は自動ビルドしません。`outputDir` が無い場合は先に `npm run build -- <name>` を実行してください。
+`serve` は自動ビルドしません。`outputDir` が無い場合は先に `jskim build <name>` を実行してください。
+
+CLI の `--host` / `--port` は config より優先されます。`dev` では config hot reload 後も CLI override を再適用します。
+
+## build --all
+
+`jskim build --all` は `Object.keys(config.projects)` の定義順に全 project を順次 build します。
+
+- config は 1 回だけ load する
+- project ごとの resolve / build 失敗があっても、可能な限り次の project を続ける
+- 1 件でも失敗すれば最終 exit code は 1
+- 同一または入れ子の `outputDir` は、どの build も始める前にエラーで中断する
+- `jskim build all` は名前が `all` の project 1 件を build する（`--all` とは別）
+
+## project 名の省略
+
+設定内の project がちょうど 1 件のとき、`build` / `watch` / `serve` / `dev` で project 名を省略できます。0 件または 2 件以上では明示指定が必要です（`build --all` を除く）。
 
 ## dev.liveReload
 
@@ -335,12 +351,14 @@ files mode では出力パスの衝突を検出します。たとえば同じ `f
 | `watch` | config 変更を hot apply。`outputDir` 変更も可。以前の outputDir は自動削除しない |
 | `dev` | build / watch 関連設定を hot apply。一部 runtime 設定は再起動が必要 |
 
-`dev` では次の値が変わった candidate config は適用しません。
+`dev` では次の **effective** 値が変わった candidate config は適用しません。
 
 - `outputDir`
 - `serve.host`
 - `serve.port`
 - `dev.liveReload`
+
+CLI の `--host` / `--port` がある場合は、上書き適用後の値で比較します。そのため CLI で port を固定しているあいだに config の `serve.port` だけが変わっても、effective が同じなら再起動警告は出ません。
 
 理由: server bind と serve root を安全に切り替えるには process 再起動が必要で、部分適用すると build output と serve root がずれるためです。
 

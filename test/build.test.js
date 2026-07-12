@@ -69,8 +69,21 @@ describe('build', () => {
     assert.match(nestedHtml, /<p id="root-path">\.\.\/<\/p>/);
   });
 
-  it('プロジェクト名が無い場合は日本語エラーで終了する', async () => {
-    const ws = await createTestWorkspace();
+  it('プロジェクト名が無く、projectが複数ある場合は日本語エラーで終了する', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        projects: {
+          sample: {
+            sourceDir: 'src/sample',
+            outputDir: 'dist/sample',
+          },
+          other: {
+            sourceDir: 'src/sample',
+            outputDir: 'dist/other',
+          },
+        },
+      },
+    });
     workspaces.push(ws);
 
     const cli = runCli({
@@ -81,8 +94,9 @@ describe('build', () => {
     const result = await cli.waitForExit();
 
     assert.equal(result.code, 1);
-    assert.match(result.output, /プロジェクト名を指定してください/);
-    assert.match(result.output, /npm run build -- <project-name>/);
+    assert.match(result.output, /projectを指定してください/);
+    assert.match(result.output, /- sample/);
+    assert.match(result.output, /- other/);
   });
 
   it('不明なプロジェクト名では利用可能な一覧を表示する', async () => {

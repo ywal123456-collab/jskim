@@ -17,12 +17,13 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - 成功した再ビルド後のライブリロード（SSE）
 - 再ビルド失敗時の browser error overlay（`dev` + `liveReload`）
 - 安全な CSS 変更時の stylesheet soft reload（`dev` + `liveReload`）
+- CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
 
 ## 現在の非対応範囲
 
-- ブラウザ自動起動
+- ブラウザ選択 option / `serve --open`
 - HMR / JavaScript module hot replacement
 - JSON / YAML などの外部データファイル自動読み込み
 - API / Mock API
@@ -73,10 +74,11 @@ npx create-jskim my-project
 ## CLI
 
 ```bash
-jskim build <project>
-jskim watch <project>
-jskim serve <project>
-jskim dev <project>
+jskim build [<project>]
+jskim build --all
+jskim watch [<project>]
+jskim serve [<project>] [--host <host>] [--port <port>]
+jskim dev [<project>] [--host <host>] [--port <port>] [--open]
 ```
 
 `package.json` の scripts 例:
@@ -97,6 +99,11 @@ jskim dev <project>
 - コマンドは実行したディレクトリの `process.cwd()` をプロジェクトルートとして扱う
 - パッケージのインストール先（`node_modules/@ywal123456/jskim`）を作業空間とはみなさない
 - プロジェクトルートに `jskim.config.js` が必要
+- 設定内の project が 1 件だけのとき、project 名を省略できる
+- `build --all` は定義順に全 project を順次 build する。1 件でも失敗すれば exit code 1
+- `--host` / `--port` は serve / dev の CLI 上書き（config より優先）。`dev` の config hot reload 中も維持される
+- `dev --open` は listen 成功後に browser を 1 回開く。失敗しても warning のみで dev は継続する
+- option は project の前でも後ろでもよい（例: `jskim dev --port 4000 sample`）
 
 ヘルプ / バージョン:
 
@@ -208,7 +215,7 @@ jskim watch sample
 - legacy mode: `sourceDir` + `render[].from`、`sourceDir` + `templates[]`、`sourceDir` + `copy[].from`
 - `dist/`、`node_modules/`、`outputDir` は監視しません
 
-`watch` / `dev` は `jskim.config.js` の変更を検知し、正常なら監視対象を更新して全体ビルドします。`dev` で `outputDir` / `serve.host` / `serve.port` / `dev.liveReload` を変えた場合は process 再起動が必要です。
+`watch` / `dev` は `jskim.config.js` の変更を検知し、正常なら監視対象を更新して全体ビルドします。`dev` で effective な `outputDir` / `serve.host` / `serve.port` / `dev.liveReload` を変えた場合は process 再起動が必要です。CLI の `--host` / `--port` がある場合は、その上書き後の値で再起動要否を判定します。
 
 ## serve / dev
 
@@ -242,7 +249,9 @@ http://127.0.0.1:3000/
 - CSS ファイルだけが安全に変更された再ビルドでは、ページ全体ではなく stylesheet を更新します
 - CSS 以外の変更や判定が不確実な場合は、従来どおりページ全体 reload します
 - `dev` でも `dist` ファイルへ runtime は書き込みません
-- ブラウザ自動起動はサポートしません
+- `jskim serve|dev ... --host` / `--port` で待受を上書きできる（config より優先）
+- ポート衝突時は `--port` の例と `serve.port` 変更を案内する（自動で別 port は選ばない）
+- `jskim dev ... --open` で listen 成功後に browser を 1 回開く（失敗は warning、dev は継続）
 - 厳格な Content Security Policy で inline script または inline style が禁止されている場合、dev の live reload・error overlay・CSS soft reload が動作しないことがあります
 
 `/_jskim/live-reload` は `dev.liveReload: true` のときだけ使う内部予約パスです。実際の静的ファイルパスとしては使わないことを推奨します。

@@ -34,10 +34,12 @@ describe('cli binary', () => {
 
     assert.equal(result.code, 0);
     assert.match(result.output, /使用方法:/);
-    assert.match(result.output, /build <project>/);
-    assert.match(result.output, /watch <project>/);
-    assert.match(result.output, /serve <project>/);
-    assert.match(result.output, /dev <project>/);
+    assert.match(result.output, /build \[<project>\]/);
+    assert.match(result.output, /build --all/);
+    assert.match(result.output, /watch \[<project>\]/);
+    assert.match(result.output, /serve \[<project>\]/);
+    assert.match(result.output, /dev \[<project>\]/);
+    assert.match(result.output, /projectを省略できるのは/);
   });
 
   it('-h でもヘルプを表示する', async () => {
@@ -84,7 +86,7 @@ describe('cli binary', () => {
 
     assert.equal(result.code, 0);
     assert.match(result.output, /使用方法:/);
-    assert.match(result.output, /build <project>/);
+    assert.match(result.output, /build \[<project>\]/);
   });
 
   it('不明なコマンドは日本語エラーで exit 1', async () => {
@@ -100,8 +102,37 @@ describe('cli binary', () => {
     assert.match(result.output, /使用できるコマンド:/);
   });
 
-  it('build でプロジェクト名が無い場合は jskim Usage を出す', async () => {
+  it('projectが1件のとき build は名前省略で成功する', async () => {
     const ws = await createTestWorkspace();
+    workspaces.push(ws);
+
+    const cli = runCli({
+      scriptPath: BIN,
+      cwd: ws.workspaceRoot,
+      args: ['build'],
+      timeoutMs: 20000,
+    });
+    const result = await cli.waitForExit();
+
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /ビルドが完了しました/);
+  });
+
+  it('projectが2件以上のとき build は名前省略でエラーになる', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        projects: {
+          sample: {
+            sourceDir: 'src/sample',
+            outputDir: 'dist/sample',
+          },
+          docs: {
+            sourceDir: 'src/sample',
+            outputDir: 'dist/docs',
+          },
+        },
+      },
+    });
     workspaces.push(ws);
 
     const cli = runCli({
@@ -112,8 +143,9 @@ describe('cli binary', () => {
     const result = await cli.waitForExit();
 
     assert.equal(result.code, 1);
-    assert.match(result.output, /プロジェクト名を指定してください/);
-    assert.match(result.output, /使用方法: jskim build <project>/);
+    assert.match(result.output, /projectを指定してください/);
+    assert.match(result.output, /- sample/);
+    assert.match(result.output, /- docs/);
   });
 
   it('一時ワークスペースで build sample が成功する', async () => {

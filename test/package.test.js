@@ -215,7 +215,7 @@ describe('package pack and consumer', { timeout: 180000 }, () => {
     });
     const helpResult = await help.waitForExit();
     assert.equal(helpResult.code, 0);
-    assert.match(helpResult.output, /build <project>/);
+    assert.match(helpResult.output, /build \[<project>\]/);
 
     const version = runCli({
       scriptPath: installedBin,

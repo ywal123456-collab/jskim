@@ -5,11 +5,17 @@ const path = require('node:path');
 const chokidar = require('chokidar');
 const { loadConfig, CONFIG_FILENAME } = require('./load-config');
 const { resolveProject } = require('./resolve-project');
+const { selectProjectName } = require('./select-project-name');
+const { applyServeCliOverrides } = require('./apply-serve-cli-overrides');
 const { createProjectWatcher } = require('./create-project-watcher');
 const { createStaticServer } = require('./create-static-server');
 const { createLiveReload } = require('./create-live-reload');
 const { formatListenError } = require('../commands/serve-errors');
 const { classifyReload } = require('./classify-reload');
+const {
+  buildBrowserOpenUrl,
+  openBrowser: defaultOpenBrowser,
+} = require('./open-browser');
 
 const DEV_RESTART_KEYS = [
   'outputDir',
@@ -28,16 +34,24 @@ const DEV_RESTART_KEYS = [
  * @param {string|undefined} options.projectName
  * @param {string} [options.commandName]
  * @param {string} [options.usageLine]
+ * @param {{ host?: string, port?: string|number, open?: boolean }} [options.cliOverrides]
  * @returns {{ start: Function, close: Function }}
  */
 function createWatchRuntime(options) {
   const mode = options.mode;
   const workspaceRoot = options.workspaceRoot || process.cwd();
-  const projectName = options.projectName;
   const commandName = options.commandName || mode;
   const usageLine =
-    options.usageLine || `npm run ${commandName} -- <project-name>`;
+    options.usageLine || `jskim ${commandName} [<project>]`;
+  const openBrowserFn = options.openBrowserFn || defaultOpenBrowser;
+  const cliOverrides = {
+    host: options.cliOverrides && options.cliOverrides.host,
+    port: options.cliOverrides && options.cliOverrides.port,
+    open: Boolean(options.cliOverrides && options.cliOverrides.open),
+  };
 
+  /** @type {string|undefined} */
+  let selectedProjectName = options.projectName;
   let currentProject = null;
   let configPath = null;
   let projectWatcher = null;
@@ -45,6 +59,7 @@ function createWatchRuntime(options) {
   let liveReload = null;
   let staticServer = null;
   let liveReloadEnabled = false;
+  let browserOpened = false;
 
   let stopping = false;
   let started = false;
@@ -53,15 +68,31 @@ function createWatchRuntime(options) {
   let pendingConfigReload = false;
   let sourceBuilding = false;
 
+  function withCliOverrides(project) {
+    return applyServeCliOverrides(project, {
+      host: cliOverrides.host,
+      port: cliOverrides.port,
+    });
+  }
+
   function resolveCurrentProject() {
     const loaded = loadConfig(workspaceRoot);
-    const project = resolveProject({
+    const name = selectProjectName({
       config: loaded.config,
-      workspaceRoot,
-      projectName,
+      projectName: selectedProjectName,
       commandName,
       usageLine,
     });
+    selectedProjectName = name;
+    const project = withCliOverrides(
+      resolveProject({
+        config: loaded.config,
+        workspaceRoot,
+        projectName: name,
+        commandName,
+        usageLine,
+      })
+    );
     return {
       project,
       configPath: loaded.configPath,
@@ -118,6 +149,7 @@ function createWatchRuntime(options) {
     const host = project.serve.host.trim();
     const port = project.serve.port;
     const outputDisplay = toDisplayPath(project.outputDir, workspaceRoot);
+    const browserUrl = buildBrowserOpenUrl({ host, port });
 
     liveReload = createLiveReload({
       projectName: project.name,
@@ -154,6 +186,7 @@ function createWatchRuntime(options) {
         host,
         port,
         kind: '開発',
+        commandName: 'dev',
       });
       await cleanupDevComponents();
       throw formatted;
@@ -165,11 +198,30 @@ function createWatchRuntime(options) {
       console.log('[JSKim] 開発サーバーを起動しました。');
       console.log(`プロジェクト: ${project.name}`);
       console.log(`ルート: ${outputDisplay}`);
-      console.log(`URL: ${staticServer.url}`);
+      console.log(`URL: ${browserUrl}`);
       console.log(
         `ライブリロード: ${liveReloadEnabled ? '有効' : '無効'}`
       );
       console.log('終了するには Ctrl+C を押してください。');
+      maybeOpenBrowser(browserUrl);
+    }
+  }
+
+  function maybeOpenBrowser(url) {
+    if (!cliOverrides.open || browserOpened || stopping) {
+      return;
+    }
+    browserOpened = true;
+    const result = openBrowserFn(url);
+    if (!result.ok) {
+      const message =
+        result.error && result.error.message
+          ? result.error.message
+          : String(result.error || 'unknown');
+      console.warn(
+        `[JSKim] browserを開けませんでした。手動で次のURLを開いてください: ${url}\n` +
+          `原因: ${message}`
+      );
     }
   }
 
@@ -314,13 +366,22 @@ function createWatchRuntime(options) {
     let candidate;
     try {
       const loaded = loadConfig(workspaceRoot);
-      candidate = resolveProject({
+      const name = selectProjectName({
         config: loaded.config,
-        workspaceRoot,
-        projectName,
+        projectName: selectedProjectName,
         commandName,
         usageLine,
       });
+      selectedProjectName = name;
+      candidate = withCliOverrides(
+        resolveProject({
+          config: loaded.config,
+          workspaceRoot,
+          projectName: name,
+          commandName,
+          usageLine,
+        })
+      );
     } catch (err) {
       const message = err && err.message ? err.message : String(err);
       console.error('[JSKim] 設定ファイルの再読み込みに失敗しました。');

@@ -10,7 +10,7 @@ const fs = require('node:fs');
  */
 function assertOutputDirReady(project, options = {}) {
   const { name, outputDir, outputDirConfig } = project;
-  const buildHint = options.buildHint || `npm run build -- ${name}`;
+  const buildHint = options.buildHint || `jskim build ${name}`;
 
   if (!outputDir || String(outputDir).trim() === '') {
     throw new Error(
@@ -44,15 +44,32 @@ function assertOutputDirReady(project, options = {}) {
   }
 }
 
-function formatListenError(err, { projectName, host, port, kind = '静的' }) {
+/**
+ * @param {Error} err
+ * @param {object} options
+ * @param {string} options.projectName
+ * @param {string} options.host
+ * @param {number} options.port
+ * @param {string} [options.kind]
+ * @param {'serve'|'dev'|string} [options.commandName]
+ */
+function formatListenError(
+  err,
+  { projectName, host, port, kind = '静的', commandName }
+) {
   const code = err && err.code;
+  const command = commandName === 'dev' ? 'dev' : 'serve';
 
   if (code === 'EADDRINUSE') {
+    const examplePort = suggestAlternatePort(port);
     return new Error(
       `[JSKim] ポート ${port} はすでに使用されています。\n` +
         `プロジェクト: ${projectName}\n` +
-        `ホスト: ${host}\n\n` +
-        `jskim.config.js の serve.port を変更してください。`
+        `ホスト: ${host}\n` +
+        `ポート: ${port}\n\n` +
+        `別のportを指定する例:\n` +
+        `jskim ${command} ${projectName} --port ${examplePort}\n\n` +
+        `または jskim.config.js の serve.port を変更してください。`
     );
   }
 
@@ -76,7 +93,16 @@ function formatListenError(err, { projectName, host, port, kind = '静的' }) {
   );
 }
 
+function suggestAlternatePort(port) {
+  const n = Number(port);
+  if (Number.isInteger(n) && n >= 1 && n < 65535) {
+    return n + 1;
+  }
+  return 3001;
+}
+
 module.exports = {
   assertOutputDirReady,
   formatListenError,
+  suggestAlternatePort,
 };

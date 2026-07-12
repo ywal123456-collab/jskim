@@ -2,6 +2,8 @@
 
 const { loadConfig } = require('../lib/load-config');
 const { resolveProject } = require('../lib/resolve-project');
+const { selectProjectName } = require('../lib/select-project-name');
+const { applyServeCliOverrides } = require('../lib/apply-serve-cli-overrides');
 const { createStaticServer } = require('../lib/create-static-server');
 const { registerShutdown } = require('./register-shutdown');
 const { toDisplayPath } = require('./path-display');
@@ -14,24 +16,37 @@ const { assertOutputDirReady, formatListenError } = require('./serve-errors');
  * @param {string} [options.workspaceRoot]
  * @param {string} [options.usageLine]
  * @param {string} [options.buildHint]
+ * @param {string} [options.host]
+ * @param {string|number} [options.port]
  * @returns {Promise<void>}
  */
 async function runServeCommand(options = {}) {
   const workspaceRoot = options.workspaceRoot || process.cwd();
   const usageLine =
-    options.usageLine || 'npm run serve -- <project-name>';
+    options.usageLine || 'jskim serve [<project>] [--host <host>] [--port <port>]';
 
   const { config } = loadConfig(workspaceRoot);
-  const project = resolveProject({
+  const projectName = selectProjectName({
     config,
-    workspaceRoot,
     projectName: options.projectName,
     commandName: 'serve',
     usageLine,
   });
 
+  let project = resolveProject({
+    config,
+    workspaceRoot,
+    projectName,
+    commandName: 'serve',
+    usageLine,
+  });
+  project = applyServeCliOverrides(project, {
+    host: options.host,
+    port: options.port,
+  });
+
   const buildHint =
-    options.buildHint || `npm run build -- ${project.name}`;
+    options.buildHint || `jskim build ${project.name}`;
   assertOutputDirReady(project, { buildHint });
 
   const host = project.serve.host.trim();
@@ -53,6 +68,7 @@ async function runServeCommand(options = {}) {
       host,
       port,
       kind: '静的',
+      commandName: 'serve',
     });
   }
 

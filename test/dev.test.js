@@ -258,6 +258,7 @@ describe('dev', () => {
     const secondExit = await second.waitForExit();
     assert.equal(secondExit.code, 1);
     assert.match(secondExit.output, /すでに使用されています/);
+    assert.match(secondExit.output, /jskim dev sample --port/);
     assert.equal(first.child.exitCode, null);
 
     const stillOk = await httpRequest({ port, path: '/' });

@@ -9,12 +9,16 @@ const { registerShutdown } = require('./register-shutdown');
  * @param {string|undefined} options.projectName
  * @param {string} [options.workspaceRoot]
  * @param {string} [options.usageLine]
+ * @param {string} [options.host]
+ * @param {string|number} [options.port]
+ * @param {boolean} [options.open]
  * @returns {Promise<void>}
  */
 async function runDevCommand(options = {}) {
   const workspaceRoot = options.workspaceRoot || process.cwd();
   const usageLine =
-    options.usageLine || 'npm run dev -- <project-name>';
+    options.usageLine ||
+    'jskim dev [<project>] [--host <host>] [--port <port>] [--open]';
 
   const runtime = createWatchRuntime({
     mode: 'dev',
@@ -22,6 +26,11 @@ async function runDevCommand(options = {}) {
     projectName: options.projectName,
     commandName: 'dev',
     usageLine,
+    cliOverrides: {
+      host: options.host,
+      port: options.port,
+      open: Boolean(options.open),
+    },
   });
 
   let stopping = false;

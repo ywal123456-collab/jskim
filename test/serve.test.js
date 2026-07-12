@@ -147,7 +147,7 @@ describe('serve', () => {
     const result = await cli.waitForExit();
     assert.equal(result.code, 1);
     assert.match(result.output, /ビルド出力が見つかりません/);
-    assert.match(result.output, /npm run build -- sample/);
+    assert.match(result.output, /jskim build sample/);
   });
 
   it('不正な serve.port は設定エラーになる', async () => {
@@ -194,6 +194,10 @@ describe('serve', () => {
     const secondExit = await second.waitForExit();
     assert.equal(secondExit.code, 1);
     assert.match(secondExit.output, /すでに使用されています/);
+    assert.match(secondExit.output, /ホスト:/);
+    assert.match(secondExit.output, /ポート:/);
+    assert.match(secondExit.output, /jskim serve sample --port/);
+    assert.match(secondExit.output, /serve\.port/);
     assert.equal(first.child.exitCode, null);
 
     const stillOk = await httpRequest({ port, path: '/' });

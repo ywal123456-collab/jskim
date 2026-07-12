@@ -14,7 +14,7 @@ const { registerShutdown } = require('./register-shutdown');
 async function runWatchCommand(options = {}) {
   const workspaceRoot = options.workspaceRoot || process.cwd();
   const usageLine =
-    options.usageLine || 'npm run watch -- <project-name>';
+    options.usageLine || 'jskim watch [<project>]';
 
   const runtime = createWatchRuntime({
     mode: 'watch',
