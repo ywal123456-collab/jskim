@@ -1,0 +1,38 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "crud" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "商品管理", href: rootPath + "crud/index.html" },
+  { label: "処理完了" }
+] %}
+
+{% block title %}処理完了 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/crud.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>処理完了</h1>
+  <p class="lead">
+    画面遷移 sample の完了画面です。
+  </p>
+</section>
+
+<section class="complete-panel" aria-labelledby="complete-heading">
+  <h2 id="complete-heading">画面遷移が完了しました</h2>
+  <p>
+    この画面は静的 UI sample です。
+    実際の登録、更新、削除処理は行われていません。
+  </p>
+  <p>
+    入力内容の保存や API 通信も含まれていません。
+  </p>
+</section>
+
+<section class="page-nav" aria-label="完了後の移動">
+  <a class="button" href="index.html">商品一覧へ戻る</a>
+  <a class="button button--secondary" href="../index.html">Portal へ戻る</a>
+</section>
+{% endblock %}

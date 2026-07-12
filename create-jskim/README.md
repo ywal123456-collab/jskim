@@ -55,15 +55,17 @@ project/
    └─ sample/
       ├─ pages/
       │  ├─ index.html.njk
-      │  ├─ assets/
-      │  └─ request/
+      │  ├─ dashboard/
+      │  ├─ crud/
+      │  ├─ wizard/
+      │  └─ assets/
       ├─ layouts/base.njk
       └─ components/
 ```
 
 生成プロジェクトは `@ywal123456/jskim`（`^0.5.1`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
 
-標準 sample は files pipeline を使います。`pages` 配下の `.html.njk` / `.css.njk` / `.js.njk` はレンダリングされ、画像はそのままコピーされます。
+標準 sample は公式の静的 UI sample（Portal / Dashboard / CRUD / Wizard）です。application 処理は含みません。`pages` 配下の `.html.njk` はレンダリングされ、平文 CSS や画像はそのままコピーされます。
 
 ## 生成後の手順
 

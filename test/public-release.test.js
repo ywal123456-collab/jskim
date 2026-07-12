@@ -5,6 +5,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { REPO_ROOT } = require('./helpers/create-test-workspace');
+const {
+  isAllowedPublicEmail,
+  isReservedExampleEmail,
+} = require('./helpers/public-email-policy');
 
 const ALLOWED_EMAILS = new Set(['ywal123456@gmail.com']);
 const ALLOWED_HOST_SNIPPETS = [
@@ -84,12 +88,39 @@ describe('public release audit', () => {
     scanTextFiles((rel, text) => {
       const matches = text.match(pattern) || [];
       for (const email of matches) {
-        if (!ALLOWED_EMAILS.has(email.toLowerCase())) {
+        if (!isAllowedPublicEmail(email, ALLOWED_EMAILS)) {
           hits.push(`${rel}: ${mask(email)}`);
         }
       }
     });
     assert.deepEqual(hits, [], `非許可メール: ${hits.join(', ')}`);
+  });
+
+  it('予約 example domain の例示メールは許可し、それ以外は検出する', () => {
+    assert.equal(isReservedExampleEmail('taro@example.com'), true);
+    assert.equal(isReservedExampleEmail('user@example.org'), true);
+    assert.equal(isReservedExampleEmail('sample@example.net'), true);
+    assert.equal(isReservedExampleEmail('test@example.invalid'), true);
+
+    // 直書きするとこのテスト自身が検出対象になるため分割する
+    const blocked = [
+      `user@${'company'}.com`,
+      `developer@${'private'}.jp`,
+      `person@${'gmail'}.com`,
+    ];
+    for (const email of blocked) {
+      assert.equal(isReservedExampleEmail(email), false, email);
+      assert.equal(isAllowedPublicEmail(email, ALLOWED_EMAILS), false, email);
+    }
+
+    assert.equal(
+      isAllowedPublicEmail('taro@example.com', ALLOWED_EMAILS),
+      true
+    );
+    assert.equal(
+      isAllowedPublicEmail('ywal123456@gmail.com', ALLOWED_EMAILS),
+      true
+    );
   });
 
   it('公開 repository metadata と一致する', () => {

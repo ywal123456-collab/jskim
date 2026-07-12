@@ -1,0 +1,42 @@
+<ol class="wizard-steps" aria-label="申込手順">
+  <li
+    class="wizard-steps__item{% if currentStep == 1 %} is-current{% elif currentStep > 1 %} is-complete{% endif %}"
+    {% if currentStep == 1 %}aria-current="step"{% endif %}
+  >
+    <span class="wizard-steps__number">1</span>
+    <span class="wizard-steps__label">情報入力</span>
+    {% if currentStep > 1 %}
+      <span class="wizard-steps__state">完了</span>
+    {% elif currentStep == 1 %}
+      <span class="wizard-steps__state">現在</span>
+    {% else %}
+      <span class="wizard-steps__state">未実施</span>
+    {% endif %}
+  </li>
+  <li
+    class="wizard-steps__item{% if currentStep == 2 %} is-current{% elif currentStep > 2 %} is-complete{% endif %}"
+    {% if currentStep == 2 %}aria-current="step"{% endif %}
+  >
+    <span class="wizard-steps__number">2</span>
+    <span class="wizard-steps__label">入力内容確認</span>
+    {% if currentStep > 2 %}
+      <span class="wizard-steps__state">完了</span>
+    {% elif currentStep == 2 %}
+      <span class="wizard-steps__state">現在</span>
+    {% else %}
+      <span class="wizard-steps__state">未実施</span>
+    {% endif %}
+  </li>
+  <li
+    class="wizard-steps__item{% if currentStep == 3 %} is-current{% elif currentStep > 3 %} is-complete{% endif %}"
+    {% if currentStep == 3 %}aria-current="step"{% endif %}
+  >
+    <span class="wizard-steps__number">3</span>
+    <span class="wizard-steps__label">完了</span>
+    {% if currentStep == 3 %}
+      <span class="wizard-steps__state">現在</span>
+    {% else %}
+      <span class="wizard-steps__state">未実施</span>
+    {% endif %}
+  </li>
+</ol>

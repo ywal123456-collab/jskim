@@ -136,16 +136,18 @@ module.exports = {
 例:
 
 ```text
-src/sample/pages/index.html.njk        → dist/sample/index.html
-src/sample/pages/assets/css/style.css.njk → dist/sample/assets/css/style.css
-src/sample/pages/assets/image/logo.svg → dist/sample/assets/image/logo.svg
+src/sample/pages/index.html.njk                 → dist/sample/index.html
+src/sample/pages/dashboard/index.html.njk       → dist/sample/dashboard/index.html
+src/sample/pages/assets/css/common.css          → dist/sample/assets/css/common.css
+src/sample/pages/dashboard/assets/css/dashboard.css → dist/sample/dashboard/assets/css/dashboard.css
+src/sample/pages/assets/img/logo.svg            → dist/sample/assets/img/logo.svg
 ```
 
 推奨命名:
 
-- HTML は `index.html.njk`、`request/index.html.njk` のように最終拡張子を含める
+- HTML は `index.html.njk`、`dashboard/index.html.njk` のように最終拡張子を含める
 - CSS / JS を Nunjucks で処理する場合は `style.css.njk`、`main.js.njk` のように書く
-- 画像などテンプレート処理しないファイルは通常の拡張子のまま置く
+- 画像や平文 CSS などテンプレート処理しないファイルは通常の拡張子のまま置く
 
 `templates` に指定した `layouts` / `components` は loader の検索パスになり、直接出力されません。
 
@@ -269,8 +271,8 @@ jskim/
 │  └─ sample/
 │     ├─ pages/
 │     │  ├─ index.html.njk
-│     │  ├─ assets/
-│     │  └─ request/
+│     │  ├─ dashboard/
+│     │  └─ assets/
 │     ├─ layouts/
 │     └─ components/
 └─ dist/
@@ -282,21 +284,27 @@ jskim/
 各 `.njk` ファイルの最終出力位置を基準に `rootPath` が自動計算され、Nunjucks context に注入されます。
 
 ```njk
-<link rel="stylesheet" href="{{ rootPath }}assets/css/style.css">
-<a href="{{ rootPath }}index.html">Home</a>
+<link rel="stylesheet" href="{{ rootPath }}assets/css/common.css">
+<a href="{{ rootPath }}index.html">Portal</a>
+```
+
+ページローカル asset は出力ページからの相対パスで参照します。
+
+```njk
+<link rel="stylesheet" href="assets/css/dashboard.css">
 ```
 
 | 出力ファイル | rootPath |
 |-----------|----------|
 | `dist/sample/index.html` | `./` |
-| `dist/sample/request/index.html` | `../` |
+| `dist/sample/dashboard/index.html` | `../` |
 | `dist/sample/guide/syntax/index.html` | `../../` |
 
 `data.rootPath` は予約語のため使えません。
 
 ## sample
 
-`src/sample` は files pipeline、`data`、custom filter、global、ページ別 assets を示す小さなサンプルです。
+`src/sample` は公式の静的 UI sample です。Portal / Dashboard / CRUD / Wizard を含みます。API や入力保存などの application 処理は含みません。`create-jskim` が生成する project にも同じ sample が入る。
 
 ```bash
 npm run build -- sample

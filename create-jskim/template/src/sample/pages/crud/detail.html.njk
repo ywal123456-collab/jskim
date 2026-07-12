@@ -1,0 +1,94 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "crud" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "商品管理", href: rootPath + "crud/index.html" },
+  { label: "商品詳細" }
+] %}
+{% set product = {
+  id: "P-001",
+  name: "サンプル商品A",
+  category: "カテゴリA",
+  price: "1,200円",
+  status: "公開",
+  description: "文房具カテゴリのサンプル商品です。静的 UI sample 用の説明文です。",
+  createdAt: "2026-06-20",
+  updatedAt: "2026-07-10"
+} %}
+
+{% block title %}商品詳細 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/crud.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>商品詳細</h1>
+  <p class="lead">
+    商品詳細画面の構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    商品の登録、更新、削除および入力内容の保存は行いません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="product-detail-heading">
+  <div class="panel__header">
+    <h2 id="product-detail-heading">商品情報</h2>
+  </div>
+  <dl class="detail-list">
+    <div class="detail-list__row">
+      <dt>商品ID</dt>
+      <dd>{{ product.id }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>商品名</dt>
+      <dd>{{ product.name }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>カテゴリ</dt>
+      <dd>{{ product.category }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>価格</dt>
+      <dd>{{ product.price }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>ステータス</dt>
+      <dd>
+        {% if product.status == "公開" %}
+          <span class="badge badge--public">公開</span>
+        {% elif product.status == "非公開" %}
+          <span class="badge badge--private">非公開</span>
+        {% else %}
+          <span class="badge badge--draft">下書き</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>商品説明</dt>
+      <dd>{{ product.description }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>登録日</dt>
+      <dd>{{ product.createdAt }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>更新日</dt>
+      <dd>{{ product.updatedAt }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="page-nav" aria-label="詳細操作">
+  <a class="button button--secondary" href="index.html">一覧へ戻る</a>
+  <a class="button" href="edit.html">編集する</a>
+  <a class="button button--danger" href="delete.html">削除する</a>
+</section>
+{% endblock %}

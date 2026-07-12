@@ -1,0 +1,34 @@
+<aside class="app-sidebar" aria-label="サイドメニュー">
+  <nav class="app-sidebar__nav">
+    <ul class="app-sidebar__list">
+      <li>
+        <a
+          class="app-sidebar__link{% if currentSection == 'portal' %} is-active{% endif %}"
+          href="{{ rootPath }}index.html"
+          {% if currentSection == 'portal' %}aria-current="page"{% endif %}
+        >Portal</a>
+      </li>
+      <li>
+        <a
+          class="app-sidebar__link{% if currentSection == 'dashboard' %} is-active{% endif %}"
+          href="{{ rootPath }}dashboard/index.html"
+          {% if currentSection == 'dashboard' %}aria-current="page"{% endif %}
+        >Dashboard</a>
+      </li>
+      <li>
+        <a
+          class="app-sidebar__link{% if currentSection == 'crud' %} is-active{% endif %}"
+          href="{{ rootPath }}crud/index.html"
+          {% if currentSection == 'crud' %}aria-current="page"{% endif %}
+        >CRUD</a>
+      </li>
+      <li>
+        <a
+          class="app-sidebar__link{% if currentSection == 'wizard' %} is-active{% endif %}"
+          href="{{ rootPath }}wizard/input.html"
+          {% if currentSection == 'wizard' %}aria-current="page"{% endif %}
+        >Wizard</a>
+      </li>
+    </ul>
+  </nav>
+</aside>

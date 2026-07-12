@@ -1,32 +1,59 @@
 {% extends "layouts/base.njk" %}
+{% set currentSection = "portal" %}
 
-{% block title %}{{ site.name }} - files pipeline サンプル{% endblock %}
-{% block description %}JSKim v0.3.0 の files pipeline、data、filter、global の小さなサンプル{% endblock %}
+{% block title %}Portal - {{ site.name }}{% endblock %}
 
 {% block content %}
-<section class="hero wrap">
-  <p class="eyebrow">JSKim v0.3.0</p>
+<section class="page-intro">
+  <p class="eyebrow">公式 sample</p>
   <h1>{{ site.name }}</h1>
-  <p>
-    <code>files</code> は <code>pages</code> 配下の <code>.njk</code> をレンダリングし、
-    画像などの静的ファイルはそのままコピーします。
+  <p class="lead">
+    JSKim の files pipeline で画面構成、template 分割、asset 配置を確認できる
+    静的 UI sample です。
   </p>
 </section>
 
-<section class="wrap card-grid" aria-label="設定データの例">
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この sample は、JSKim を使った画面構成、template 分割、asset 配置、
+    および build 結果を確認するための静的 UI sample です。
+  </p>
+  <p>
+    API 通信、database、入力検証、登録・更新・削除などの
+    application 処理は含まれていません。
+  </p>
+</section>
+
+<section class="card-grid" aria-label="画面グループ">
   <article class="card">
-    <h2>data</h2>
-    <p>言語: <strong>{{ site.language }}</strong></p>
-    <p>サンプル価格: <strong>{{ samplePrice | formatPrice }}</strong></p>
+    <h2 class="card__title">Dashboard</h2>
+    <p class="card__body">
+      共通 layout、sidebar、summary card、table、notice を確認できます。
+    </p>
+    <p class="card__actions">
+      <a class="button" href="{{ rootPath }}dashboard/index.html">Dashboard を開く</a>
+    </p>
   </article>
+
   <article class="card">
-    <h2>globals</h2>
-    <p>現在の年: <strong>{{ currentYear() }}</strong></p>
-    <p>この値は <code>jskim.config.js</code> の global 関数から来ています。</p>
+    <h2 class="card__title">CRUD</h2>
+    <p class="card__body">
+      商品管理の一覧・詳細・登録・編集・削除確認の画面構成例です。
+    </p>
+    <p class="card__actions">
+      <a class="button" href="{{ rootPath }}crud/index.html">CRUD を開く</a>
+    </p>
   </article>
+
   <article class="card">
-    <h2>ページ別 assets</h2>
-    <p><a href="{{ rootPath }}request/">依頼ページ</a> は専用 CSS / JS / 画像を持っています。</p>
+    <h2 class="card__title">Wizard</h2>
+    <p class="card__body">
+      入力・確認・完了の 3 ステップ画面構成例です。
+    </p>
+    <p class="card__actions">
+      <a class="button" href="{{ rootPath }}wizard/input.html">Wizard を開く</a>
+    </p>
   </article>
 </section>
 {% endblock %}

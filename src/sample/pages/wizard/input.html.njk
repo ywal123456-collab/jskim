@@ -1,0 +1,70 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "wizard" %}
+{% set currentStep = 1 %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "申込sample", href: rootPath + "wizard/input.html" },
+  { label: "情報入力" }
+] %}
+
+{% block title %}情報入力 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/wizard.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>情報入力</h1>
+  <p class="lead">
+    3 ステップ申込画面の入力ステップ構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+{% include "components/wizard-steps.njk" %}
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    入力内容の保存、画面間の引き継ぎおよび送信処理は行いません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="wizard-input-heading">
+  <div class="panel__header">
+    <h2 id="wizard-input-heading">入力フォーム（見た目のみ）</h2>
+  </div>
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="wizard-name">氏名</label>
+      <input id="wizard-name" name="name" type="text" value="" readonly>
+    </div>
+    <div class="form-field">
+      <label for="wizard-email">メールアドレス</label>
+      <input id="wizard-email" name="email" type="text" value="" readonly>
+    </div>
+    <div class="form-field">
+      <label for="wizard-phone">電話番号</label>
+      <input id="wizard-phone" name="phone" type="text" value="" readonly>
+    </div>
+    <div class="form-field">
+      <label for="wizard-category">お問い合わせ種別</label>
+      <select id="wizard-category" name="category" disabled>
+        <option>商品について</option>
+        <option>配送について</option>
+        <option>その他</option>
+      </select>
+    </div>
+    <div class="form-field form-field--full">
+      <label for="wizard-message">お問い合わせ内容</label>
+      <textarea id="wizard-message" name="message" rows="4" readonly></textarea>
+    </div>
+  </div>
+</section>
+
+<section class="page-nav" aria-label="入力操作">
+  <a class="button button--secondary" href="../index.html">Portal へ戻る</a>
+  <a class="button" href="confirm.html">入力内容を確認する</a>
+</section>
+{% endblock %}

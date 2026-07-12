@@ -230,42 +230,73 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const build = await runNpm(generatedRoot, ['run', 'build']);
     assert.match(build.stdout + build.stderr, /ビルドが完了しました/);
     const indexHtml = path.join(generatedRoot, 'dist/sample/index.html');
-    const mainJs = path.join(generatedRoot, 'dist/sample/assets/js/main.js');
-    const css = path.join(generatedRoot, 'dist/sample/assets/css/style.css');
-    const logo = path.join(generatedRoot, 'dist/sample/assets/image/logo.svg');
-    const requestHtml = path.join(
+    const dashboardHtml = path.join(
       generatedRoot,
-      'dist/sample/request/index.html'
+      'dist/sample/dashboard/index.html'
     );
-    const requestJs = path.join(
+    const css = path.join(generatedRoot, 'dist/sample/assets/css/common.css');
+    const logo = path.join(generatedRoot, 'dist/sample/assets/img/logo.svg');
+    const dashboardCss = path.join(
       generatedRoot,
-      'dist/sample/request/assets/js/request.js'
-    );
-    const requestCss = path.join(
-      generatedRoot,
-      'dist/sample/request/assets/css/request.css'
-    );
-    const requestLogo = path.join(
-      generatedRoot,
-      'dist/sample/request/assets/image/request-logo.svg'
+      'dist/sample/dashboard/assets/css/dashboard.css'
     );
     assert.ok(fs.existsSync(indexHtml));
-    assert.ok(fs.existsSync(mainJs));
+    assert.ok(fs.existsSync(dashboardHtml));
     assert.ok(fs.existsSync(css));
     assert.ok(fs.existsSync(logo));
-    assert.ok(fs.existsSync(requestHtml));
-    assert.ok(fs.existsSync(requestJs));
-    assert.ok(fs.existsSync(requestCss));
-    assert.ok(fs.existsSync(requestLogo));
+    assert.ok(fs.existsSync(dashboardCss));
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/index.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/detail.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/create.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/edit.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/delete.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/crud/complete.html'))
+    );
+    assert.ok(
+      fs.existsSync(
+        path.join(generatedRoot, 'dist/sample/crud/assets/css/crud.css')
+      )
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/wizard/input.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/wizard/confirm.html'))
+    );
+    assert.ok(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/wizard/complete.html'))
+    );
+    assert.ok(
+      fs.existsSync(
+        path.join(generatedRoot, 'dist/sample/wizard/assets/css/wizard.css')
+      )
+    );
+    assert.equal(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/request/index.html')),
+      false
+    );
+    assert.equal(
+      fs.existsSync(path.join(generatedRoot, 'dist/sample/assets/js/main.js')),
+      false
+    );
     const html = await fsp.readFile(indexHtml, 'utf8');
-    assert.match(html, /JSKim/);
-    assert.match(html, /files pipeline/);
-    assert.match(html, /12,000円/);
-    assert.match(html, /JSKim Sample/);
-    assert.match(html, /20\d{2}/);
-    const js = await fsp.readFile(mainJs, 'utf8');
-    assert.match(js, /"name":"JSKim Sample"/);
-    assert.equal(js.includes('&quot;'), false);
+    assert.match(html, /JSKim UI Sample/);
+    assert.match(html, /静的 UI sample/);
+    assert.match(html, /dashboard\/index\.html/);
+    const dash = await fsp.readFile(dashboardHtml, 'utf8');
+    assert.match(dash, /href="assets\/css\/dashboard\.css"/);
+    assert.match(dash, /登録商品数/);
 
     // free port に差し替え
     const port = await getFreePort();
@@ -295,7 +326,7 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     const root = await httpRequest({ port, path: '/' });
     assert.equal(root.status, 200);
     const body = root.body.toString('utf8');
-    assert.match(body, /files pipeline/);
+    assert.match(body, /静的 UI sample/);
     assert.match(body, /EventSource/);
 
     const indexPath = path.join(
@@ -304,10 +335,10 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     );
     const distIndex = path.join(generatedRoot, 'dist/sample/index.html');
     let source = await fsp.readFile(indexPath, 'utf8');
-    assert.match(source, /files pipeline/);
+    assert.match(source, /静的 UI sample/);
     await fsp.writeFile(
       indexPath,
-      source.replace('files pipeline', 'CREATE_E2E_OK'),
+      source.replace('静的 UI sample', 'CREATE_E2E_OK'),
       'utf8'
     );
 
@@ -358,7 +389,7 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     configText = await fsp.readFile(configPath, 'utf8');
     await fsp.writeFile(
       configPath,
-      configText.replace("name: 'JSKim Sample'", "name: 'CREATE_SITE_OK'"),
+      configText.replace("name: 'JSKim UI Sample'", "name: 'CREATE_SITE_OK'"),
       'utf8'
     );
     await waitFor(
@@ -373,35 +404,33 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
     await waitFor(
       () => {
         try {
-          return (
-            fs.readFileSync(indexHtml, 'utf8').includes('CREATE_SITE_OK') &&
-            fs.readFileSync(mainJs, 'utf8').includes('"name":"CREATE_SITE_OK"')
-          );
+          return fs.readFileSync(indexHtml, 'utf8').includes('CREATE_SITE_OK');
         } catch {
           return false;
         }
       },
       { timeoutMs: 20000, label: 'generated config data reload' }
     );
-    assert.equal(fs.readFileSync(mainJs, 'utf8').includes('&quot;'), false);
 
-    // watcher 再構成完了後に nested source を変更する
+    // watcher 再構成完了後に nested page-local CSS を変更する
     await sleep(300);
 
-    const requestSource = path.join(
+    const dashboardCssSource = path.join(
       generatedRoot,
-      'src/sample/pages/request/assets/js/request.js.njk'
+      'src/sample/pages/dashboard/assets/css/dashboard.css'
     );
-    source = await fsp.readFile(requestSource, 'utf8');
+    source = await fsp.readFile(dashboardCssSource, 'utf8');
     await fsp.writeFile(
-      requestSource,
-      `${source}\nconsole.info('REQUEST_E2E_OK');\n`,
+      dashboardCssSource,
+      `${source}\n/* CREATE_DASHBOARD_CSS_OK */\n`,
       'utf8'
     );
     await waitFor(
       () => {
         try {
-          return fs.readFileSync(requestJs, 'utf8').includes('REQUEST_E2E_OK');
+          return fs
+            .readFileSync(dashboardCss, 'utf8')
+            .includes('CREATE_DASHBOARD_CSS_OK');
         } catch {
           return false;
         }
@@ -411,10 +440,10 @@ describe('create-jskim package pack and e2e', { timeout: 240000 }, () => {
 
     const nestedAsset = await httpRequest({
       port,
-      path: '/request/assets/js/request.js',
+      path: '/dashboard/assets/css/dashboard.css',
     });
     assert.equal(nestedAsset.status, 200);
-    assert.match(nestedAsset.body.toString('utf8'), /REQUEST_E2E_OK/);
+    assert.match(nestedAsset.body.toString('utf8'), /CREATE_DASHBOARD_CSS_OK/);
 
     await dev.stop();
     assert.match(dev.output, /開発サーバーを停止しました/);

@@ -1,0 +1,82 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "crud" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "商品管理", href: rootPath + "crud/index.html" },
+  { label: "商品編集" }
+] %}
+{% set product = {
+  id: "P-001",
+  name: "サンプル商品A",
+  category: "カテゴリA",
+  price: "1200",
+  status: "公開",
+  description: "文房具カテゴリのサンプル商品です。静的 UI sample 用の説明文です。"
+} %}
+
+{% block title %}商品編集 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/crud.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>商品編集</h1>
+  <p class="lead">
+    商品編集 formの見た目を確認する静的 UI sample です。
+  </p>
+</section>
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    商品の登録、更新、削除および入力内容の保存は行いません。
+  </p>
+  <p>
+    入力内容は保存されません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="edit-form-heading">
+  <div class="panel__header">
+    <h2 id="edit-form-heading">編集フォーム（見た目のみ）</h2>
+  </div>
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="edit-id">商品ID</label>
+      <input id="edit-id" name="id" type="text" value="{{ product.id }}" readonly>
+    </div>
+    <div class="form-field">
+      <label for="edit-name">商品名</label>
+      <input id="edit-name" name="name" type="text" value="{{ product.name }}" readonly>
+    </div>
+    <div class="form-field">
+      <label for="edit-category">カテゴリ</label>
+      <input id="edit-category" name="category" type="text" value="{{ product.category }}" readonly>
+    </div>
+    <div class="form-field">
+      <label for="edit-price">価格</label>
+      <input id="edit-price" name="price" type="text" value="{{ product.price }}" readonly>
+    </div>
+    <div class="form-field">
+      <label for="edit-status">ステータス</label>
+      <select id="edit-status" name="status" disabled>
+        <option selected>{{ product.status }}</option>
+        <option>非公開</option>
+        <option>下書き</option>
+      </select>
+    </div>
+    <div class="form-field form-field--full">
+      <label for="edit-description">商品説明</label>
+      <textarea id="edit-description" name="description" rows="4" readonly>{{ product.description }}</textarea>
+    </div>
+  </div>
+</section>
+
+<section class="page-nav" aria-label="編集操作">
+  <a class="button button--secondary" href="detail.html">詳細へ戻る</a>
+  <a class="button" href="complete.html">更新する</a>
+</section>
+{% endblock %}

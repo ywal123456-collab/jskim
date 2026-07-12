@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" role="img" aria-labelledby="title">
-  <title>Request Sample</title>
-  <circle cx="36" cy="36" r="34" fill="#ffffff" stroke="#222222" stroke-width="4"/>
-  <path d="M22 28h28v20H22z" fill="#222222"/>
-  <path d="m22 28 14 12 14-12" fill="none" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
-</svg>

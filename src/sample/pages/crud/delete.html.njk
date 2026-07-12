@@ -1,0 +1,75 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "crud" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "商品管理", href: rootPath + "crud/index.html" },
+  { label: "商品削除確認" }
+] %}
+{% set product = {
+  id: "P-001",
+  name: "サンプル商品A",
+  category: "カテゴリA",
+  price: "1,200円",
+  status: "公開"
+} %}
+
+{% block title %}商品削除確認 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/crud.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>商品削除確認</h1>
+  <p class="lead">
+    削除確認画面の構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+<section class="notice notice--warning" aria-label="削除に関する注意">
+  <h2 class="notice__title">削除は実行されません</h2>
+  <p>
+    この画面は静的 UI sample です。
+    商品の登録、更新、削除および入力内容の保存は行いません。
+  </p>
+  <p>
+    「削除する」を選んでも、実際のデータ削除は行われません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="delete-target-heading">
+  <div class="panel__header">
+    <h2 id="delete-target-heading">削除対象（静的表示）</h2>
+  </div>
+  <dl class="detail-list">
+    <div class="detail-list__row">
+      <dt>商品ID</dt>
+      <dd>{{ product.id }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>商品名</dt>
+      <dd>{{ product.name }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>カテゴリ</dt>
+      <dd>{{ product.category }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>価格</dt>
+      <dd>{{ product.price }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>ステータス</dt>
+      <dd>
+        <span class="badge badge--public">{{ product.status }}</span>
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<section class="page-nav" aria-label="削除確認操作">
+  <a class="button button--secondary" href="detail.html">削除せずに戻る</a>
+  <a class="button button--danger" href="complete.html">削除する</a>
+</section>
+{% endblock %}

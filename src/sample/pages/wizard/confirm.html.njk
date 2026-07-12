@@ -1,0 +1,80 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "wizard" %}
+{% set currentStep = 2 %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "申込sample", href: rootPath + "wizard/input.html" },
+  { label: "入力内容確認" }
+] %}
+{% set application = {
+  name: "山田 太郎",
+  email: "taro@example.com",
+  phone: "090-0000-0000",
+  category: "商品について",
+  message: "sampleのお問い合わせ内容です。"
+} %}
+
+{% block title %}入力内容確認 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/wizard.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>入力内容確認</h1>
+  <p class="lead">
+    確認画面の構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+{% include "components/wizard-steps.njk" %}
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    入力内容の保存、画面間の引き継ぎおよび送信処理は行いません。
+  </p>
+  <p>
+    表示している内容は確認画面の構成を示すための固定値です。
+    入力画面の内容は引き継がれていません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="wizard-confirm-heading">
+  <div class="panel__header">
+    <h2 id="wizard-confirm-heading">確認内容（固定値）</h2>
+  </div>
+  <dl class="detail-list">
+    <div class="detail-list__row">
+      <dt>氏名</dt>
+      <dd>{{ application.name }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>メールアドレス</dt>
+      <dd>{{ application.email }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>電話番号</dt>
+      <dd>{{ application.phone }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>お問い合わせ種別</dt>
+      <dd>{{ application.category }}</dd>
+    </div>
+    <div class="detail-list__row">
+      <dt>お問い合わせ内容</dt>
+      <dd>{{ application.message }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="page-nav" aria-label="確認操作">
+  <a class="button button--secondary" href="input.html">入力画面へ戻る</a>
+  <a class="button" href="complete.html">送信する</a>
+</section>
+<p class="wizard-note">
+  「送信する」は完了画面への静的な移動です。実際の送信処理は行われません。
+</p>
+{% endblock %}

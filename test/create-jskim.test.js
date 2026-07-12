@@ -279,7 +279,7 @@ describe('create-jskim', () => {
       path.join(cwd, 'lang-check/src/sample/pages/index.html.njk'),
       'utf8'
     );
-    assert.match(index, /files pipeline/);
+    assert.match(index, /静的 UI sample/);
     // ハングル文字クラスをソースに直書きしない（language テスト対象のため）
     const hangul = new RegExp(
       `[${String.fromCharCode(0xac00)}-${String.fromCharCode(0xd7a3)}]`

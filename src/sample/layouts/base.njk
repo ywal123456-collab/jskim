@@ -1,20 +1,25 @@
 <!DOCTYPE html>
-<html lang="{{ site.language }}">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site.name }}{% endblock %}</title>
-  <meta name="description" content="{% block description %}JSKim の files pipeline サンプル{% endblock %}">
-  <link rel="stylesheet" href="{{ rootPath }}assets/css/style.css">
-  {% block extraHead %}{% endblock %}
+  <link rel="stylesheet" href="{{ rootPath }}assets/css/common.css">
+  {% block pageCss %}{% endblock %}
 </head>
-<body>
+<body class="app-body">
   {% include "components/header.njk" %}
-  <main class="site-main">
-    {% block content %}{% endblock %}
-  </main>
-  {% include "components/footer.njk" %}
-  <script src="{{ rootPath }}assets/js/main.js"></script>
-  {% block scripts %}{% endblock %}
+  <div class="app-shell">
+    {% include "components/sidebar.njk" %}
+    <div class="app-main">
+      {% if breadcrumbs %}
+        {% include "components/breadcrumb.njk" %}
+      {% endif %}
+      <main class="app-content" id="main">
+        {% block content %}{% endblock %}
+      </main>
+      {% include "components/footer.njk" %}
+    </div>
+  </div>
 </body>
 </html>

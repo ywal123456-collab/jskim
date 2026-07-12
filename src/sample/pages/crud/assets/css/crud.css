@@ -1,0 +1,144 @@
+/* CRUD page-local styles */
+
+.crud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 1.5rem;
+}
+
+.button--secondary {
+  background: #ffffff;
+  color: #1f2937;
+  border-color: #9ca3af;
+}
+
+.button--danger {
+  background: #ffffff;
+  color: #111827;
+  border: 2px solid #111827;
+  font-weight: 700;
+}
+
+.notice--warning {
+  border-left-color: #111827;
+  border-left-width: 6px;
+  background: #f9fafb;
+}
+
+.detail-list {
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.detail-list__row {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-list__row:last-child {
+  border-bottom: none;
+}
+
+.detail-list dt {
+  margin: 0;
+  font-weight: 700;
+  color: #4b5563;
+}
+
+.detail-list dd {
+  margin: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  padding: 1.25rem;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-field--full {
+  grid-column: 1 / -1;
+}
+
+.form-field label {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #9ca3af;
+  border-radius: 0.375rem;
+  font: inherit;
+  color: #111827;
+  background: #ffffff;
+}
+
+.form-field input:focus-visible,
+.form-field select:focus-visible,
+.form-field textarea:focus-visible {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
+}
+
+.form-field input[readonly],
+.form-field textarea[readonly],
+.form-field select:disabled {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.complete-panel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.complete-panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+}
+
+.complete-panel p {
+  margin: 0 0 0.75rem;
+  color: #4b5563;
+}
+
+.complete-panel p:last-child {
+  margin-bottom: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .detail-list__row,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

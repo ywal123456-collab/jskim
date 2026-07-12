@@ -56,20 +56,35 @@ project/
    └─ sample/
       ├─ pages/
       │  ├─ index.html.njk
-      │  ├─ assets/
-      │  │  ├─ css/style.css.njk
-      │  │  ├─ js/main.js.njk
-      │  │  └─ image/logo.svg
-      │  └─ request/
-      │     ├─ index.html.njk
-      │     └─ assets/
+      │  ├─ dashboard/
+      │  │  ├─ index.html.njk
+      │  │  └─ assets/css/dashboard.css
+      │  ├─ crud/
+      │  │  ├─ index.html.njk
+      │  │  ├─ detail.html.njk
+      │  │  ├─ create.html.njk
+      │  │  ├─ edit.html.njk
+      │  │  ├─ delete.html.njk
+      │  │  ├─ complete.html.njk
+      │  │  └─ assets/css/crud.css
+      │  ├─ wizard/
+      │  │  ├─ input.html.njk
+      │  │  ├─ confirm.html.njk
+      │  │  ├─ complete.html.njk
+      │  │  └─ assets/css/wizard.css
+      │  └─ assets/
+      │     ├─ css/common.css
+      │     └─ img/logo.svg
       ├─ layouts/base.njk
       └─ components/
          ├─ header.njk
-         └─ footer.njk
+         ├─ sidebar.njk
+         ├─ breadcrumb.njk
+         ├─ footer.njk
+         └─ wizard-steps.njk
 ```
 
-`jskim.config.js` は `files: [{ from: 'pages', to: '' }]` を使います。`.njk` は末尾の `.njk` だけを外してレンダリングし、画像などはそのままコピーします。
+`jskim.config.js` は `files: [{ from: 'pages', to: '' }]` を使います。`.njk` は末尾の `.njk` だけを外してレンダリングし、平文 CSS / 画像などはそのままコピーします。公式 sample は静的 UI であり、application 処理は含みません。
 
 `package.json` の scripts は bin 名 `jskim` を使います（package name ではありません）。既定の engine dependency は `@ywal123456/jskim`（`^0.5.1`）です。
 

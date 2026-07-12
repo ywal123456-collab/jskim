@@ -1,0 +1,125 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "crud" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "商品管理", href: rootPath + "crud/index.html" },
+  { label: "商品一覧" }
+] %}
+{% set products = [
+  {
+    id: "P-001",
+    name: "サンプル商品A",
+    category: "カテゴリA",
+    price: "1,200円",
+    status: "公開",
+    updatedAt: "2026-07-10"
+  },
+  {
+    id: "P-002",
+    name: "サンプル商品B",
+    category: "カテゴリB",
+    price: "3,800円",
+    status: "公開",
+    updatedAt: "2026-07-08"
+  },
+  {
+    id: "P-003",
+    name: "サンプル商品C",
+    category: "カテゴリA",
+    price: "980円",
+    status: "非公開",
+    updatedAt: "2026-07-05"
+  },
+  {
+    id: "P-004",
+    name: "サンプル商品D",
+    category: "カテゴリC",
+    price: "5,400円",
+    status: "下書き",
+    updatedAt: "2026-07-03"
+  },
+  {
+    id: "P-005",
+    name: "サンプル商品E",
+    category: "カテゴリB",
+    price: "2,100円",
+    status: "公開",
+    updatedAt: "2026-07-01"
+  }
+] %}
+
+{% block title %}商品一覧 - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/crud.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>商品一覧</h1>
+  <p class="lead">
+    商品管理の一覧画面構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    商品の登録、更新、削除および入力内容の保存は行いません。
+  </p>
+</section>
+
+<section class="crud-toolbar" aria-label="一覧操作">
+  <a class="button" href="create.html">商品を登録する</a>
+  <a class="button button--secondary" href="{{ rootPath }}dashboard/index.html">Dashboard</a>
+  <a class="button button--secondary" href="{{ rootPath }}index.html">Portal に戻る</a>
+</section>
+
+<section class="panel" aria-labelledby="product-list-heading">
+  <div class="panel__header">
+    <h2 id="product-list-heading">商品一覧</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="visually-hidden">静的な商品一覧サンプル</caption>
+      <thead>
+        <tr>
+          <th scope="col">ID</th>
+          <th scope="col">商品名</th>
+          <th scope="col">カテゴリ</th>
+          <th scope="col">価格</th>
+          <th scope="col">ステータス</th>
+          <th scope="col">更新日</th>
+          <th scope="col">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+          <tr>
+            <td>{{ product.id }}</td>
+            <td>
+              <a href="detail.html">{{ product.name }}</a>
+            </td>
+            <td>{{ product.category }}</td>
+            <td>{{ product.price }}</td>
+            <td>
+              {% if product.status == "公開" %}
+                <span class="badge badge--public">公開</span>
+              {% elif product.status == "非公開" %}
+                <span class="badge badge--private">非公開</span>
+              {% else %}
+                <span class="badge badge--draft">下書き</span>
+              {% endif %}
+            </td>
+            <td>{{ product.updatedAt }}</td>
+            <td>
+              <a href="detail.html">詳細</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

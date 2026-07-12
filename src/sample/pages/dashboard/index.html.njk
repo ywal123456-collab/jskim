@@ -1,0 +1,101 @@
+{% extends "layouts/base.njk" %}
+{% set currentSection = "dashboard" %}
+{% set breadcrumbs = [
+  { label: "Portal", href: rootPath + "index.html" },
+  { label: "Dashboard" }
+] %}
+{% set summaryCards = [
+  { label: "登録商品数", value: "120" },
+  { label: "公開中", value: "98" },
+  { label: "非公開", value: "22" },
+  { label: "今月の更新", value: "15" }
+] %}
+{% set recentUpdates = [
+  { id: "P-1001", name: "ノートブック A4", status: "公開", updatedAt: "2026-07-01" },
+  { id: "P-1002", name: "ボールペン 黒", status: "公開", updatedAt: "2026-07-03" },
+  { id: "P-1003", name: "クリアファイル", status: "非公開", updatedAt: "2026-07-05" },
+  { id: "P-1004", name: "付箋セット", status: "下書き", updatedAt: "2026-07-08" },
+  { id: "P-1005", name: "デスクマット", status: "公開", updatedAt: "2026-07-10" }
+] %}
+{% set notices = [
+  "CRUD と Wizard は静的 UI sample です。保存や送信処理は行いません。",
+  "表示データは template 内の静的値です。保存や API 連携はありません。",
+  "page-local CSS は各画面群の assets/css に配置しています。"
+] %}
+
+{% block title %}Dashboard - {{ site.name }}{% endblock %}
+
+{% block pageCss %}
+  <link rel="stylesheet" href="assets/css/dashboard.css">
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Dashboard</h1>
+  <p class="lead">
+    共通 layout と静的データを使った管理画面の見た目を確認する画面です。
+  </p>
+</section>
+
+<section class="summary-grid" aria-label="サマリー">
+  {% for card in summaryCards %}
+    <article class="summary-card">
+      <p class="summary-card__label">{{ card.label }}</p>
+      <p class="summary-card__value">{{ card.value }}</p>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="panel" aria-labelledby="recent-heading">
+  <div class="panel__header">
+    <h2 id="recent-heading">最近の更新</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">ID</th>
+          <th scope="col">商品名</th>
+          <th scope="col">ステータス</th>
+          <th scope="col">更新日</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in recentUpdates %}
+          <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.name }}</td>
+            <td>
+              {% if item.status == "公開" %}
+                <span class="badge badge--public">公開</span>
+              {% elif item.status == "非公開" %}
+                <span class="badge badge--private">非公開</span>
+              {% else %}
+                <span class="badge badge--draft">下書き</span>
+              {% endif %}
+            </td>
+            <td>{{ item.updatedAt }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="notice-heading">
+  <div class="panel__header">
+    <h2 id="notice-heading">お知らせ</h2>
+  </div>
+  <ul class="notice-list">
+    {% for notice in notices %}
+      <li>{{ notice }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="page-nav" aria-label="画面ナビ">
+  <a class="button" href="{{ rootPath }}index.html">Portal に戻る</a>
+  <a class="button" href="{{ rootPath }}crud/index.html">CRUD を開く</a>
+  <a class="button" href="{{ rootPath }}wizard/input.html">Wizard を開く</a>
+</section>
+{% endblock %}

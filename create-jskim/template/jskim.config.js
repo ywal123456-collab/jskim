@@ -23,7 +23,7 @@ module.exports = {
     // 全テンプレートへ渡す共通データ
     data: {
       site: {
-        name: 'JSKim Sample',
+        name: 'JSKim UI Sample',
         language: 'ja',
         themeColor: '#222222',
       },

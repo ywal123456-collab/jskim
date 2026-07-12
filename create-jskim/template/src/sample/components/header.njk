@@ -1,12 +1,17 @@
-<header class="site-header">
-  <div class="wrap header-inner">
-    <a class="brand" href="{{ rootPath }}index.html">
-      <img src="{{ rootPath }}assets/image/logo.svg" alt="" width="32" height="32">
-      <span>{{ site.name }}</span>
+<header class="app-header">
+  <div class="app-header__inner">
+    <a class="app-brand" href="{{ rootPath }}index.html">
+      <img
+        class="app-brand__logo"
+        src="{{ rootPath }}assets/img/logo.svg"
+        alt=""
+        width="32"
+        height="32"
+      >
+      <span class="app-brand__text">{{ site.name }}</span>
     </a>
-    <nav class="site-nav" aria-label="サンプルページ">
-      <a href="{{ rootPath }}index.html">トップ</a>
-      <a href="{{ rootPath }}request/">依頼ページ</a>
+    <nav class="app-header__nav" aria-label="ヘッダーナビ">
+      <a href="{{ rootPath }}index.html">Portal</a>
     </nav>
   </div>
 </header>

@@ -4,15 +4,15 @@
 
 ## 構成
 
-- `src/sample/` — files pipeline の標準 sample
-- `src/sample/pages/` — 出力対象。`.njk` はレンダリング、画像などはコピー
+- `src/sample/` — 公式の静的 UI sample（Portal / Dashboard / CRUD / Wizard）
+- `src/sample/pages/` — 出力対象。`.njk` はレンダリング、平文 CSS / 画像などはコピー
 - `src/sample/layouts/` / `src/sample/components/` — `extends` / `include` 用テンプレート
 - `jskim.config.js` — ビルド設定（プロジェクトの基準）
 - `dist/` — ビルド成果物（手編集しないでください）
 
 `src/` を編集し、ビルドで `dist/` を生成します。
 
-`index.html.njk`、`style.css.njk`、`main.js.njk` のように、最終的な拡張子の後ろへ `.njk` を付ける命名を推奨します。
+HTML は `index.html.njk` のように最終拡張子の後ろへ `.njk` を付ける命名を推奨します。sample は API や入力保存などの application 処理を含みません。
 
 ## セットアップ
 
