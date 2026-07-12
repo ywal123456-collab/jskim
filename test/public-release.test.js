@@ -9,6 +9,30 @@ const {
   isAllowedPublicEmail,
   isReservedExampleEmail,
 } = require('./helpers/public-email-policy');
+const {
+  collectUserGuideMarkdownFiles,
+} = require('./helpers/list-user-guide-docs');
+
+const USER_FACING_DOCS = [
+  'README.md',
+  'docs/publishing.md',
+  'docs/create-jskim.md',
+  'docs/configuration.md',
+  ...collectUserGuideMarkdownFiles(),
+  'create-jskim/README.md',
+  'create-jskim/template/README.md',
+];
+
+const ROADMAP_DOCS = [
+  'README.md',
+  'docs/configuration.md',
+  'docs/create-jskim.md',
+  'docs/publishing.md',
+  ...collectUserGuideMarkdownFiles(),
+  'create-jskim/README.md',
+  'AGENTS.md',
+  '.cursor/rules/jskim-development.mdc',
+];
 
 const ALLOWED_EMAILS = new Set(['ywal123456@gmail.com']);
 const ALLOWED_HOST_SNIPPETS = [
@@ -156,14 +180,7 @@ describe('public release audit', () => {
   });
 
   it('ユーザー向け文書に unscoped engine インストール命令が残っていない', () => {
-    const docs = [
-      'README.md',
-      'docs/publishing.md',
-      'docs/create-jskim.md',
-      'docs/configuration.md',
-      'create-jskim/README.md',
-      'create-jskim/template/README.md',
-    ];
+    const docs = USER_FACING_DOCS;
     const forbidden = [
       'npm install --save-dev jskim',
       'npm install jskim@0.1.0',
@@ -183,14 +200,7 @@ describe('public release audit', () => {
   });
 
   it('ユーザー向け文書に未公開案内が残っていない', () => {
-    const docs = [
-      'README.md',
-      'docs/publishing.md',
-      'docs/create-jskim.md',
-      'docs/configuration.md',
-      'create-jskim/README.md',
-      'create-jskim/template/README.md',
-    ];
+    const docs = USER_FACING_DOCS;
     // 直書きするとこのテスト自身が検出対象になるため分割する
     const forbidden = [
       `publish ${'は行っていません'}`,
@@ -228,15 +238,7 @@ describe('public release audit', () => {
   });
 
   it('HTML import/migration を core roadmap に載せていない', () => {
-    const docs = [
-      'README.md',
-      'docs/configuration.md',
-      'docs/create-jskim.md',
-      'docs/publishing.md',
-      'create-jskim/README.md',
-      'AGENTS.md',
-      '.cursor/rules/jskim-development.mdc',
-    ];
+    const docs = ROADMAP_DOCS;
     // 直書きするとこのテスト自身が検出対象になるため分割する
     const forbiddenRoadmap = [
       `HTML ${'移行'}`,
