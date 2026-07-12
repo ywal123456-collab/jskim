@@ -63,6 +63,7 @@ function resolveEngineDependency(createPkg) {
  * @param {string} [options.cwd]
  * @param {string} [options.createPackageRoot]
  * @param {boolean} [options.printSuccess=true]
+ * @param {string} [options.packageManager] detectPackageManager の結果
  * @returns {Promise<object>}
  */
 async function createProject(options) {
@@ -71,6 +72,7 @@ async function createProject(options) {
     options.createPackageRoot || path.resolve(__dirname, '..');
   const directoryInput = options.directoryInput;
   const printSuccess = options.printSuccess !== false;
+  const packageManager = options.packageManager;
 
   const { targetDir, basename, isCurrentDirectory } = resolveTargetPaths(
     directoryInput,
@@ -102,6 +104,7 @@ async function createProject(options) {
         targetDir,
         isCurrentDirectory,
         cdTarget: formatCdTarget(directoryInput, targetDir, cwd),
+        packageManager,
       });
     }
 

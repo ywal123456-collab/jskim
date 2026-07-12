@@ -5,6 +5,7 @@ const path = require('node:path');
 const { getHelpText } = require('../lib/help-text');
 const { resolveProjectDirectory } = require('../lib/resolve-project-name');
 const { createProject } = require('../lib/create-project');
+const { detectPackageManager } = require('../lib/detect-package-manager');
 
 function readPackageVersion() {
   // create package 自身の package.json（作業空間ではない）
@@ -47,6 +48,7 @@ async function main(argv) {
     directoryInput,
     cwd: process.cwd(),
     createPackageRoot: path.join(__dirname, '..'),
+    packageManager: detectPackageManager(process.env.npm_config_user_agent),
   });
 }
 

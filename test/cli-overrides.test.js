@@ -183,9 +183,15 @@ describe('CLI host/port/open', { timeout: 120000 }, () => {
       port: nextPort,
       debounce: 80,
     });
-    await waitForOutput(() => cli.output, '再起動が必要です', {
-      timeoutMs: 15000,
-    });
+    await waitFor(
+      () =>
+        cli.output.includes('再起動が必要です') &&
+        cli.output.includes('serve.port'),
+      {
+        timeoutMs: 15000,
+        label: 'restart warning with serve.port',
+      }
+    );
     assert.match(cli.output, /serve\.port/);
 
     const still = await httpRequest({ port, path: '/' });

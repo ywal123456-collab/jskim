@@ -61,6 +61,8 @@ npm install --save-dev @ywal123456/jskim
 
 ```bash
 npm create jskim@latest
+pnpm create jskim
+yarn create jskim
 ```
 
 代替:
@@ -69,7 +71,7 @@ npm create jskim@latest
 npx create-jskim my-project
 ```
 
-生成器は自動で `npm install` / `git init` を実行しません。空ではない既存ディレクトリも上書きしません。
+生成器は自動で `npm install` / `git init` を実行しません。空ではない既存ディレクトリも上書きしません。完了案内は実行した package manager に合わせた install / dev コマンドと、既定の開発 URL（`http://127.0.0.1:3000/`）を表示します。
 
 ## CLI
 

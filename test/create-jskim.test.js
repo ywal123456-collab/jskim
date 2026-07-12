@@ -51,6 +51,10 @@ describe('create-jskim', () => {
     assert.equal(result.code, 0, result.output);
     assert.match(result.output, /JSKimプロジェクトを作成しました/);
     assert.match(result.output, /cd my-project/);
+    assert.match(result.output, /次のコマンドを実行してください/);
+    assert.match(result.output, /npm install/);
+    assert.match(result.output, /npm run dev/);
+    assert.match(result.output, /http:\/\/127\.0\.0\.1:3000\//);
 
     const project = path.join(cwd, 'my-project');
     assert.ok(fs.existsSync(path.join(project, 'package.json')));
@@ -141,8 +145,9 @@ describe('create-jskim', () => {
     assert.ok(fs.existsSync(path.join(cwd, 'package.json')));
     assert.equal(fs.existsSync(path.join(cwd, path.basename(cwd), 'package.json')), false);
     assert.doesNotMatch(result.output, /cd \./);
-    assert.match(result.output, /次の手順:/);
+    assert.match(result.output, /次のコマンドを実行してください/);
     assert.match(result.output, /npm install/);
+    assert.match(result.output, /http:\/\/127\.0\.0\.1:3000\//);
   });
 
   it('パッケージ名を正規化する', async () => {
@@ -171,6 +176,86 @@ describe('create-jskim', () => {
       spec
     );
     assert.equal(Object.hasOwn(pkg.devDependencies, 'jskim'), false);
+  });
+
+  it('npm_config_user_agent に応じて完了案内のコマンドが変わる', async () => {
+    const cwd = await makeCwd();
+
+    const npm = await runCreate(['npm-proj'], {
+      cwd,
+      env: {
+        npm_config_user_agent: 'npm/11.11.0 node/v24.14.1 win32 x64',
+      },
+    });
+    assert.equal(npm.code, 0, npm.output);
+    assert.deepEqual(extractGuideCommands(npm.output), [
+      'cd npm-proj',
+      'npm install',
+      'npm run dev',
+    ]);
+
+    const pnpm = await runCreate(['pnpm-proj'], {
+      cwd,
+      env: {
+        npm_config_user_agent: 'pnpm/10.0.0 npm/? node/v24.14.1 win32 x64',
+      },
+    });
+    assert.equal(pnpm.code, 0, pnpm.output);
+    assert.deepEqual(extractGuideCommands(pnpm.output), [
+      'cd pnpm-proj',
+      'pnpm install',
+      'pnpm dev',
+    ]);
+
+    const yarn = await runCreate(['yarn-proj'], {
+      cwd,
+      env: {
+        npm_config_user_agent: 'yarn/1.22.22 npm/? node/v20.0.0 win32 x64',
+      },
+    });
+    assert.equal(yarn.code, 0, yarn.output);
+    assert.deepEqual(extractGuideCommands(yarn.output), [
+      'cd yarn-proj',
+      'yarn install',
+      'yarn dev',
+    ]);
+
+    const unknown = await runCreate(['unknown-proj'], {
+      cwd,
+      env: {
+        npm_config_user_agent: '',
+      },
+    });
+    assert.equal(unknown.code, 0, unknown.output);
+    assert.deepEqual(extractGuideCommands(unknown.output), [
+      'cd unknown-proj',
+      'npm install',
+      'npm run dev',
+    ]);
+  });
+
+  it('ネストパスと空白パスの cd 案内が正しい', async () => {
+    const cwd = await makeCwd();
+    const nested = await runCreate(['apps/sample'], { cwd });
+    assert.equal(nested.code, 0, nested.output);
+    assert.match(nested.output, /cd apps\/sample/);
+
+    const spaced = await runCreate(['My Project'], { cwd });
+    assert.equal(spaced.code, 0, spaced.output);
+    assert.match(spaced.output, /cd "My Project"/);
+  });
+
+  it('生成 package.json の scripts.dev と依存 version が正しい', async () => {
+    const cwd = await makeCwd();
+    const result = await runCreate(['script-check'], { cwd });
+    assert.equal(result.code, 0, result.output);
+    const pkg = JSON.parse(
+      await fsp.readFile(path.join(cwd, 'script-check/package.json'), 'utf8')
+    );
+    assert.equal(pkg.version, '0.1.0');
+    assert.equal(pkg.scripts.dev, 'jskim dev sample');
+    assert.equal(pkg.devDependencies['@ywal123456/jskim'], '^0.5.1');
+    assert.match(result.output, /npm run dev/);
   });
 
   it('template/src/sample は root src/sample と一致する', async () => {
@@ -251,4 +336,24 @@ function listRelativeFiles(root) {
   walk(root, '');
   out.sort();
   return out;
+}
+
+/**
+ * @param {string} text
+ * @returns {string[]}
+ */
+function extractGuideCommands(text) {
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line.startsWith('cd ') ||
+        line === 'npm install' ||
+        line === 'npm run dev' ||
+        line === 'pnpm install' ||
+        line === 'pnpm dev' ||
+        line === 'yarn install' ||
+        line === 'yarn dev'
+    );
 }
