@@ -39,6 +39,8 @@
     "watch": "node scripts/watch.js",
     "serve": "node scripts/serve.js",
     "dev": "node scripts/dev.js",
+    "docs:pdf": "node scripts/docs/build-user-guide-pdf.js",
+    "docs:pdf:html": "node scripts/docs/build-user-guide-pdf.js --html-only",
     "test": "node --test --test-concurrency=1 test/**/*.test.js"
   },
   "engines": {
@@ -53,5 +55,9 @@
     "fast-glob": "^3.3.3",
     "fs-extra": "^11.3.0",
     "nunjucks": "^3.2.4"
+  },
+  "devDependencies": {
+    "markdown-it": "^14.3.0",
+    "playwright-core": "^1.61.1"
   }
 }

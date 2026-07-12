@@ -1,0 +1,286 @@
+/* JSKim ユーザーガイド print CSS（PDF / HTML 共通） */
+
+@page {
+  size: A4 portrait;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 10.5pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: #1a1a1a;
+  font-family:
+    "Yu Gothic",
+    "YuGothic",
+    "Hiragino Kaku Gothic ProN",
+    "Hiragino Sans",
+    "Noto Sans CJK JP",
+    "Noto Sans JP",
+    Meiryo,
+    sans-serif;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.cover {
+  break-after: page;
+  page-break-after: always;
+  padding: 10mm 4mm 6mm;
+}
+
+.cover h1 {
+  font-size: 26pt;
+  font-weight: 700;
+  margin: 0 0 8mm;
+  border: none;
+  page-break-after: avoid;
+}
+
+.cover .version {
+  font-size: 14pt;
+  margin: 0 0 4mm;
+  color: #333;
+}
+
+.cover .doc-kind {
+  font-size: 11pt;
+  margin: 0 0 12mm;
+  color: #555;
+}
+
+.cover .cover-section {
+  margin-top: 6mm;
+  max-width: 160mm;
+}
+
+.cover .cover-section h2 {
+  font-size: 12pt;
+  margin: 0 0 3mm;
+  padding-bottom: 1.5mm;
+  border-bottom: 1px solid #ccc;
+  page-break-after: avoid;
+}
+
+.cover .cover-section > *:last-child {
+  margin-bottom: 0;
+}
+
+.toc {
+  break-after: page;
+  page-break-after: always;
+}
+
+.toc h1 {
+  font-size: 18pt;
+  margin: 0 0 8mm;
+  padding-bottom: 3mm;
+  border-bottom: 2px solid #222;
+  page-break-after: avoid;
+}
+
+.toc ol {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: 11pt;
+  line-height: 1.95;
+}
+
+.toc .toc-num {
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.35em;
+}
+
+.toc a {
+  color: #0645ad;
+  text-decoration: underline;
+}
+
+/* toc の break-after で次ページへ。連続 chapter のみ break-before */
+.chapter + .chapter {
+  break-before: page;
+  page-break-before: always;
+}
+
+.chapter > h1:first-child {
+  page-break-before: avoid;
+}
+
+h1 {
+  font-size: 17pt;
+  margin: 0 0 7mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 2px solid #222;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+h2 {
+  font-size: 13pt;
+  margin: 7mm 0 3mm;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+h3 {
+  font-size: 11.5pt;
+  margin: 5mm 0 2mm;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 10.5pt;
+  margin: 4mm 0 2mm;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0 0 3mm;
+  orphans: 3;
+  widows: 3;
+}
+
+ul,
+ol {
+  margin: 0 0 3mm;
+  padding-left: 6mm;
+}
+
+li {
+  margin-bottom: 1.2mm;
+}
+
+li > ul,
+li > ol {
+  margin-top: 1mm;
+  margin-bottom: 1mm;
+}
+
+blockquote {
+  margin: 3mm 0;
+  padding: 2.5mm 4mm;
+  border-left: 3px solid #555;
+  background: #f5f5f5;
+  color: #222;
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+pre {
+  margin: 3mm 0 4mm;
+  padding: 3mm 3.5mm;
+  background: #f3f3f3;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-size: 8.4pt;
+  line-height: 1.45;
+  page-break-inside: auto;
+}
+
+code {
+  font-family:
+    Consolas,
+    "Cascadia Mono",
+    "SFMono-Regular",
+    "Noto Sans Mono CJK JP",
+    "Yu Gothic",
+    monospace;
+  font-size: 0.92em;
+  background: #efefef;
+  padding: 0.05em 0.25em;
+  border-radius: 2px;
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 3mm 0 5mm;
+  font-size: 9pt;
+  table-layout: fixed;
+}
+
+thead {
+  display: table-header-group;
+}
+
+th,
+td {
+  border: 1px solid #aaa;
+  padding: 1.5mm 2mm;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+th {
+  background: #eaeaea;
+  font-weight: 600;
+}
+
+tr {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #ccc;
+  margin: 6mm 0;
+}
+
+a {
+  color: #0645ad;
+  text-decoration: underline;
+}
+
+.path-ref {
+  font-family:
+    Consolas,
+    "Cascadia Mono",
+    "Yu Gothic",
+    monospace;
+  font-size: 0.9em;
+}
+
+@media screen {
+  body {
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 12mm;
+    background: #fff;
+  }
+
+  .cover,
+  .toc,
+  .chapter {
+    border-bottom: 1px dashed #ccc;
+    margin-bottom: 10mm;
+    padding-bottom: 8mm;
+  }
+}
