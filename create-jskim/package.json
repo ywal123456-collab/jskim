@@ -1,6 +1,6 @@
 {
   "name": "create-jskim",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Scaffold a new JSKim static HTML project",
   "keywords": [
     "jskim",
@@ -36,7 +36,7 @@
   ],
   "jskimEngine": {
     "packageName": "@ywal123456/jskim",
-    "version": "^0.3.1"
+    "version": "^0.4.0"
   },
   "engines": {
     "node": ">=18"

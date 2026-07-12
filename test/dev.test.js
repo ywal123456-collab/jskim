@@ -167,7 +167,8 @@ describe('dev', () => {
     );
     const beforeDeb = (cli.output.match(/再ビルドが完了しました/g) || [])
       .length;
-    const eventsBeforeDeb = sse.events.length;
+    const cssBefore = sse.count('css');
+    const reloadBeforeCss = sse.count('reload');
     for (let i = 0; i < 5; i += 1) {
       // eslint-disable-next-line no-await-in-loop
       await fsp.writeFile(cssPath, `/* D_${i} */\n`, 'utf8');
@@ -180,12 +181,18 @@ describe('dev', () => {
         (cli.output.match(/再ビルドが完了しました/g) || []).length > beforeDeb,
       { timeoutMs: 15000, label: 'debounce rebuild' }
     );
+    await waitFor(() => sse.count('css') > cssBefore, {
+      timeoutMs: 10000,
+      label: 'css soft reload event',
+    });
     await sleep(300);
     const rebuildDelta =
       (cli.output.match(/再ビルドが完了しました/g) || []).length - beforeDeb;
-    const reloadDelta = sse.events.length - eventsBeforeDeb;
+    const cssDelta = sse.count('css') - cssBefore;
+    const reloadDelta = sse.count('reload') - reloadBeforeCss;
     assert.ok(rebuildDelta <= 3);
-    assert.ok(reloadDelta >= 1 && reloadDelta <= 3);
+    assert.ok(cssDelta >= 1 && cssDelta <= 3);
+    assert.equal(reloadDelta, 0);
 
     sse.close();
     await cli.stop();

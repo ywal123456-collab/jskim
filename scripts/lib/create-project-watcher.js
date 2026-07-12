@@ -114,9 +114,11 @@ function createProjectWatcher(project, options = {}) {
       return;
     }
 
+    const absolutePath = path.resolve(filePath);
     pendingEvents.push({
       event: eventName,
-      file: toDisplayPath(filePath, workspaceRoot),
+      file: toDisplayPath(absolutePath, workspaceRoot),
+      absolutePath,
     });
 
     if (debounceTimer) {

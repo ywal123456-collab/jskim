@@ -9,6 +9,7 @@ const { createProjectWatcher } = require('./create-project-watcher');
 const { createStaticServer } = require('./create-static-server');
 const { createLiveReload } = require('./create-live-reload');
 const { formatListenError } = require('../commands/serve-errors');
+const { classifyReload } = require('./classify-reload');
 
 const DEV_RESTART_KEYS = [
   'outputDir',
@@ -77,13 +78,15 @@ function createWatchRuntime(options) {
     currentProject = resolved.project;
     configPath = resolved.configPath;
 
+    // ready ログより先に config 監視を開始する。
+    // そうしないと「監視しています」直後の config 変更を見逃すことがある。
+    beginConfigWatching();
+
     if (mode === 'dev') {
       await startDevSession(currentProject, { initial: true });
     } else {
       await startWatchSession(currentProject, { initial: true });
     }
-
-    beginConfigWatching();
   }
 
   async function startWatchSession(project, { initial }) {
@@ -185,10 +188,28 @@ function createWatchRuntime(options) {
   }
 
   function wireDevSourceReload(watcher) {
-    watcher.on('build:success', ({ initial }) => {
-      if (!initial && liveReloadEnabled && liveReload) {
-        liveReload.broadcastReload();
+    watcher.on('build:success', ({ initial, events }) => {
+      if (initial || !liveReloadEnabled || !liveReload) {
+        return;
       }
+      // 未解決の config error がある間は source 成功で overlay/reload しない
+      if (liveReload.hasConfigError()) {
+        return;
+      }
+      const kind = classifyReload({
+        events,
+        sourceDir: currentProject && currentProject.sourceDir,
+        templates: currentProject && currentProject.templates,
+      });
+      liveReload.notifySourceBuildSuccess(kind);
+    });
+
+    watcher.on('build:failure', ({ error }) => {
+      if (!liveReloadEnabled || !liveReload) {
+        return;
+      }
+      // Error.message は完成済みの診断文字列を再利用する
+      liveReload.broadcastBuildError(error);
     });
   }
 
@@ -305,7 +326,15 @@ function createWatchRuntime(options) {
       console.error('[JSKim] 設定ファイルの再読み込みに失敗しました。');
       console.error(message);
       console.error('[JSKim] 以前の正常な設定を継続します。');
+      if (mode === 'dev' && liveReloadEnabled && liveReload) {
+        liveReload.broadcastConfigError(message);
+      }
       return;
+    }
+
+    // candidate は validation 済み。以降の失敗は build error として扱う
+    if (mode === 'dev' && liveReloadEnabled && liveReload) {
+      liveReload.clearConfigError();
     }
 
     if (mode === 'dev') {
@@ -348,6 +377,9 @@ function createWatchRuntime(options) {
       console.error('[JSKim] 設定の再読み込み後に監視の更新に失敗しました。');
       console.error(message);
       console.error('[JSKim] 以前の正常な設定を継続します。');
+      if (mode === 'dev' && liveReloadEnabled && liveReload) {
+        liveReload.broadcastConfigError(message);
+      }
       return;
     }
 
@@ -388,9 +420,9 @@ function createWatchRuntime(options) {
         hooks.onInitialBuildSuccess();
       }
     };
-    const onFailure = ({ initial }) => {
+    const onFailure = ({ initial, error }) => {
       if (initial && hooks.onInitialBuildFailure) {
-        hooks.onInitialBuildFailure();
+        hooks.onInitialBuildFailure(error);
       }
     };
     projectWatcher.on('build:success', onSuccess);

@@ -52,7 +52,7 @@ project/
       └─ components/
 ```
 
-生成プロジェクトは `@ywal123456/jskim`（`^0.3.0`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
+生成プロジェクトは `@ywal123456/jskim`（`^0.4.0`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
 
 標準 sample は files pipeline を使います。`pages` 配下の `.html.njk` / `.css.njk` / `.js.njk` はレンダリングされ、画像はそのままコピーされます。
 

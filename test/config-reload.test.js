@@ -449,6 +449,7 @@ describe('config hot reload', { timeout: 120000 }, () => {
     const sse = await openSse({ port });
     await sleep(150);
     const eventsBefore = sse.events.length;
+    const errorBefore = sse.count('error');
 
     const configPath = path.join(ws.workspaceRoot, 'jskim.config.js');
     await fsp.writeFile(configPath, 'module.exports = { projects: {', 'utf8');
@@ -457,8 +458,12 @@ describe('config hot reload', { timeout: 120000 }, () => {
       '設定ファイルの再読み込みに失敗しました',
       { timeoutMs: 15000 }
     );
-    await sleep(300);
+    await waitFor(() => sse.count('error') > errorBefore, {
+      timeoutMs: 10000,
+      label: 'config error overlay event',
+    });
     assert.equal(sse.events.length, eventsBefore);
+    assert.equal(sse.count('css'), 0);
     assert.equal(cli.child.exitCode, null);
     assert.equal((await httpRequest({ port, path: '/' })).status, 200);
 
@@ -542,6 +547,184 @@ describe('config hot reload', { timeout: 120000 }, () => {
     assert.equal((await httpRequest({ port, path: '/' })).status, 200);
 
     await serve.stop();
+  });
+
+  it('dev: config エラー中の source 成功では clear-error/css/reload しない', async () => {
+    const port = await getFreePort();
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          serve: { host: '127.0.0.1', port },
+          watch: { debounce: 80 },
+        },
+      },
+    });
+    workspaces.push(ws);
+
+    const cli = runCli({
+      scriptPath: ws.scripts.dev,
+      cwd: ws.workspaceRoot,
+      args: ['sample'],
+      ipc: true,
+      timeoutMs: 60000,
+    });
+    children.push(cli);
+    await waitForOutput(
+      () => cli.output,
+      '終了するには Ctrl+C を押してください。',
+      { timeoutMs: 25000 }
+    );
+
+    const sse = await openSse({ port });
+    await sleep(150);
+
+    const configPath = path.join(ws.workspaceRoot, 'jskim.config.js');
+    await fsp.writeFile(configPath, 'module.exports = { projects: {', 'utf8');
+    await waitForOutput(
+      () => cli.output,
+      '設定ファイルの再読み込みに失敗しました',
+      { timeoutMs: 15000 }
+    );
+    await waitFor(() => sse.count('error') >= 1, {
+      timeoutMs: 10000,
+      label: 'config error event',
+    });
+    const configMessage = JSON.parse(sse.last('error').data).message;
+    const errorCount = sse.count('error');
+    const reloadCount = sse.count('reload');
+    const cssCount = sse.count('css');
+    const clearCount = sse.count('clear-error');
+
+    const cssPath = path.join(
+      ws.workspaceRoot,
+      'src/sample/assets/css/style.css'
+    );
+    const beforeRebuild = (cli.output.match(/再ビルドが完了しました/g) || [])
+      .length;
+    await fsp.writeFile(cssPath, '/* CONFIG_ERR_CSS */\nbody{}\n', 'utf8');
+    await waitFor(
+      () =>
+        (cli.output.match(/再ビルドが完了しました/g) || []).length >
+        beforeRebuild,
+      { timeoutMs: 15000, label: 'source rebuild under bad config' }
+    );
+    await sleep(400);
+
+    assert.equal(sse.count('reload'), reloadCount);
+    assert.equal(sse.count('css'), cssCount);
+    assert.equal(sse.count('clear-error'), clearCount);
+    assert.equal(sse.count('error'), errorCount);
+    assert.match(
+      fs.readFileSync(
+        path.join(ws.workspaceRoot, 'dist/sample/assets/css/style.css'),
+        'utf8'
+      ),
+      /CONFIG_ERR_CSS/
+    );
+
+    sse.close();
+    const sse2 = await openSse({ port });
+    await waitFor(() => sse2.count('error') >= 1, {
+      timeoutMs: 10000,
+      label: 'replay config error',
+    });
+    assert.equal(JSON.parse(sse2.last('error').data).message, configMessage);
+
+    await writeProjectConfig(ws.workspaceRoot, {
+      sourceDir: 'src/sample',
+      outputDir: 'dist/sample',
+      debounce: 90,
+      port,
+    });
+    await waitForOutput(() => cli.output, '設定を再読み込みしました', {
+      timeoutMs: 15000,
+    });
+    await waitFor(() => sse2.count('reload') >= 1, {
+      timeoutMs: 15000,
+      label: 'config recover reload',
+    });
+    assert.equal(sse2.count('reload'), 1);
+    sse2.close();
+
+    const sse3 = await openSse({ port });
+    await sleep(400);
+    assert.equal(sse3.count('error'), 0);
+    sse3.close();
+    await cli.stop();
+  });
+
+  it('dev: 正常 config 適用後の build 失敗は build error として復旧できる', async () => {
+    const port = await getFreePort();
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          serve: { host: '127.0.0.1', port },
+          watch: { debounce: 80 },
+        },
+      },
+    });
+    workspaces.push(ws);
+
+    const indexPath = path.join(ws.workspaceRoot, 'src/sample/pages/index.njk');
+    await fsp.writeFile(indexPath, '{% if %}\n', 'utf8');
+
+    const cli = runCli({
+      scriptPath: ws.scripts.dev,
+      cwd: ws.workspaceRoot,
+      args: ['sample'],
+      ipc: true,
+      timeoutMs: 60000,
+    });
+    children.push(cli);
+    await waitForOutput(
+      () => cli.output,
+      '終了するには Ctrl+C を押してください。',
+      { timeoutMs: 25000 }
+    );
+
+    const sse = await openSse({ port });
+    await sleep(150);
+
+    // debounce だけ変えつつ同じ壊れた source で再適用 → build 失敗
+    await writeProjectConfig(ws.workspaceRoot, {
+      sourceDir: 'src/sample',
+      outputDir: 'dist/sample',
+      debounce: 110,
+      port,
+    });
+    await waitForOutput(() => cli.output, '設定を再読み込みしました', {
+      timeoutMs: 15000,
+    });
+    await waitForOutput(
+      () => cli.output,
+      '設定の再読み込み後にbuildが失敗しました',
+      { timeoutMs: 15000 }
+    );
+    await waitFor(() => sse.count('error') >= 1, {
+      timeoutMs: 10000,
+      label: 'build error after valid config',
+    });
+    assert.equal(sse.count('reload'), 0);
+    assert.equal(sse.count('css'), 0);
+
+    const before = (cli.output.match(/再ビルドが完了しました/g) || []).length;
+    await fsp.writeFile(
+      indexPath,
+      '{% extends "layouts/base.njk" %}{% block content %}<p>CFG_BUILD_OK</p>{% endblock %}\n',
+      'utf8'
+    );
+    await waitFor(
+      () => (cli.output.match(/再ビルドが完了しました/g) || []).length > before,
+      { timeoutMs: 20000, label: 'source recover after config apply fail' }
+    );
+    await waitFor(() => sse.count('reload') >= 1, {
+      timeoutMs: 10000,
+      label: 'reload after build recover',
+    });
+    assert.equal(sse.count('reload'), 1);
+
+    sse.close();
+    await cli.stop();
   });
 });
 

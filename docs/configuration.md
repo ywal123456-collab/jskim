@@ -309,15 +309,20 @@ files mode では出力パスの衝突を検出します。たとえば同じ `f
 
 - `GET /_jskim/live-reload` で SSE を提供
 - HTML レスポンスにだけ client script を一時注入（`dist` には書き込まない）
-- 成功した再ビルドのあとだけ `reload` event を送信
+- 成功した再ビルドのあとだけ browser 更新を送信（通常はページ全体 reload）
+- 再ビルド失敗時は browser error overlay を表示（成功するまで reload / CSS 更新は送らない）
+- CSS ファイルだけが安全に変更された場合は、ページ全体ではなく stylesheet を更新
 
 `false` のとき:
 
 - SSE endpoint は提供しない（404）
 - HTML への script 注入なし
+- error overlay / CSS soft reload も無効
 - build + watch + serve 自体は動作
 
 `/_jskim/live-reload` は内部予約パスです。プロジェクトの静的ファイルとしては使わないことを推奨します。
+
+厳格な Content Security Policy で inline script または inline style が禁止されている場合、dev の live reload・error overlay・CSS soft reload が動作しないことがあります。`watch` と `serve` にはこれらの browser 機能はありません。
 
 ## config hot reload
 

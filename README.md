@@ -14,14 +14,16 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - ファイル監視（`watch`）後の全体再ビルド
 - ビルド結果のローカル静的サーバー（`serve`）
 - 開発サーバー（`dev` = build + watch + serve）
-- 成功した再ビルド後のページ全体ライブリロード（SSE）
+- 成功した再ビルド後のライブリロード（SSE）
+- 再ビルド失敗時の browser error overlay（`dev` + `liveReload`）
+- 安全な CSS 変更時の stylesheet soft reload（`dev` + `liveReload`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
 
 ## 現在の非対応範囲
 
 - ブラウザ自動起動
-- HMR / CSS だけのホット更新
+- HMR / JavaScript module hot replacement
 - JSON / YAML などの外部データファイル自動読み込み
 - API / Mock API
 - 増分ビルド
@@ -234,9 +236,14 @@ http://127.0.0.1:3000/
 - `serve` は自動で build / watch を実行しません
 - サーバールートは `outputDir`（例: `dist/sample`）
 - `serve` は HTML を変換せず、ライブリロード script を注入しません
-- `dev` は成功した再ビルドのあとだけ SSE でページ全体 reload を送ります
-- `dev` でも `dist` ファイルへ script は書き込みません
+- `watch` にも browser overlay / CSS soft reload はありません
+- `dev` は `dev.liveReload: true` のときだけ browser 向け機能を有効にします
+- 再ビルド失敗時は terminal 診断に加え、browser error overlay を表示します（成功するまで full reload / CSS reload は送りません）
+- CSS ファイルだけが安全に変更された再ビルドでは、ページ全体ではなく stylesheet を更新します
+- CSS 以外の変更や判定が不確実な場合は、従来どおりページ全体 reload します
+- `dev` でも `dist` ファイルへ runtime は書き込みません
 - ブラウザ自動起動はサポートしません
+- 厳格な Content Security Policy で inline script または inline style が禁止されている場合、dev の live reload・error overlay・CSS soft reload が動作しないことがあります
 
 `/_jskim/live-reload` は `dev.liveReload: true` のときだけ使う内部予約パスです。実際の静的ファイルパスとしては使わないことを推奨します。
 

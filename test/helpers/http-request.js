@@ -54,7 +54,38 @@ function httpRequest(options) {
 }
 
 /**
- * SSE 接続を開き、reload イベントを収集します。
+ * SSE フレームを解析します。
+ * @param {string} frame
+ * @returns {{ name: string, data: string, raw: string }|null}
+ */
+function parseSseFrame(frame) {
+  if (!frame || typeof frame !== 'string') {
+    return null;
+  }
+  let name = 'message';
+  const dataLines = [];
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) {
+      name = line.slice('event:'.length).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  }
+  if (dataLines.length === 0 && name === 'message') {
+    return null;
+  }
+  return {
+    name,
+    data: dataLines.join('\n'),
+    raw: frame,
+  };
+}
+
+/**
+ * SSE 接続を開き、名前付きイベントを収集します。
+ *
+ * 互換のため `events` は reload の raw frame 配列のままです。
+ * 新しい検証は `typedEvents` / `count(name)` を使います。
  */
 function openSse(options) {
   const {
@@ -76,13 +107,19 @@ function openSse(options) {
       (res) => {
         let buffer = '';
         const events = [];
+        const typedEvents = [];
 
         res.on('data', (chunk) => {
           buffer += chunk.toString('utf8');
           const parts = buffer.split('\n\n');
           buffer = parts.pop() || '';
           for (const part of parts) {
-            if (part.includes('event: reload')) {
+            const parsed = parseSseFrame(part);
+            if (!parsed) {
+              continue;
+            }
+            typedEvents.push(parsed);
+            if (parsed.name === 'reload') {
               events.push(part);
             }
           }
@@ -92,6 +129,18 @@ function openSse(options) {
           status: res.statusCode,
           headers: res.headers,
           events,
+          typedEvents,
+          count(name) {
+            return typedEvents.filter((item) => item.name === name).length;
+          },
+          last(name) {
+            for (let i = typedEvents.length - 1; i >= 0; i -= 1) {
+              if (typedEvents[i].name === name) {
+                return typedEvents[i];
+              }
+            }
+            return null;
+          },
           close() {
             req.destroy();
             res.destroy();
@@ -111,4 +160,5 @@ function openSse(options) {
 module.exports = {
   httpRequest,
   openSse,
+  parseSseFrame,
 };
