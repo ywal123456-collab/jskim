@@ -184,9 +184,9 @@ function createProjectWatcher(project, options = {}) {
           `[JSKim] プロジェクト "${project.name}" の初回ビルドに失敗しました。ウォッチャーは開始します。`
         );
       } else {
-        const representative = events[events.length - 1] || null;
         console.error(`[JSKim] 再ビルドに失敗しました`);
         console.error(`プロジェクト: ${project.name}`);
+        const representative = events[events.length - 1] || null;
         if (representative) {
           console.error(`イベント: ${representative.event}`);
           console.error(`ファイル: ${representative.file}`);
@@ -194,7 +194,12 @@ function createProjectWatcher(project, options = {}) {
         if (events.length > 1) {
           console.error(`変更数: ${events.length} ファイル`);
         }
-        console.error(`原因: ${message}`);
+        // 診断付きメッセージは重複ヘッダーを避けるためそのまま出力する
+        if (String(message).startsWith('[JSKim]')) {
+          console.error(message);
+        } else {
+          console.error(`原因: ${message}`);
+        }
         console.error(
           `[JSKim] ウォッチャーは継続中です。修正して保存すると再試行します。`
         );

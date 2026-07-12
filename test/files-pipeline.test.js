@@ -101,7 +101,14 @@ describe('files pipeline', () => {
 
     await assert.rejects(
       () => buildProject('sample', { workspaceRoot, log: false }),
-      /出力パスが衝突しています/
+      (err) => {
+        const message = String(err && err.message);
+        assert.match(message, /出力パスが衝突しています/);
+        assert.match(message, /プロジェクト: sample/);
+        assert.match(message, /ソース1:/);
+        assert.match(message, /ソース2:/);
+        return true;
+      }
     );
   });
 
@@ -114,7 +121,13 @@ describe('files pipeline', () => {
 
     await assert.rejects(
       () => buildProject('sample', { workspaceRoot, log: false }),
-      /許可範囲外/
+      (err) => {
+        const message = String(err && err.message);
+        assert.match(message, /許可範囲外/);
+        assert.match(message, /sourceDir の外への参照|許可範囲外/);
+        assert.match(message, /files\[0\]\.from/);
+        return true;
+      }
     );
   });
 

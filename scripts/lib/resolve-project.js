@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { mergeConfig } = require('./merge-config');
+const { formatConfigValidationError } = require('./format-diagnostic');
 
 /**
  * 読み込んだ設定から名前付きプロジェクトを解決・検証します。
@@ -98,6 +99,7 @@ function resolveProject({
     throw new Error(
       `[JSKim] files と ${conflict.join(' / ')} を同時に設定できません。\n` +
         `プロジェクト: ${name}\n` +
+        `衝突: files と ${conflict.join(' / ')}\n` +
         `files mode を使う場合は render / copy を空にしてください。\n` +
         `legacy mode を使う場合は files を設定しないでください。`
     );
@@ -211,10 +213,13 @@ function validateData(data, projectName) {
   }
   if (typeof data !== 'object' || Array.isArray(data)) {
     throw new Error(
-      `[JSKim] 設定値が不正です: data\n` +
-        `プロジェクト: ${projectName}\n` +
-        `plain object を指定してください（null / array / primitive は不可）。\n` +
-        `受け取った値: ${Array.isArray(data) ? 'array' : typeof data}`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'data',
+        detail:
+          'plain object を指定してください（null / array / primitive は不可）。',
+        received: Array.isArray(data) ? 'array' : typeof data,
+      })
     );
   }
 }
@@ -225,26 +230,35 @@ function validateNunjucks(nunjucks, projectName) {
   }
   if (typeof nunjucks !== 'object' || Array.isArray(nunjucks)) {
     throw new Error(
-      `[JSKim] 設定値が不正です: nunjucks\n` +
-        `プロジェクト: ${projectName}\n` +
-        `plain object を指定してください。`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'nunjucks',
+        detail: 'plain object を指定してください。',
+        received: Array.isArray(nunjucks) ? 'array' : typeof nunjucks,
+      })
     );
   }
 
   const filters = nunjucks.filters || {};
   if (typeof filters !== 'object' || Array.isArray(filters)) {
     throw new Error(
-      `[JSKim] 設定値が不正です: nunjucks.filters\n` +
-        `プロジェクト: ${projectName}\n` +
-        `plain object を指定してください。`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'nunjucks.filters',
+        detail: 'plain object を指定してください。',
+        received: Array.isArray(filters) ? 'array' : typeof filters,
+      })
     );
   }
   for (const [key, value] of Object.entries(filters)) {
     if (typeof value !== 'function') {
       throw new Error(
-        `[JSKim] 設定値が不正です: nunjucks.filters.${key}\n` +
-          `プロジェクト: ${projectName}\n` +
-          `filter は function である必要があります。`
+        formatConfigValidationError({
+          projectName,
+          configKey: `nunjucks.filters.${key}`,
+          detail: 'filter は function である必要があります。',
+          received: typeof value,
+        })
       );
     }
   }
@@ -252,9 +266,12 @@ function validateNunjucks(nunjucks, projectName) {
   const globals = nunjucks.globals || {};
   if (typeof globals !== 'object' || Array.isArray(globals)) {
     throw new Error(
-      `[JSKim] 設定値が不正です: nunjucks.globals\n` +
-        `プロジェクト: ${projectName}\n` +
-        `plain object を指定してください。`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'nunjucks.globals',
+        detail: 'plain object を指定してください。',
+        received: Array.isArray(globals) ? 'array' : typeof globals,
+      })
     );
   }
 }
@@ -268,10 +285,12 @@ function validateWatchConfig(watch, projectName) {
     debounce < 0
   ) {
     throw new Error(
-      `[JSKim] 設定値が不正です: watch.debounce\n` +
-        `プロジェクト: ${projectName}\n` +
-        `0以上の有限な数値を指定してください。\n` +
-        `受け取った値: ${String(debounce)}`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'watch.debounce',
+        detail: '0以上の有限な数値を指定してください。',
+        received: String(debounce),
+      })
     );
   }
 }
@@ -282,10 +301,12 @@ function validateServeConfig(serve, projectName) {
 
   if (typeof host !== 'string' || host.trim() === '') {
     throw new Error(
-      `[JSKim] 設定値が不正です: serve.host\n` +
-        `プロジェクト: ${projectName}\n` +
-        `空でない文字列を指定してください。\n` +
-        `受け取った値: ${String(host)}`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'serve.host',
+        detail: '空でない文字列を指定してください。',
+        received: String(host),
+      })
     );
   }
 
@@ -296,10 +317,12 @@ function validateServeConfig(serve, projectName) {
     port > 65535
   ) {
     throw new Error(
-      `[JSKim] 設定値が不正です: serve.port\n` +
-        `プロジェクト: ${projectName}\n` +
-        `1から65535までの整数を指定してください。\n` +
-        `受け取った値: ${String(port)}`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'serve.port',
+        detail: '1から65535までの整数を指定してください。',
+        received: String(port),
+      })
     );
   }
 }
@@ -309,10 +332,12 @@ function validateDevConfig(dev, projectName) {
 
   if (typeof liveReload !== 'boolean') {
     throw new Error(
-      `[JSKim] 設定値が不正です: dev.liveReload\n` +
-        `プロジェクト: ${projectName}\n` +
-        `boolean を指定してください。\n` +
-        `受け取った値: ${String(liveReload)}`
+      formatConfigValidationError({
+        projectName,
+        configKey: 'dev.liveReload',
+        detail: 'boolean を指定してください。',
+        received: String(liveReload),
+      })
     );
   }
 }

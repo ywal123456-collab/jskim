@@ -5,6 +5,13 @@ const fs = require('node:fs');
 const fse = require('fs-extra');
 const fg = require('fast-glob');
 const { computeRootPath } = require('./render-pages');
+const { toDisplayPath } = require('./to-display-path');
+const {
+  formatRenderError,
+  formatCollisionError,
+  formatPathOutsideError,
+  formatIoError,
+} = require('./format-diagnostic');
 
 const RESERVED_CONTEXT_KEYS = new Set(['rootPath']);
 
@@ -33,14 +40,15 @@ async function processFiles({ env, project }) {
     const fromDir = path.resolve(sourceDir, rule.from);
     const toDir = path.resolve(outputDir, rule.to);
 
-    assertInside(sourceDir, fromDir, name, `files[${i}].from`);
-    assertInside(outputDir, toDir, name, `files[${i}].to`);
+    assertInside(sourceDir, fromDir, name, `files[${i}].from`, 'sourceDir', project.workspaceRoot);
+    assertInside(outputDir, toDir, name, `files[${i}].to`, 'outputDir', project.workspaceRoot);
 
     if (!(await fse.pathExists(fromDir))) {
       throw new Error(
         `[JSKim] プロジェクト "${name}" の files[${i}].from が存在しません。\n` +
-          `パス: ${fromDir}\n` +
-          `設定: files[${i}].from = ${rule.from}`
+          `設定キー: files[${i}].from\n` +
+          `設定値: ${rule.from}\n` +
+          `パス: ${toDisplayPath(fromDir, project.workspaceRoot)}`
       );
     }
 
@@ -67,7 +75,14 @@ async function processFiles({ env, project }) {
         : normalizedRel;
       const outputFile = path.resolve(toDir, outRel.split('/').join(path.sep));
 
-      assertInside(outputDir, outputFile, name, `files[${i}] output`);
+      assertInside(
+        outputDir,
+        outputFile,
+        name,
+        `files[${i}] output`,
+        'outputDir',
+        project.workspaceRoot
+      );
 
       const collisionKey =
         process.platform === 'win32'
@@ -77,11 +92,15 @@ async function processFiles({ env, project }) {
       if (planned.has(collisionKey)) {
         const previous = planned.get(collisionKey);
         throw new Error(
-          `[JSKim] 出力パスが衝突しています。\n` +
-            `プロジェクト: ${name}\n` +
-            `出力: ${toDisplay(outputFile, project.workspaceRoot)}\n` +
-            `ソース1: ${toDisplay(previous.sourceFile, project.workspaceRoot)}\n` +
-            `ソース2: ${toDisplay(sourceFile, project.workspaceRoot)}`
+          formatCollisionError({
+            projectName: name,
+            outputFile,
+            sourceFileA: previous.sourceFile,
+            sourceFileB: sourceFile,
+            ruleIndexA: previous.ruleIndex,
+            ruleIndexB: i,
+            workspaceRoot: project.workspaceRoot,
+          })
         );
       }
 
@@ -103,7 +122,20 @@ async function processFiles({ env, project }) {
     await fse.ensureDir(path.dirname(item.outputFile));
 
     if (item.kind === 'copy') {
-      await fse.copy(item.sourceFile, item.outputFile, { overwrite: true });
+      try {
+        await fse.copy(item.sourceFile, item.outputFile, { overwrite: true });
+      } catch (err) {
+        throw new Error(
+          formatIoError({
+            projectName: name,
+            actionLabel: 'ファイルコピー',
+            targetFile: item.sourceFile,
+            workspaceRoot: project.workspaceRoot,
+            err,
+          }) +
+            `\n出力: ${toDisplayPath(item.outputFile, project.workspaceRoot)}`
+        );
+      }
       copiedCount += 1;
       outputFiles.push(item.outputFile);
       continue;
@@ -120,16 +152,30 @@ async function processFiles({ env, project }) {
     try {
       text = env.render(templatePath, context);
     } catch (err) {
-      const message = err && err.message ? err.message : String(err);
       throw new Error(
-        `[JSKim] プロジェクト "${name}" の Nunjucks レンダリングに失敗しました。\n` +
-          `ソース: ${item.sourceFile}\n` +
-          `テンプレート: ${templatePath}\n` +
-          `原因: ${message}`
+        formatRenderError({
+          projectName: name,
+          sourceFile: item.sourceFile,
+          templatePath,
+          workspaceRoot: project.workspaceRoot,
+          err,
+        })
       );
     }
 
-    await fse.writeFile(item.outputFile, text, 'utf8');
+    try {
+      await fse.writeFile(item.outputFile, text, 'utf8');
+    } catch (err) {
+      throw new Error(
+        formatIoError({
+          projectName: name,
+          actionLabel: 'レンダリング結果の書き込み',
+          targetFile: item.outputFile,
+          workspaceRoot: project.workspaceRoot,
+          err,
+        })
+      );
+    }
     renderedCount += 1;
     outputFiles.push(item.outputFile);
   }
@@ -218,12 +264,17 @@ function samePath(a, b) {
   return na === nb;
 }
 
-function assertInside(root, candidate, projectName, label) {
+function assertInside(root, candidate, projectName, label, rootKind, workspaceRoot) {
   if (!isInsideOrSame(root, candidate)) {
     throw new Error(
-      `[JSKim] プロジェクト "${projectName}" の ${label} が許可範囲外です。\n` +
-        `ルート: ${root}\n` +
-        `対象: ${candidate}`
+      formatPathOutsideError({
+        projectName,
+        label,
+        root,
+        candidate,
+        rootKind,
+        workspaceRoot,
+      })
     );
   }
 }
@@ -235,6 +286,7 @@ function assertNoReservedDataCollision(data, projectName) {
       throw new Error(
         `[JSKim] data のキーが予約語と衝突しています: ${key}\n` +
           `プロジェクト: ${projectName}\n` +
+          `設定キー: data.${key}\n` +
           `予約キー: ${[...RESERVED_CONTEXT_KEYS].join(', ')}`
       );
     }
@@ -246,14 +298,6 @@ function buildRenderContext(data, rootPath) {
     ...(data && typeof data === 'object' ? data : {}),
     rootPath,
   };
-}
-
-function toDisplay(abs, workspaceRoot) {
-  const rel = path.relative(workspaceRoot, abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-    return abs.split(path.sep).join('/');
-  }
-  return rel.split(path.sep).join('/');
 }
 
 module.exports = {

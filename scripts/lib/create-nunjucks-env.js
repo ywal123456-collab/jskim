@@ -87,7 +87,8 @@ function wrapSyncCallable(fn, label) {
     if (result && typeof result.then === 'function') {
       throw new Error(
         `[JSKim] 非同期${label.startsWith('filter') ? 'filter' : 'global'}は現在サポートされていません。\n` +
-          `対象: ${label}`
+          `対象: ${label}\n` +
+          `同期の function のみ登録できます。`
       );
     }
     return result;

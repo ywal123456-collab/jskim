@@ -3,6 +3,8 @@
 const path = require('node:path');
 const fse = require('fs-extra');
 const fg = require('fast-glob');
+const { formatRenderError, formatIoError } = require('./format-diagnostic');
+const { toDisplayPath } = require('./to-display-path');
 
 /**
  * 出力ファイルのディレクトリから outputDir までの相対パスとして rootPath を計算します。
@@ -39,7 +41,7 @@ function computeRootPath(outputFilePath, outputDir) {
  * @returns {Promise<{ renderedCount: number, files: string[] }>}
  */
 async function renderPages({ env, project }) {
-  const { name, sourceDir, outputDir, render } = project;
+  const { name, sourceDir, outputDir, render, workspaceRoot } = project;
   let renderedCount = 0;
   const files = [];
 
@@ -54,8 +56,9 @@ async function renderPages({ env, project }) {
     if (!(await fse.pathExists(fromDir))) {
       throw new Error(
         `[JSKim] プロジェクト "${name}" の render[${i}].from が存在しません。\n` +
-          `パス: ${fromDir}\n` +
-          `設定: render[${i}].from = ${rule.from}`
+          `設定キー: render[${i}].from\n` +
+          `設定値: ${rule.from}\n` +
+          `パス: ${toDisplayPath(fromDir, workspaceRoot)}`
       );
     }
 
@@ -94,7 +97,9 @@ async function renderPages({ env, project }) {
       ) {
         throw new Error(
           `[JSKim] data のキーが予約語と衝突しています: rootPath\n` +
-            `プロジェクト: ${name}`
+            `プロジェクト: ${name}\n` +
+            `設定キー: data.rootPath\n` +
+            `予約キー: rootPath`
         );
       }
 
@@ -102,12 +107,14 @@ async function renderPages({ env, project }) {
       try {
         html = env.render(templatePath, context);
       } catch (err) {
-        const message = err && err.message ? err.message : String(err);
         throw new Error(
-          `[JSKim] プロジェクト "${name}" の Nunjucks レンダリングに失敗しました。\n` +
-            `ソース: ${sourceFile}\n` +
-            `テンプレート: ${templatePath}\n` +
-            `原因: ${message}`
+          formatRenderError({
+            projectName: name,
+            sourceFile,
+            templatePath,
+            workspaceRoot,
+            err,
+          })
         );
       }
 
@@ -115,11 +122,14 @@ async function renderPages({ env, project }) {
         await fse.ensureDir(path.dirname(outputFile));
         await fse.writeFile(outputFile, html, 'utf8');
       } catch (err) {
-        const message = err && err.message ? err.message : String(err);
         throw new Error(
-          `[JSKim] プロジェクト "${name}" のレンダリング結果の書き込みに失敗しました。\n` +
-            `出力: ${outputFile}\n` +
-            `原因: ${message}`
+          formatIoError({
+            projectName: name,
+            actionLabel: 'レンダリング結果の書き込み',
+            targetFile: outputFile,
+            workspaceRoot,
+            err,
+          })
         );
       }
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { toDisplayPath } = require('./to-display-path');
 
 const CONFIG_FILENAME = 'jskim.config.js';
 
@@ -11,6 +12,7 @@ const CONFIG_FILENAME = 'jskim.config.js';
  */
 function loadConfig(workspaceRoot) {
   const configPath = path.join(workspaceRoot, CONFIG_FILENAME);
+  const configDisplay = toDisplayPath(configPath, workspaceRoot);
 
   let config;
   try {
@@ -25,21 +27,21 @@ function loadConfig(workspaceRoot) {
 
       if (missingConfig) {
         throw new Error(
-          `[JSKim] 設定ファイルが見つかりません: ${configPath}\n` +
+          `[JSKim] 設定ファイルが見つかりません: ${configDisplay}\n` +
             `ワークスペースルートに ${CONFIG_FILENAME} を作成してください。`
         );
       }
     }
 
     throw new Error(
-      `[JSKim] 設定ファイルの読み込みに失敗しました: ${configPath}\n` +
+      `[JSKim] 設定ファイルの読み込みに失敗しました: ${configDisplay}\n` +
         `原因: ${err && err.message ? err.message : String(err)}`
     );
   }
 
   if (!config || typeof config !== 'object') {
     throw new Error(
-      `[JSKim] 設定が不正です: ${configPath}\n` +
+      `[JSKim] 設定が不正です: ${configDisplay}\n` +
         `原因: module.exports はオブジェクトである必要があります。`
     );
   }
@@ -47,7 +49,7 @@ function loadConfig(workspaceRoot) {
   if (!config.projects || typeof config.projects !== 'object') {
     throw new Error(
       `[JSKim] 設定が不正です: projects が無い、またはオブジェクトではありません。\n` +
-        `設定: ${configPath}`
+        `設定: ${configDisplay}`
     );
   }
 
