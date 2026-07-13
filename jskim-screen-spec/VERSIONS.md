@@ -1,20 +1,16 @@
-# jskim-screen-spec installed versions (phase 3)
+# jskim-screen-spec installed versions
 
-Recorded after `npm --prefix jskim-screen-spec install` (2026-07-13).
+Recorded for Phase 4A (after moving vite / @vitejs/plugin-vue to dependencies).
 
-| Package | Version |
-|---------|---------|
-| vue | 3.5.39 |
-| vue-router | 4.6.4 |
-| vite | 6.4.3 |
-| @vitejs/plugin-vue | 5.2.4 |
-| typescript | 5.9.3 |
-| vitest | 3.2.7 |
-| jsdom | 26.1.0 |
-| @vue/test-utils | 2.4.11 |
-| tsx | 4.23.1 |
-| vue-tsc | 2.2.12 |
+| Package | Role | Notes |
+|---------|------|-------|
+| vue | dependency | viewer |
+| vue-router | dependency | viewer |
+| vite | dependency | viewer build + Node builder runtime |
+| @vitejs/plugin-vue | dependency | vite config |
+| typescript | devDependency | `tsc` for dist entry |
+| vitest / jsdom / @vue/test-utils | devDependency | tests |
 
-Notes:
-- Package is `"private": true` — do not publish.
-- Root `@ywal123456/jskim` and `create-jskim` have no vue/vite deps.
+Package remains `"private": true` — do not publish.
+
+Root `@ywal123456/jskim` and `create-jskim` have no vue/vite deps.

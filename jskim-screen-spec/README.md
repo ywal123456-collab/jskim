@@ -2,35 +2,59 @@
 
 `@ywal123456/jskim-screen-spec` は、JSKim 本体とは独立した **画面設計書 companion package** です（現時点では `"private": true`）。
 
+公開 npm registry からはまだインストールできません。開発中の prototype です。
+
 ## 役割
 
 - Source JSON / Description JSON / 手動 snapshot を読み込む
 - Vue 3 SPA の画面設計書 viewer を `spec/{project}/dist` にビルドする
 - 未登録の `screen-transition` 先は **build を失敗させず**、ボタンを無効化して「画面設計書未登録」と表示する
 
-## 前提
+## core との境界
 
-- リポジトリルートで JSKim engine（`@ywal123456/jskim`）が利用できること
-- パイロット対象: `crud-create` / `wizard-input` / `wizard-confirm` / `wizard-complete`
+| package | 役割 |
+|---------|------|
+| `@ywal123456/jskim` | `jskim spec build` の委譲、`/spec/` 静的 mount、history fallback |
+| `@ywal123456/jskim-screen-spec` | validation / manifest / Vue・Vite viewer build |
 
-## 使い方
+core は companion の実装をコピーしません。companion が未インストールでも `jskim build` / `jskim dev` は動作します。
+
+## Node runtime entry
 
 ```bash
-# 依存インストール（パッケージ配下）
+npm --prefix jskim-screen-spec run build
+```
+
+`dist/index.js` が Node から import 可能な public API です（TypeScript source 直実行は要求しません）。
+
+## 使い方（JSKim CLI）
+
+companion をプロジェクトへローカル追加したうえで:
+
+```bash
+jskim spec build sample
+jskim dev sample
+```
+
+```text
+/      → 実装画面（dist/sample）
+/spec/ → 画面設計書 SPA（spec/sample/dist）
+```
+
+`jskim dev` は Screen Spec を自動 build しません。先に `jskim spec build` が必要です。
+
+## 使い方（package-local）
+
+```bash
 npm --prefix jskim-screen-spec install
-
-# 手動 snapshot 生成（preserve ビルド → outerHTML 抽出）
+npm --prefix jskim-screen-spec run build
 npm --prefix jskim-screen-spec run generate:snapshots
-
-# sample viewer ビルド → spec/sample/dist
 npm --prefix jskim-screen-spec run build:sample
-
-# テスト
 npm --prefix jskim-screen-spec test
-
-# プレビュー（ビルド後）
 npm --prefix jskim-screen-spec run preview:sample
 ```
+
+`preview:sample` は package-local 確認手段です。最終目標は JSkim server の `/spec/` です。
 
 ## API
 
@@ -54,7 +78,7 @@ await buildScreenSpecViewer({
 spec/{project}/src/snapshots/{screenId}/{stateId}.html
 ```
 
-パイロットでは preserve モードの HTML から `[data-jskim-spec-screen]` の outerHTML を抽出し、`default.html` としてコミットします（source 扱い）。
+パイロットでは preserve モードの HTML から `[data-jskim-spec-screen]` の outerHTML を抽出します（手動。自動 collector は未実装）。
 
 ## preview CSS
 
@@ -73,3 +97,11 @@ spec/sample/dist/
    ├─ snapshots/**/*.html
    └─ theme/preview.css
 ```
+
+## 制限（現状）
+
+- companion は private prototype（npm publish 前）
+- automatic collector / snapshot 自動更新なし
+- Screen Spec watch / Vite middleware / HMR なし
+- original application JavaScript は実行しない
+- create-jskim 生成 project へ companion dependency は自動追加しない

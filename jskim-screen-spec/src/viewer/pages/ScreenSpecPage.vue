@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch, type ComputedRef } from 'vue';
+import { inject, ref, watch, type ComputedRef } from 'vue';
 import DomPreview from '../components/DomPreview.vue';
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
@@ -17,10 +17,6 @@ const selectedItemId = ref<string | null>(null);
 const snapshotHtml = ref('');
 const previewCss = ref('');
 const loadError = ref<string | null>(null);
-
-const visibleStates = computed(
-  () => screen.value?.states.filter((s) => s.viewer.visible) ?? [],
-);
 
 async function loadScreen(screenId: string): Promise<void> {
   loadError.value = null;
@@ -109,7 +105,7 @@ watch(
     </header>
 
     <StateSelector
-      :states="visibleStates"
+      :states="screen.states"
       :selected-state-id="selectedStateId"
       @select="onSelectState"
     />

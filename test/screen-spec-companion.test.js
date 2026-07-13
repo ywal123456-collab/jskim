@@ -28,6 +28,16 @@ describe('スクリーン仕様 companion package', () => {
     assert.equal(pkg.private, true);
   });
 
+  it('companion exports / main は dist を指す', () => {
+    const pkg = readJson(
+      path.join(REPO_ROOT, 'jskim-screen-spec', 'package.json')
+    );
+    assert.equal(pkg.main, './dist/index.js');
+    assert.equal(pkg.exports['.'].import, './dist/index.js');
+    assert.equal(pkg.exports['.'].default, './dist/index.js');
+    assert.equal(pkg.exports['.'].types, './dist/index.d.ts');
+  });
+
   it('root package.json に vue / vite 依存がない', () => {
     const pkg = readJson(path.join(REPO_ROOT, 'package.json'));
     const names = collectDepNames(pkg);
@@ -35,6 +45,9 @@ describe('スクリーン仕様 companion package', () => {
     assert.equal(names.has('vite'), false);
     assert.equal(names.has('@vitejs/plugin-vue'), false);
     assert.equal(names.has('vue-router'), false);
+    assert.equal(names.has('@vue/test-utils'), false);
+    assert.equal(names.has('vitest'), false);
+    assert.equal(names.has('jsdom'), false);
   });
 
   it('create-jskim package.json に vue / vite 依存がない', () => {
@@ -62,5 +75,27 @@ describe('スクリーン仕様 companion package', () => {
         `files に spec/*/dist を含めない: ${entry}`,
       );
     }
+  });
+
+  it('root files の scripts/ に integration 実装が含まれる想定である', () => {
+    const pkg = readJson(path.join(REPO_ROOT, 'package.json'));
+    const files = pkg.files || [];
+    assert.ok(
+      files.some((entry) => entry === 'scripts/' || entry === 'scripts'),
+      'scripts/ が package files に含まれるべき'
+    );
+    assert.ok(
+      fs.existsSync(
+        path.join(REPO_ROOT, 'scripts/lib/resolve-screen-spec-module.js')
+      )
+    );
+    assert.ok(
+      fs.existsSync(path.join(REPO_ROOT, 'scripts/lib/create-spec-mount.js'))
+    );
+    assert.ok(
+      fs.existsSync(
+        path.join(REPO_ROOT, 'scripts/commands/spec-build-command.js')
+      )
+    );
   });
 });

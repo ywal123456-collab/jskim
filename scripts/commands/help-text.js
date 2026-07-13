@@ -14,12 +14,14 @@ function getHelpText() {
     '  jskim watch [<project>]',
     '  jskim serve [<project>] [--host <host>] [--port <port>]',
     '  jskim dev [<project>] [--host <host>] [--port <port>] [--open]',
+    '  jskim spec build [<project>]',
     '',
     'コマンド:',
     '  build   静的ファイルをビルドします。',
     '  watch   ファイルの変更を監視して再ビルドします。',
     '  serve   ビルド済みのファイルを配信します。',
     '  dev     ビルド・監視・サーバー・ライブリロードを起動します。',
+    '  spec    画面設計書（optional companion）関連コマンドです。',
     '',
     'オプション:',
     '  --all           設定内の全projectを順にbuildします（buildのみ）。',
@@ -31,6 +33,8 @@ function getHelpText() {
     '',
     '補足:',
     '  projectを省略できるのは、設定内のprojectが1件だけの場合です。',
+    '  spec build は @ywal123456/jskim-screen-spec（開発中）が必要です。',
+    '  画面設計書は jskim spec build の後、jskim dev の /spec/ で確認できます。',
   ].join('\n');
 }
 
@@ -49,6 +53,7 @@ function getUnknownCommandText(command) {
     '  watch [<project>]',
     '  serve [<project>] [--host <host>] [--port <port>]',
     '  dev [<project>] [--host <host>] [--port <port>] [--open]',
+    '  spec build [<project>]',
   ].join('\n');
 }
 

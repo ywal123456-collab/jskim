@@ -1,12 +1,13 @@
 'use strict';
 
-const COMMANDS = new Set(['build', 'watch', 'serve', 'dev']);
+const COMMANDS = new Set(['build', 'watch', 'serve', 'dev', 'spec']);
 
 const COMMAND_OPTIONS = {
   build: new Set(['--all']),
   watch: new Set([]),
   serve: new Set(['--host', '--port']),
   dev: new Set(['--host', '--port', '--open']),
+  spec: new Set([]),
 };
 
 const VALUE_OPTIONS = new Set(['--host', '--port']);
@@ -19,6 +20,7 @@ const BOOLEAN_OPTIONS = new Set(['--all', '--open']);
  * @returns {{
  *   kind: 'help'|'version'|'command',
  *   command?: string,
+ *   subcommand?: string,
  *   projectName?: string,
  *   options: { all: boolean, open: boolean, host?: string, port?: string }
  * }}
@@ -42,12 +44,76 @@ function parseJskimArgv(argv) {
     throw new Error(formatUnknownCommand(first));
   }
 
+  if (first === 'spec') {
+    return parseSpecArgv(args.slice(1));
+  }
+
   const parsed = parseCommandArgv(first, args.slice(1));
   return {
     kind: 'command',
     command: first,
     projectName: parsed.projectName,
     options: parsed.options,
+  };
+}
+
+/**
+ * jskim spec … を解析します。
+ * @param {string[]} argv
+ */
+function parseSpecArgv(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+
+  if (args.length === 0) {
+    throw new Error(
+      [
+        '[JSKim] spec のサブコマンドを指定してください。',
+        '使用方法: jskim spec build [<project>]',
+      ].join('\n')
+    );
+  }
+
+  const subcommand = args[0];
+  if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+    return { kind: 'help', options: emptyOptions() };
+  }
+
+  if (subcommand !== 'build') {
+    throw new Error(
+      [
+        `[JSKim] 不明な spec サブコマンドです: ${subcommand}`,
+        '使用方法: jskim spec build [<project>]',
+        '',
+        '使用できるサブコマンド:',
+        '  build [<project>]   画面設計書 viewer を build します。',
+      ].join('\n')
+    );
+  }
+
+  const rest = args.slice(1);
+  for (const token of rest) {
+    if (token.startsWith('-')) {
+      throw new Error(
+        `[JSKim] コマンド "spec build" ではoption ${token} を使えません。\n` +
+          '使用方法: jskim spec build [<project>]'
+      );
+    }
+  }
+
+  if (rest.length > 1) {
+    throw new Error(
+      `[JSKim] project名は1つだけ指定してください。\n` +
+        `受け取った値: ${rest.join(', ')}\n` +
+        '使用方法: jskim spec build [<project>]'
+    );
+  }
+
+  return {
+    kind: 'command',
+    command: 'spec',
+    subcommand: 'build',
+    projectName: rest[0],
+    options: emptyOptions(),
   };
 }
 
@@ -61,6 +127,13 @@ function parseJskimArgv(argv) {
 function parseCommandArgv(command, argv) {
   if (!COMMANDS.has(command)) {
     throw new Error(formatUnknownCommand(command));
+  }
+
+  if (command === 'spec') {
+    throw new Error(
+      '[JSKim] parseCommandArgv("spec") は使えません。\n' +
+        '使用方法: parseJskimArgv(["spec", "build", ...])'
+    );
   }
 
   const allowed = COMMAND_OPTIONS[command];
@@ -117,7 +190,6 @@ function parseCommandArgv(command, argv) {
         continue;
       }
 
-      // value option
       const value = args[i + 1];
       if (
         value === undefined ||
@@ -205,12 +277,14 @@ function formatUnknownCommand(command) {
     '  watch [<project>]',
     '  serve [<project>] [--host <host>] [--port <port>]',
     '  dev [<project>] [--host <host>] [--port <port>] [--open]',
+    '  spec build [<project>]',
   ].join('\n');
 }
 
 module.exports = {
   parseJskimArgv,
   parseCommandArgv,
+  parseSpecArgv,
   COMMANDS,
   COMMAND_OPTIONS,
 };

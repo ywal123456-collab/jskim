@@ -9,6 +9,7 @@ const { selectProjectName } = require('./select-project-name');
 const { applyServeCliOverrides } = require('./apply-serve-cli-overrides');
 const { createProjectWatcher } = require('./create-project-watcher');
 const { createStaticServer } = require('./create-static-server');
+const { createSpecMount } = require('./create-spec-mount');
 const { createLiveReload } = require('./create-live-reload');
 const { formatListenError } = require('../commands/serve-errors');
 const { classifyReload } = require('./classify-reload');
@@ -156,13 +157,22 @@ function createWatchRuntime(options) {
       enabled: liveReloadEnabled,
     });
 
+    const specMount = createSpecMount({
+      workspaceRoot,
+      projectName: project.name,
+    });
+
     staticServer = createStaticServer({
       rootDir: project.outputDir,
       host,
       port,
       projectName: project.name,
-      handleInternalRequest: (req, res, meta) =>
-        liveReload.handleRequest(req, res, meta),
+      handleInternalRequest: async (req, res, meta) => {
+        if (await liveReload.handleRequest(req, res, meta)) {
+          return true;
+        }
+        return specMount.handleRequest(req, res, meta);
+      },
       transformHtml: liveReloadEnabled
         ? (html) => liveReload.injectHtml(html)
         : undefined,
@@ -199,6 +209,9 @@ function createWatchRuntime(options) {
       console.log(`プロジェクト: ${project.name}`);
       console.log(`ルート: ${outputDisplay}`);
       console.log(`URL: ${browserUrl}`);
+      console.log(
+        `画面設計書: ${browserUrl.replace(/\/$/, '')}/spec/ （jskim spec build 済みの場合）`
+      );
       console.log(
         `ライブリロード: ${liveReloadEnabled ? '有効' : '無効'}`
       );

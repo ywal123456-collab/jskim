@@ -133,4 +133,41 @@ describe('parse-cli-args', () => {
     assert.equal(parsed.options.port, '-1');
     assert.equal(parsed.projectName, 'sample');
   });
+
+  it('jskim spec build sample を認識する', () => {
+    const parsed = parseJskimArgv(['spec', 'build', 'sample']);
+    assert.equal(parsed.kind, 'command');
+    assert.equal(parsed.command, 'spec');
+    assert.equal(parsed.subcommand, 'build');
+    assert.equal(parsed.projectName, 'sample');
+  });
+
+  it('jskim spec だけではエラーになる', () => {
+    assert.throws(
+      () => parseJskimArgv(['spec']),
+      /spec のサブコマンドを指定してください/
+    );
+  });
+
+  it('jskim spec build は project 省略でも解析できる', () => {
+    const parsed = parseJskimArgv(['spec', 'build']);
+    assert.equal(parsed.kind, 'command');
+    assert.equal(parsed.command, 'spec');
+    assert.equal(parsed.subcommand, 'build');
+    assert.equal(parsed.projectName, undefined);
+  });
+
+  it('jskim spec unknown はエラーになる', () => {
+    assert.throws(
+      () => parseJskimArgv(['spec', 'unknown']),
+      /不明な spec サブコマンドです: unknown/
+    );
+  });
+
+  it('不明なコマンド案内に spec build が含まれる', () => {
+    assert.throws(
+      () => parseJskimArgv(['nope']),
+      /spec build \[<project>\]/
+    );
+  });
 });

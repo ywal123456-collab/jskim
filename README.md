@@ -20,6 +20,9 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
+- 画面設計書（optional / prototype）: `jskim spec build` と `jskim dev` の `/spec/` 静的提供
+
+詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は現時点で private であり、一般利用向けの公開 npm 配布前です。
 
 ## 現在の非対応範囲
 
@@ -37,8 +40,9 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 
 | 名称 | 種類 | 役割 |
 |------|------|------|
-| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` |
+| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec build` |
 | `create-jskim` | npm creator package | 新しい JSKim 作業空間の生成 |
+| `@ywal123456/jskim-screen-spec` | companion（開発中 / private） | 画面設計書 viewer build（optional） |
 | `jskim` | CLI binary | インストール後に実行するコマンド名 |
 
 製品名は **JSKim**、CLI binary は **`jskim`**、npm engine package は **`@ywal123456/jskim`** です。package 名と binary 名を混同しないでください。

@@ -5,6 +5,7 @@ const { resolveProject } = require('../lib/resolve-project');
 const { selectProjectName } = require('../lib/select-project-name');
 const { applyServeCliOverrides } = require('../lib/apply-serve-cli-overrides');
 const { createStaticServer } = require('../lib/create-static-server');
+const { createSpecMount } = require('../lib/create-spec-mount');
 const { registerShutdown } = require('./register-shutdown');
 const { toDisplayPath } = require('./path-display');
 const { assertOutputDirReady, formatListenError } = require('./serve-errors');
@@ -53,11 +54,18 @@ async function runServeCommand(options = {}) {
   const port = project.serve.port;
   const outputDisplay = toDisplayPath(project.outputDir, workspaceRoot);
 
+  const specMount = createSpecMount({
+    workspaceRoot,
+    projectName: project.name,
+  });
+
   const staticServer = createStaticServer({
     rootDir: project.outputDir,
     host,
     port,
     projectName: project.name,
+    handleInternalRequest: (req, res, meta) =>
+      specMount.handleRequest(req, res, meta),
   });
 
   try {
@@ -76,6 +84,9 @@ async function runServeCommand(options = {}) {
   console.log(`プロジェクト: ${project.name}`);
   console.log(`ルート: ${outputDisplay}`);
   console.log(`URL: ${staticServer.url}`);
+  console.log(
+    `画面設計書: ${staticServer.url.replace(/\/$/, '')}/spec/ （build 済みの場合）`
+  );
   console.log('終了するには Ctrl+C を押してください。');
 
   let stopping = false;
