@@ -1,6 +1,6 @@
 {
   "name": "@ywal123456/jskim",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Nunjucks-based static HTML build environment with watch, serve, and live reload",
   "keywords": [
     "nunjucks",
@@ -41,6 +41,7 @@
     "dev": "node scripts/dev.js",
     "docs:pdf": "node scripts/docs/build-user-guide-pdf.js",
     "docs:pdf:html": "node scripts/docs/build-user-guide-pdf.js --html-only",
+    "docs:pdf:package": "node scripts/docs/build-user-guide-pdf.js --package-output",
     "test": "node --test --test-concurrency=1 test/**/*.test.js"
   },
   "engines": {

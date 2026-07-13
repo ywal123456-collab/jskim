@@ -48,7 +48,8 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 詳細:
 
 - 公式ユーザーガイド: [docs/user-guide/README.md](docs/user-guide/README.md)
-- PDF生成手順: [docs/user-guide-pdf-build.md](docs/user-guide-pdf-build.md)（maintainer 向け）
+- 公式ユーザーガイド PDF（npm package 同梱）: `node_modules/@ywal123456/jskim/docs/JSKim_User_Guide_v0.5.2.pdf`
+- PDF生成手順: [docs/user-guide-pdf-build.md](docs/user-guide-pdf-build.md)（maintainer 向け。release 用 PDF は `npm run docs:pdf:package`）
 - [docs/configuration.md](docs/configuration.md)
 - [docs/create-jskim.md](docs/create-jskim.md)
 - [docs/publishing.md](docs/publishing.md)（maintainer 向け release 手順）

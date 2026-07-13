@@ -107,6 +107,12 @@ describe('package pack and consumer', { timeout: 180000 }, () => {
       'docs が含まれるべき'
     );
     assert.ok(
+      paths.some((p) =>
+        p.includes(`docs/JSKim_User_Guide_v${PKG.version}.pdf`)
+      ),
+      `release PDF docs/JSKim_User_Guide_v${PKG.version}.pdf が含まれるべき`
+    );
+    assert.ok(
       paths.some((p) => p === 'package.json' || p.endsWith('package.json')),
       'package.json が含まれるべき'
     );

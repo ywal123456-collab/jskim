@@ -23,6 +23,8 @@ const {
   findBrowserExecutable,
   parseBuildArgs,
   defaultPdfOutputPath,
+  packagePdfOutputPath,
+  resolvePdfOutputPath,
   writeGuideHtml,
   getPackageVersion,
   createMarkdownIt,
@@ -45,7 +47,7 @@ describe('user-guide-pdf', () => {
   it('package version と README 対象 version が一致し filename に使う', () => {
     const sources = loadGuideSources(REPO_ROOT);
     const version = getPackageVersion(REPO_ROOT);
-    assert.equal(version, '0.5.1');
+    assert.equal(version, '0.5.2');
     assert.equal(
       extractTargetVersionFromReadme(sources.readmeText),
       version
@@ -55,7 +57,15 @@ describe('user-guide-pdf', () => {
     );
     assert.equal(
       path.basename(defaultPdfOutputPath(REPO_ROOT, version)),
-      'JSKim_User_Guide_v0.5.1.pdf'
+      `JSKim_User_Guide_v${version}.pdf`
+    );
+    assert.equal(
+      path.basename(packagePdfOutputPath(REPO_ROOT, version)),
+      `JSKim_User_Guide_v${version}.pdf`
+    );
+    assert.equal(
+      resolvePdfOutputPath(REPO_ROOT, version, { packageOutput: true }),
+      packagePdfOutputPath(REPO_ROOT, version)
     );
     assert.throws(
       () => assertGuideVersionMatchesPackage(sources.readmeText, '9.9.9'),
@@ -89,7 +99,7 @@ describe('user-guide-pdf', () => {
     const trimmedHowTo = trimCoverSectionBody('読み方', howTo);
     assert.match(trimmedHowTo, /初めて使う場合/);
     assert.equal(trimmedHowTo.includes('必要なときだけ参照する場合'), false);
-    const coverHtml = buildCoverHtml(sources.readmeText, '0.5.1');
+    const coverHtml = buildCoverHtml(sources.readmeText, getPackageVersion(REPO_ROOT));
     assert.match(coverHtml, /一般公開ドキュメント/);
     assert.equal(coverHtml.includes('章一覧'), false);
     assert.equal(coverHtml.includes('必要なときだけ参照する場合'), false);
@@ -244,14 +254,24 @@ describe('user-guide-pdf', () => {
     assert.deepEqual(parseBuildArgs([]), {
       htmlOnly: false,
       keepHtml: false,
+      packageOutput: false,
       output: undefined,
       browser: undefined,
     });
     assert.equal(parseBuildArgs(['--html-only']).htmlOnly, true);
+    assert.equal(parseBuildArgs(['--package-output']).packageOutput, true);
     assert.throws(() => parseBuildArgs(['--unknown']), /不明なoption/);
     assert.throws(() => parseBuildArgs(['--output']), /値がありません/);
     assert.throws(
       () => parseBuildArgs(['--html-only', '--output', 'a.pdf']),
+      /同時に指定できません/
+    );
+    assert.throws(
+      () => parseBuildArgs(['--html-only', '--package-output']),
+      /同時に指定できません/
+    );
+    assert.throws(
+      () => parseBuildArgs(['--package-output', '--output', 'a.pdf']),
       /同時に指定できません/
     );
     assert.throws(() => parseBuildArgs(['--port=1']), /サポートしていません/);
@@ -287,6 +307,33 @@ describe('user-guide-pdf', () => {
     } finally {
       fs.unlinkSync(fakeEdge);
     }
+  });
+
+  it('release PDF が docs/ にあり title metadata が一致する', () => {
+    const version = getPackageVersion(REPO_ROOT);
+    const pdfPath = packagePdfOutputPath(REPO_ROOT, version);
+    assert.ok(fs.existsSync(pdfPath), `release PDF がありません: ${pdfPath}`);
+    const buf = fs.readFileSync(pdfPath);
+    assert.ok(buf.length > 0);
+    assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-');
+    const latin1 = buf.toString('latin1');
+    assert.equal(latin1.includes('file:///'), false);
+    assert.equal(latin1.includes('C:\\Users\\'), false);
+
+    // Chromium は /Title を UTF-16BE hex で書くことが多い
+    const hexTitle = latin1.match(/\/Title\s*<([0-9A-Fa-f]+)>/);
+    assert.ok(hexTitle, 'PDF /Title (hex) がありません');
+    const titleBytes = Buffer.from(hexTitle[1], 'hex');
+    let titleText = '';
+    let offset = 0;
+    if (titleBytes.length >= 2 && titleBytes[0] === 0xfe && titleBytes[1] === 0xff) {
+      offset = 2;
+    }
+    for (let i = offset; i + 1 < titleBytes.length; i += 2) {
+      titleText += String.fromCharCode(titleBytes.readUInt16BE(i));
+    }
+    assert.equal(titleText, `JSKim ユーザーガイド v${version}`);
+    assert.doesNotMatch(titleText, /v0\.5\.1/);
   });
 
   it('HTML-only 生成で local path leak がない', async () => {

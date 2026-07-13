@@ -550,6 +550,7 @@ function parseBuildArgs(argv) {
   const options = {
     htmlOnly: false,
     keepHtml: false,
+    packageOutput: false,
     output: undefined,
     browser: undefined,
   };
@@ -593,6 +594,11 @@ function parseBuildArgs(argv) {
       options.keepHtml = true;
       continue;
     }
+    if (token === '--package-output') {
+      seen.add(token);
+      options.packageOutput = true;
+      continue;
+    }
     if (token === '--output') {
       seen.add(token);
       options.output = takeValue();
@@ -606,7 +612,7 @@ function parseBuildArgs(argv) {
 
     throw new Error(
       `[JSKim] 不明なoptionです: ${token}\n` +
-        '使えるoption: --html-only, --keep-html, --output <path>, --browser <path>'
+        '使えるoption: --html-only, --keep-html, --package-output, --output <path>, --browser <path>'
     );
   }
 
@@ -614,6 +620,18 @@ function parseBuildArgs(argv) {
     throw new Error(
       '[JSKim] --html-only と --output は同時に指定できません。\n' +
         '--output は PDF 出力先専用です。HTML は OS の一時ディレクトリに生成されます。'
+    );
+  }
+  if (options.htmlOnly && options.packageOutput) {
+    throw new Error(
+      '[JSKim] --html-only と --package-output は同時に指定できません。\n' +
+        '--package-output は release / npm package 用 PDF の出力先指定です。'
+    );
+  }
+  if (options.packageOutput && options.output) {
+    throw new Error(
+      '[JSKim] --package-output と --output は同時に指定できません。\n' +
+        '--package-output は docs/JSKim_User_Guide_v${version}.pdf を自動決定します。'
     );
   }
 
@@ -627,6 +645,24 @@ function defaultPdfOutputPath(repoRoot, packageVersion) {
     'docs',
     `JSKim_User_Guide_v${packageVersion}.pdf`
   );
+}
+
+function packagePdfOutputPath(repoRoot, packageVersion) {
+  return path.join(
+    repoRoot,
+    'docs',
+    `JSKim_User_Guide_v${packageVersion}.pdf`
+  );
+}
+
+function resolvePdfOutputPath(repoRoot, packageVersion, options = {}) {
+  if (options.packageOutput) {
+    return packagePdfOutputPath(repoRoot, packageVersion);
+  }
+  if (options.output) {
+    return path.resolve(options.output);
+  }
+  return defaultPdfOutputPath(repoRoot, packageVersion);
 }
 
 function createTempHtmlPath(packageVersion) {
@@ -780,6 +816,8 @@ module.exports = {
   findBrowserExecutable,
   parseBuildArgs,
   defaultPdfOutputPath,
+  packagePdfOutputPath,
+  resolvePdfOutputPath,
   createTempHtmlPath,
   assertNoLocalPathLeak,
   writeGuideHtml,

@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-const path = require('node:path');
 const {
   parseBuildArgs,
   writeGuideHtml,
   writeGuidePdf,
-  defaultPdfOutputPath,
+  resolvePdfOutputPath,
   getRepoRoot,
   getPackageVersion,
 } = require('./user-guide-pdf-lib');
@@ -24,8 +23,7 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
-  const outputPath =
-    options.output || defaultPdfOutputPath(repoRoot, packageVersion);
+  const outputPath = resolvePdfOutputPath(repoRoot, packageVersion, options);
   const result = await writeGuidePdf({
     repoRoot,
     browserPath: options.browser,

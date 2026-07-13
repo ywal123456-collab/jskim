@@ -241,7 +241,7 @@ describe('user-guide', () => {
 
   it('README の対象 version 表記がある', () => {
     const text = readGuideRel('docs/user-guide/README.md');
-    assert.match(text, /v0\.5\.1/);
+    assert.match(text, /v0\.5\.2/);
   });
 
   it('CLI / config の基本 contract が文書とずれていない', () => {
