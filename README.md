@@ -20,9 +20,9 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
-- 画面設計書（optional / prototype）: `jskim spec collect` / `jskim spec build` / **`jskim spec dev`**（収集・viewer build・同一 port の `/spec/` 自動更新）。通常の `jskim dev` は Screen Spec を自動実行しません。
+- 画面設計書（optional）: `jskim spec collect` / `jskim spec build` / **`jskim spec dev`**（収集・viewer build・同一 port の `/spec/` 自動更新）。通常の `jskim dev` は Screen Spec を自動実行しません。
 
-詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は現時点で private であり、一般利用向けの公開 npm 配布前です。
+詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は **optional** の公開 npm package です。利用時は engine とあわせてインストールし、Chromium（Playwright）の用意が必要です。Vite HMR や screen 単位の incremental collect はありません（full-page reload / ローカル利用）。
 
 Screen Spec（optional）の開発用流れ:
 
@@ -64,17 +64,17 @@ jskim dev sample
 |------|------|------|
 | `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec collect` / `spec build` / `spec dev` |
 | `create-jskim` | npm creator package | 新しい JSKim 作業空間の生成 |
-| `@ywal123456/jskim-screen-spec` | companion（開発中 / private） | 画面設計書 collect / viewer build（optional） |
+| `@ywal123456/jskim-screen-spec` | optional published companion | 画面設計書 collect / viewer build（optional） |
 | `jskim` | CLI binary | インストール後に実行するコマンド名 |
 
 製品名は **JSKim**、CLI binary は **`jskim`**、npm engine package は **`@ywal123456/jskim`** です。package 名と binary 名を混同しないでください。
 
-`@ywal123456/jskim` と `create-jskim` は npm registry で公開済みの MIT package です。
+`@ywal123456/jskim`、`@ywal123456/jskim-screen-spec`（optional）、`create-jskim` は npm registry で公開済みの MIT package です。
 
 詳細:
 
 - 公式ユーザーガイド: [docs/user-guide/README.md](docs/user-guide/README.md)
-- 公式ユーザーガイド PDF（npm package 同梱）: `node_modules/@ywal123456/jskim/docs/JSKim_User_Guide_v0.5.2.pdf`
+- 公式ユーザーガイド PDF（npm package 同梱）: `node_modules/@ywal123456/jskim/docs/JSKim_User_Guide_v0.6.0.pdf`
 - PDF生成手順: [docs/user-guide-pdf-build.md](docs/user-guide-pdf-build.md)（maintainer 向け。release 用 PDF は `npm run docs:pdf:package`）
 - [docs/configuration.md](docs/configuration.md)
 - [docs/create-jskim.md](docs/create-jskim.md)

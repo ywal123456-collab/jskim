@@ -47,7 +47,7 @@ describe('user-guide-pdf', () => {
   it('package version と README 対象 version が一致し filename に使う', () => {
     const sources = loadGuideSources(REPO_ROOT);
     const version = getPackageVersion(REPO_ROOT);
-    assert.equal(version, '0.5.2');
+    assert.equal(version, '0.6.0');
     assert.equal(
       extractTargetVersionFromReadme(sources.readmeText),
       version

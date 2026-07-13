@@ -254,7 +254,7 @@ describe('create-jskim', () => {
     );
     assert.equal(pkg.version, '0.1.0');
     assert.equal(pkg.scripts.dev, 'jskim dev sample');
-    assert.equal(pkg.devDependencies['@ywal123456/jskim'], '^0.5.2');
+    assert.equal(pkg.devDependencies['@ywal123456/jskim'], '^0.6.0');
     assert.match(result.output, /npm run dev/);
   });
 

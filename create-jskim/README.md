@@ -63,7 +63,7 @@ project/
       └─ components/
 ```
 
-生成プロジェクトは `@ywal123456/jskim`（`^0.5.2`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
+生成プロジェクトは `@ywal123456/jskim`（`^0.6.0`）を `devDependencies` に持ちます。scripts の実行名は binary `jskim` のままです。
 インストール後の公式ユーザーガイド PDF は、生成 project が入れる `@ywal123456/jskim` package の `docs/` 配下で確認できます（creator package 本体には PDF を含めません）。
 
 標準 sample は公式の静的 UI sample（Portal / Dashboard / CRUD / Wizard）です。application 処理は含みません。`pages` 配下の `.html.njk` はレンダリングされ、平文 CSS や画像はそのままコピーされます。

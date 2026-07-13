@@ -53,7 +53,7 @@ npm run docs:pdf
 既定の確認用出力先:
 
 ```text
-dist/docs/JSKim_User_Guide_v0.5.2.pdf
+dist/docs/JSKim_User_Guide_v0.6.0.pdf
 ```
 
 npm package / release 用 PDF（`docs/`、Git 管理対象）:
@@ -65,7 +65,7 @@ npm run docs:pdf:package
 既定の package 用出力先:
 
 ```text
-docs/JSKim_User_Guide_v0.5.2.pdf
+docs/JSKim_User_Guide_v0.6.0.pdf
 ```
 
 filename の version は `package.json` から読み取ります。script へ version を重複 hardcode しません。
@@ -81,7 +81,7 @@ filename の version は `package.json` から読み取ります。script へ ve
 engine package（`@ywal123456/jskim`）をインストールした利用者は、次の場所で PDF を開けます。
 
 ```text
-node_modules/@ywal123456/jskim/docs/JSKim_User_Guide_v0.5.2.pdf
+node_modules/@ywal123456/jskim/docs/JSKim_User_Guide_v0.6.0.pdf
 ```
 
 ## Browser の指定

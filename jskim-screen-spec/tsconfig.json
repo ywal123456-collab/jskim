@@ -22,6 +22,7 @@
     "src/**/*.vue",
     "scripts/**/*.ts",
     "test/**/*.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "vitest.config.ts"
   ]
 }

@@ -1,8 +1,17 @@
 {
   "name": "@ywal123456/jskim-screen-spec",
   "version": "0.1.0",
-  "private": true,
-  "description": "JSKim Screen Spec companion — 画面設計書 viewer build",
+  "description": "JSKim Screen Spec companion — 画面設計書の collect / viewer build",
+  "keywords": [
+    "jskim",
+    "screen-spec",
+    "nunjucks",
+    "static-html",
+    "playwright",
+    "vue",
+    "vite",
+    "documentation"
+  ],
   "license": "MIT",
   "author": {
     "name": "Jeongsub Kim",
@@ -12,6 +21,10 @@
     "type": "git",
     "url": "git+https://github.com/ywal123456-collab/jskim.git",
     "directory": "jskim-screen-spec"
+  },
+  "homepage": "https://github.com/ywal123456-collab/jskim/tree/main/jskim-screen-spec#readme",
+  "bugs": {
+    "url": "https://github.com/ywal123456-collab/jskim/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -34,7 +47,20 @@
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "peerDependencies": {
+    "@ywal123456/jskim": "^0.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@ywal123456/jskim": {
+      "optional": false
+    }
+  },
   "scripts": {
+    "prepack": "npm run build",
     "build": "tsc -p tsconfig.build.json",
     "build:sample": "npm run build && tsx scripts/build-sample.ts",
     "generate:snapshots": "tsx scripts/generate-sample-snapshots.ts",
@@ -45,7 +71,8 @@
     "test:resources": "vitest run test/resources test/collector/resource-integration.test.ts",
     "test:watch": "vitest run test/watch",
     "install:browsers": "playwright install chromium",
-    "typecheck": "vue-tsc --noEmit || tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit || tsc --noEmit",
+    "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

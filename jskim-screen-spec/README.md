@@ -1,8 +1,17 @@
 # JSKim Screen Spec（companion package）
 
-`@ywal123456/jskim-screen-spec` は、JSKim 本体とは独立した **画面設計書 companion package** です（現時点では `"private": true`）。
+`@ywal123456/jskim-screen-spec` は、JSKim 本体とは独立した **画面設計書 companion package** です（optional / 公開 npm package）。
 
-公開 npm registry からはまだインストールできません。開発中の prototype です。
+## インストール
+
+```bash
+npm install --save-dev @ywal123456/jskim @ywal123456/jskim-screen-spec
+npx playwright install chromium
+npx jskim spec dev sample
+```
+
+peer dependency: `@ywal123456/jskim` **^0.6.0** が必要です。
+`npm pack` / `npm publish` 時は `prepack` が `dist` をビルドします。
 
 ## 役割
 
@@ -28,7 +37,7 @@ npm --prefix jskim-screen-spec run build
 
 `dist/index.js` が Node から import 可能な public API です（TypeScript source 直実行は要求しません）。
 
-## セットアップ
+## セットアップ（リポジトリ内開発）
 
 ```bash
 npm --prefix jskim-screen-spec install
@@ -223,7 +232,8 @@ spec/sample/dist/
 
 ## 制限（現状）
 
-- companion は private prototype（npm publish 前）
+- optional companion（engine 本体とは別 install）
+- Chromium（Playwright）が必要。ローカル開発向け
 - Vite middleware / Vue HMR / screen 単位 incremental collect / persistent browser なし
 - reload は既存 SSE による full-page reload
 - original application JavaScript は viewer では実行しない（collect 時の一時サーバーでは実行する）

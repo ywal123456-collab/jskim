@@ -51,3 +51,24 @@ npm run serve
 - コマンドは実行ディレクトリ（`process.cwd()`）の `jskim.config.js` を使います
 - 既定のプロジェクト名は `sample` です（`package.json` の scripts を参照）
 - `data` に secret を入れると生成ファイルへ出力される可能性があります
+
+## 画面設計書（optional）
+
+公式 sample には `src/sample` 配下の `*.spec.json` と `spec/sample` が含まれます。
+companion `@ywal123456/jskim-screen-spec` は **自動ではインストールされません**。必要なときだけ追加してください。
+
+npm:
+
+```bash
+npm install --save-dev @ywal123456/jskim-screen-spec
+npx playwright install chromium
+npx jskim spec dev sample
+```
+
+pnpm:
+
+```bash
+pnpm add -D @ywal123456/jskim-screen-spec
+pnpm exec playwright install chromium
+pnpm exec jskim spec dev sample
+```

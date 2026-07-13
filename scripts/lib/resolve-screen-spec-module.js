@@ -15,11 +15,14 @@ function getMissingScreenSpecModuleMessage() {
     '[JSKim] 画面設計書機能を使用するには',
     `${COMPANION_PACKAGE_NAME} を install してください。`,
     '',
-    '現在、この module は開発中です（private prototype）。',
-    '公開 npm registry からはまだインストールできません。',
+    '例:',
+    `  npm install --save-dev ${COMPANION_PACKAGE_NAME}`,
+    '  npx playwright install chromium',
     '',
-    '開発リポジトリでは companion を build したうえで、',
-    'ローカル package としてプロジェクトへ追加してください。',
+    'その後:',
+    '  npx jskim spec collect <project>',
+    '  npx jskim spec build <project>',
+    '  または npx jskim spec dev <project>',
   ].join('\n');
 }
 
@@ -32,11 +35,12 @@ function getMissingScreenSpecDevMessage() {
     '[JSKim] 画面設計書の開発機能を使用するには',
     `${COMPANION_PACKAGE_NAME} が必要です。`,
     '',
-    '現在、この module は開発中です（private prototype）。',
-    '公開 npm registry からはまだインストールできません。',
+    '例:',
+    `  npm install --save-dev ${COMPANION_PACKAGE_NAME}`,
+    '  npx playwright install chromium',
     '',
-    '開発リポジトリでは companion を build したうえで、',
-    'ローカル package としてプロジェクトへ追加してください。',
+    'その後:',
+    '  npx jskim spec dev <project>',
   ].join('\n');
 }
 

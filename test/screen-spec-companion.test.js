@@ -19,13 +19,21 @@ function collectDepNames(pkg) {
 }
 
 describe('スクリーン仕様 companion package', () => {
-  it('jskim-screen-spec パッケージが存在し name / version / private が正しい', () => {
+  it('jskim-screen-spec パッケージが存在し name / version / publish 設定が正しい', () => {
     const pkgPath = path.join(REPO_ROOT, 'jskim-screen-spec', 'package.json');
     assert.ok(fs.existsSync(pkgPath), 'jskim-screen-spec/package.json が必要です');
     const pkg = readJson(pkgPath);
     assert.equal(pkg.name, '@ywal123456/jskim-screen-spec');
     assert.equal(pkg.version, '0.1.0');
-    assert.equal(pkg.private, true);
+    assert.equal(Object.hasOwn(pkg, 'private'), false);
+    assert.equal(pkg.publishConfig && pkg.publishConfig.access, 'public');
+    assert.equal(pkg.peerDependencies['@ywal123456/jskim'], '^0.6.0');
+    assert.ok(Array.isArray(pkg.files));
+    assert.ok(pkg.files.includes('dist'));
+    assert.ok(pkg.files.includes('src/viewer'));
+    assert.ok(pkg.files.includes('vite.config.ts'));
+    assert.ok(pkg.files.includes('index.html'));
+    assert.ok(pkg.scripts && pkg.scripts.prepack);
   });
 
   it('companion exports / main は dist を指す', () => {

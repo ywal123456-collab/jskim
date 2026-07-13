@@ -35,7 +35,7 @@ function getHelpText() {
     '',
     '補足:',
     '  projectを省略できるのは、設定内のprojectが1件だけの場合です。',
-    '  spec collect / build / dev は @ywal123456/jskim-screen-spec（開発中）が必要です。',
+    '  spec collect / build / dev は @ywal123456/jskim-screen-spec（optional）が必要です。',
     '  画面設計書の開発: jskim spec dev （collect + viewer build + /spec/ 自動更新）',
     '  手動手順: jskim spec collect → jskim spec build → jskim dev の /spec/',
   ].join('\n');

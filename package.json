@@ -1,7 +1,7 @@
 {
   "name": "@ywal123456/jskim",
-  "version": "0.5.2",
-  "description": "Nunjucks-based static HTML build environment with watch, serve, and live reload",
+  "version": "0.6.0",
+  "description": "Nunjucks-based static HTML build environment with watch, serve, live reload, and optional Screen Spec",
   "keywords": [
     "nunjucks",
     "static-html",
@@ -9,7 +9,8 @@
     "build-tool",
     "template-engine",
     "live-reload",
-    "cli"
+    "cli",
+    "screen-spec"
   ],
   "license": "MIT",
   "author": {
