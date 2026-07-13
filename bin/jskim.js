@@ -9,6 +9,7 @@ const { runWatchCommand } = require('../scripts/commands/watch-command');
 const { runServeCommand } = require('../scripts/commands/serve-command');
 const { runDevCommand } = require('../scripts/commands/dev-command');
 const { runSpecBuildCommand } = require('../scripts/commands/spec-build-command');
+const { runSpecCollectCommand } = require('../scripts/commands/spec-collect-command');
 
 function readPackageVersion() {
   // package インストール先の package.json を読む（作業空間ではない）
@@ -111,9 +112,19 @@ async function dispatch(argv) {
       });
       return;
     }
+    if (parsed.subcommand === 'collect') {
+      await runSpecCollectCommand({
+        projectName,
+        workspaceRoot,
+        usageLine: 'jskim spec collect [<project>]',
+      });
+      return;
+    }
     throw new Error(
       `[JSKim] 不明な spec サブコマンドです: ${parsed.subcommand || '(なし)'}\n` +
-        '使用方法: jskim spec build [<project>]'
+        '使用方法:\n' +
+        '  jskim spec build [<project>]\n' +
+        '  jskim spec collect [<project>]'
     );
   }
 }

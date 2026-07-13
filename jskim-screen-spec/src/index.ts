@@ -7,3 +7,8 @@ export {
 export { sanitizeSnapshot } from './builder/sanitize-snapshot.js';
 export { loadScreenSpecProject } from './builder/load-screen-spec-project.js';
 export { createViewerManifest } from './builder/create-viewer-manifest.js';
+export { collectScreenSpecProject } from './collector/collect-screen-spec-project.js';
+export type {
+  CollectScreenSpecProjectOptions,
+  CollectScreenSpecProjectResult,
+} from './collector/collect-screen-spec-project.js';

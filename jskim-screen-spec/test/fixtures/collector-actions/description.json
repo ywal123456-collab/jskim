@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "collector-actions-demo",
+    "name": "収集アクション検証",
+    "description": "Playwright collector の合成 fixture です。"
+  },
+  "items": {
+    "page-title": {
+      "name": "見出し",
+      "type": "表示",
+      "description": "画面タイトルです。",
+      "note": "保持される説明文"
+    },
+    "applicant-name": {
+      "name": "氏名",
+      "type": "テキスト入力",
+      "description": "氏名入力欄です。",
+      "note": ""
+    },
+    "orphan-legacy-item": {
+      "name": "旧項目",
+      "type": "表示",
+      "description": "実装から消えた orphan 項目です。",
+      "note": "削除されないこと"
+    }
+  }
+}

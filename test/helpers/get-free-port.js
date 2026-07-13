@@ -1,33 +1,6 @@
 'use strict';
 
-const net = require('node:net');
-
 /**
- * 空き TCP ポートを取得します。
- * @returns {Promise<number>}
+ * scripts/lib の実装を再エクスポートし、テスト helper とのドリフトを防ぐ。
  */
-function getFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = address && typeof address === 'object' ? address.port : 0;
-      server.close((err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        if (!port) {
-          reject(new Error('空きポートを取得できませんでした。'));
-          return;
-        }
-        resolve(port);
-      });
-    });
-    server.on('error', reject);
-  });
-}
-
-module.exports = {
-  getFreePort,
-};
+module.exports = require('../../scripts/lib/get-free-port');

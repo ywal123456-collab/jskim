@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "collector-actions-demo",
+    "path": "/index.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    },
+    {
+      "id": "filled",
+      "name": "入力済み",
+      "viewer": {
+        "visible": true,
+        "order": 20
+      },
+      "collect": {
+        "actions": [
+          {
+            "type": "fill",
+            "target": "applicant-name",
+            "value": "山田太郎"
+          },
+          {
+            "type": "select",
+            "target": "customer-type",
+            "value": "corporation"
+          },
+          {
+            "type": "check",
+            "target": "agree-terms"
+          },
+          {
+            "type": "wait",
+            "milliseconds": 50
+          }
+        ]
+      }
+    },
+    {
+      "id": "help-modal",
+      "name": "ヘルプ表示",
+      "viewer": {
+        "visible": true,
+        "order": 30
+      },
+      "collect": {
+        "actions": [
+          {
+            "type": "click",
+            "target": "open-help"
+          }
+        ]
+      }
+    },
+    {
+      "id": "details-open",
+      "name": "詳細表示",
+      "viewer": {
+        "visible": false,
+        "order": 40
+      },
+      "collect": {
+        "actions": [
+          {
+            "type": "click",
+            "target": "open-details"
+          }
+        ]
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "itemId": "open-help",
+      "type": "state-transition",
+      "category": "modal",
+      "targetStateId": "help-modal",
+      "label": "ヘルプを表示"
+    }
+  ]
+}

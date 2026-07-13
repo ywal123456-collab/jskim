@@ -44,6 +44,14 @@ async function runBuild(project, options = {}) {
   const includeOutput = options.includeOutput !== false;
   const shouldLog = options.log !== false;
 
+  // Screen Spec collector など一時出力用。config ファイルは変更しない。
+  if (options.outputDir) {
+    project = {
+      ...project,
+      outputDir: path.resolve(options.outputDir),
+    };
+  }
+
   if (project.build.clean) {
     await cleanOutput({
       outputDir: project.outputDir,

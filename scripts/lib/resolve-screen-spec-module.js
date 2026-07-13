@@ -26,20 +26,11 @@ function getMissingScreenSpecModuleMessage() {
 /**
  * optional companion module を解決します。
  *
- * 優先順位:
- * 1. options.modulePath（test / 明示指定）
- * 2. projectRoot からの Node require.resolve(COMPANION_PACKAGE_NAME)
- *
- * sibling ディレクトリ hardcode は行いません。
- *
  * @param {object} options
  * @param {string} options.projectRoot
- * @param {string} [options.modulePath] 明示 entry（絶対または相対パス）
- * @returns {Promise<{
- *   buildScreenSpecViewer: Function,
- *   packageName: string,
- *   entryPath: string
- * }>}
+ * @param {string} [options.modulePath]
+ * @param {boolean} [options.requireCollect]
+ * @returns {Promise<object>}
  */
 async function resolveScreenSpecModule(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.cwd());
@@ -55,7 +46,6 @@ async function resolveScreenSpecModule(options = {}) {
   try {
     mod = await import(pathToFileURL(entryPath).href);
   } catch (err) {
-    // 解決済み entry の読込失敗は「未インストール」にしない
     const message = err && err.message ? err.message : String(err);
     const wrapped = new Error(
       `[JSKim] ${COMPANION_PACKAGE_NAME} の読み込みに失敗しました。\n` +
@@ -74,8 +64,20 @@ async function resolveScreenSpecModule(options = {}) {
     );
   }
 
+  if (
+    options.requireCollect &&
+    typeof mod.collectScreenSpecProject !== 'function'
+  ) {
+    throw new Error(
+      `[JSKim] ${COMPANION_PACKAGE_NAME} に collectScreenSpecProject がありません。\n` +
+        `entry: ${entryPath}\n` +
+        'companion を最新の dist に rebuild してください。'
+    );
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
+    collectScreenSpecProject: mod.collectScreenSpecProject,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };

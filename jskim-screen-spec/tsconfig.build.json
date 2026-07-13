@@ -16,7 +16,8 @@
   },
   "include": [
     "src/index.ts",
-    "src/builder/**/*.ts"
+    "src/builder/**/*.ts",
+    "src/collector/**/*.ts"
   ],
   "exclude": [
     "src/viewer/**",

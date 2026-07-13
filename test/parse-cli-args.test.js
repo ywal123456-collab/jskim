@@ -142,6 +142,14 @@ describe('parse-cli-args', () => {
     assert.equal(parsed.projectName, 'sample');
   });
 
+  it('jskim spec collect sample を認識する', () => {
+    const parsed = parseJskimArgv(['spec', 'collect', 'sample']);
+    assert.equal(parsed.kind, 'command');
+    assert.equal(parsed.command, 'spec');
+    assert.equal(parsed.subcommand, 'collect');
+    assert.equal(parsed.projectName, 'sample');
+  });
+
   it('jskim spec だけではエラーになる', () => {
     assert.throws(
       () => parseJskimArgv(['spec']),
@@ -157,17 +165,37 @@ describe('parse-cli-args', () => {
     assert.equal(parsed.projectName, undefined);
   });
 
-  it('jskim spec unknown はエラーになる', () => {
+  it('jskim spec collect は project 省略でも解析できる', () => {
+    const parsed = parseJskimArgv(['spec', 'collect']);
+    assert.equal(parsed.kind, 'command');
+    assert.equal(parsed.command, 'spec');
+    assert.equal(parsed.subcommand, 'collect');
+    assert.equal(parsed.projectName, undefined);
+  });
+
+  it('jskim spec unknown はエラーになり build と collect を案内する', () => {
     assert.throws(
-      () => parseJskimArgv(['spec', 'unknown']),
-      /不明な spec サブコマンドです: unknown/
+      () => parseJskimArgv(['spec', 'foo']),
+      /不明な spec サブコマンドです: foo/
+    );
+    assert.throws(
+      () => parseJskimArgv(['spec', 'foo']),
+      /jskim spec build \[<project>\]/
+    );
+    assert.throws(
+      () => parseJskimArgv(['spec', 'foo']),
+      /jskim spec collect \[<project>\]/
     );
   });
 
-  it('不明なコマンド案内に spec build が含まれる', () => {
+  it('不明なコマンド案内に spec build と spec collect が含まれる', () => {
     assert.throws(
       () => parseJskimArgv(['nope']),
       /spec build \[<project>\]/
+    );
+    assert.throws(
+      () => parseJskimArgv(['nope']),
+      /spec collect \[<project>\]/
     );
   });
 });

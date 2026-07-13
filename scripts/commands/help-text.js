@@ -15,6 +15,7 @@ function getHelpText() {
     '  jskim serve [<project>] [--host <host>] [--port <port>]',
     '  jskim dev [<project>] [--host <host>] [--port <port>] [--open]',
     '  jskim spec build [<project>]',
+    '  jskim spec collect [<project>]',
     '',
     'コマンド:',
     '  build   静的ファイルをビルドします。',
@@ -33,8 +34,8 @@ function getHelpText() {
     '',
     '補足:',
     '  projectを省略できるのは、設定内のprojectが1件だけの場合です。',
-    '  spec build は @ywal123456/jskim-screen-spec（開発中）が必要です。',
-    '  画面設計書は jskim spec build の後、jskim dev の /spec/ で確認できます。',
+    '  spec collect / build は @ywal123456/jskim-screen-spec（開発中）が必要です。',
+    '  画面設計書の手順: jskim spec collect → jskim spec build → jskim dev の /spec/',
   ].join('\n');
 }
 
@@ -54,6 +55,7 @@ function getUnknownCommandText(command) {
     '  serve [<project>] [--host <host>] [--port <port>]',
     '  dev [<project>] [--host <host>] [--port <port>] [--open]',
     '  spec build [<project>]',
+    '  spec collect [<project>]',
   ].join('\n');
 }
 

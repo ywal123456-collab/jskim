@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>collector-actions-demo</title>
+    <style>
+      .modal {
+        display: none;
+        border: 1px solid #333;
+        padding: 1rem;
+        margin-top: 1rem;
+        background: #fff;
+      }
+      .modal.is-open {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-jskim-spec-screen="collector-actions-demo">
+      <h1 data-jskim-spec-item="page-title">収集アクション検証</h1>
+
+      <label>
+        氏名
+        <input
+          type="text"
+          name="applicant-name"
+          data-jskim-spec-item="applicant-name"
+          data-jskim-spec-action="applicant-name"
+        />
+      </label>
+
+      <label>
+        区分
+        <select
+          name="customer-type"
+          data-jskim-spec-item="customer-type"
+          data-jskim-spec-action="customer-type"
+        >
+          <option value="">選択してください</option>
+          <option value="individual">個人</option>
+          <option value="corporation">法人</option>
+        </select>
+      </label>
+
+      <label>
+        <input
+          type="checkbox"
+          name="agree"
+          data-jskim-spec-item="agree-terms"
+          data-jskim-spec-action="agree-terms"
+        />
+        利用規約に同意する
+      </label>
+
+      <button
+        type="button"
+        id="open-help"
+        data-jskim-spec-item="open-help"
+        data-jskim-spec-action="open-help"
+      >
+        ヘルプを開く
+      </button>
+
+      <button
+        type="button"
+        id="open-details"
+        data-jskim-spec-item="open-details"
+        data-jskim-spec-action="open-details"
+      >
+        詳細を開く
+      </button>
+
+      <details data-jskim-spec-item="extra-details" id="extra-details">
+        <summary>補足情報</summary>
+        <p>詳細本文です。</p>
+      </details>
+
+      <div
+        id="help-modal"
+        class="modal"
+        role="dialog"
+        aria-hidden="true"
+        data-jskim-spec-item="help-modal"
+      >
+        <p data-jskim-spec-item="help-title">ヘルプ内容</p>
+        <button
+          type="button"
+          id="close-help"
+          data-jskim-spec-item="close-help"
+          data-jskim-spec-action="close-help"
+        >
+          閉じる
+        </button>
+      </div>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

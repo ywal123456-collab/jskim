@@ -40,6 +40,7 @@ describe('cli binary', () => {
     assert.match(result.output, /serve \[<project>\]/);
     assert.match(result.output, /dev \[<project>\]/);
     assert.match(result.output, /spec build \[<project>\]/);
+    assert.match(result.output, /spec collect \[<project>\]/);
     assert.match(result.output, /projectを省略できるのは/);
   });
 

@@ -38,7 +38,7 @@ describe('スクリーン仕様 companion package', () => {
     assert.equal(pkg.exports['.'].types, './dist/index.d.ts');
   });
 
-  it('root package.json に vue / vite 依存がない', () => {
+  it('root package.json に vue / vite / playwright 依存がない', () => {
     const pkg = readJson(path.join(REPO_ROOT, 'package.json'));
     const names = collectDepNames(pkg);
     assert.equal(names.has('vue'), false);
@@ -48,15 +48,20 @@ describe('スクリーン仕様 companion package', () => {
     assert.equal(names.has('@vue/test-utils'), false);
     assert.equal(names.has('vitest'), false);
     assert.equal(names.has('jsdom'), false);
+    // PDF 用の playwright-core は許可。フル playwright は companion 側のみ。
+    assert.equal(names.has('playwright'), false);
+    assert.equal(names.has('playwright-core'), true);
   });
 
-  it('create-jskim package.json に vue / vite 依存がない', () => {
+  it('create-jskim package.json に vue / vite / playwright 依存がない', () => {
     const pkg = readJson(path.join(REPO_ROOT, 'create-jskim', 'package.json'));
     const names = collectDepNames(pkg);
     assert.equal(names.has('vue'), false);
     assert.equal(names.has('vite'), false);
     assert.equal(names.has('@vitejs/plugin-vue'), false);
     assert.equal(names.has('vue-router'), false);
+    assert.equal(names.has('playwright'), false);
+    assert.equal(names.has('playwright-core'), false);
   });
 
   it('root files 配列に jskim-screen-spec や spec/*/dist を含めない', () => {

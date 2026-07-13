@@ -68,7 +68,9 @@ function parseSpecArgv(argv) {
     throw new Error(
       [
         '[JSKim] spec のサブコマンドを指定してください。',
-        '使用方法: jskim spec build [<project>]',
+        '使用方法:',
+        '  jskim spec build [<project>]',
+        '  jskim spec collect [<project>]',
       ].join('\n')
     );
   }
@@ -78,14 +80,17 @@ function parseSpecArgv(argv) {
     return { kind: 'help', options: emptyOptions() };
   }
 
-  if (subcommand !== 'build') {
+  if (subcommand !== 'build' && subcommand !== 'collect') {
     throw new Error(
       [
         `[JSKim] 不明な spec サブコマンドです: ${subcommand}`,
-        '使用方法: jskim spec build [<project>]',
+        '使用方法:',
+        '  jskim spec build [<project>]',
+        '  jskim spec collect [<project>]',
         '',
         '使用できるサブコマンド:',
-        '  build [<project>]   画面設計書 viewer を build します。',
+        '  build [<project>]     画面設計書 viewer を build します。',
+        '  collect [<project>]   画面設計書用 snapshot を収集します。',
       ].join('\n')
     );
   }
@@ -94,8 +99,8 @@ function parseSpecArgv(argv) {
   for (const token of rest) {
     if (token.startsWith('-')) {
       throw new Error(
-        `[JSKim] コマンド "spec build" ではoption ${token} を使えません。\n` +
-          '使用方法: jskim spec build [<project>]'
+        `[JSKim] コマンド "spec ${subcommand}" ではoption ${token} を使えません。\n` +
+          `使用方法: jskim spec ${subcommand} [<project>]`
       );
     }
   }
@@ -104,14 +109,14 @@ function parseSpecArgv(argv) {
     throw new Error(
       `[JSKim] project名は1つだけ指定してください。\n` +
         `受け取った値: ${rest.join(', ')}\n` +
-        '使用方法: jskim spec build [<project>]'
+        `使用方法: jskim spec ${subcommand} [<project>]`
     );
   }
 
   return {
     kind: 'command',
     command: 'spec',
-    subcommand: 'build',
+    subcommand,
     projectName: rest[0],
     options: emptyOptions(),
   };
@@ -278,6 +283,7 @@ function formatUnknownCommand(command) {
     '  serve [<project>] [--host <host>] [--port <port>]',
     '  dev [<project>] [--host <host>] [--port <port>] [--open]',
     '  spec build [<project>]',
+    '  spec collect [<project>]',
   ].join('\n');
 }
 
