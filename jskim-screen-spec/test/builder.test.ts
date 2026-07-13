@@ -47,6 +47,8 @@ function loadFixtureScreen(): LoadedScreen {
         html: helpHtml,
       },
     ],
+    stateStyles: {},
+    stateDocumentContexts: {},
   };
 }
 

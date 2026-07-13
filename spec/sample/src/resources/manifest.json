@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "projectName": "sample",
+  "files": {
+    "5c65951b8187.css": {
+      "hash": "5c65951b8187",
+      "ext": "css",
+      "kind": "stylesheet",
+      "byteLength": 2408
+    },
+    "6e58ae54f806.css": {
+      "hash": "6e58ae54f806",
+      "ext": "css",
+      "kind": "stylesheet",
+      "byteLength": 3373
+    },
+    "8e8e30327133.css": {
+      "hash": "8e8e30327133",
+      "ext": "css",
+      "kind": "stylesheet",
+      "byteLength": 6279
+    }
+  },
+  "screens": [
+    "crud-create",
+    "wizard-complete",
+    "wizard-confirm",
+    "wizard-input"
+  ]
+}

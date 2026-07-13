@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { inject, ref, watch, type ComputedRef } from 'vue';
-import DomPreview from '../components/DomPreview.vue';
+import { computed, inject, ref, watch, type ComputedRef } from 'vue';
+import DomPreview, {
+  type PreviewStylesheet,
+} from '../components/DomPreview.vue';
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
-import type { ScreenData, ViewerManifest } from '../types';
+import type { DocumentContext, ScreenData, ViewerManifest } from '../types';
 
 const props = defineProps<{
   screenId: string;
@@ -16,12 +18,22 @@ const selectedStateId = ref('default');
 const selectedItemId = ref<string | null>(null);
 const snapshotHtml = ref('');
 const previewCss = ref('');
+const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
+
+const currentDocumentContext = computed<DocumentContext | null>(() => {
+  if (!screen.value) {
+    return null;
+  }
+  const state = screen.value.states.find((s) => s.id === selectedStateId.value);
+  return state?.documentContext ?? null;
+});
 
 async function loadScreen(screenId: string): Promise<void> {
   loadError.value = null;
   screen.value = null;
   selectedItemId.value = null;
+  stylesheets.value = [];
 
   if (screenId === '_empty') {
     loadError.value = '表示できる画面がありません。';
@@ -55,6 +67,36 @@ async function loadScreen(screenId: string): Promise<void> {
   await loadSnapshot(selectedStateId.value);
 }
 
+async function resolveStylesheets(
+  stateId: string,
+): Promise<PreviewStylesheet[]> {
+  if (!screen.value) {
+    return [];
+  }
+  const state = screen.value.states.find((s) => s.id === stateId);
+  const styles = state?.styles || [];
+  const result: PreviewStylesheet[] = [];
+
+  for (const style of styles) {
+    if (style.disabled) {
+      continue;
+    }
+    if (style.kind === 'style') {
+      try {
+        const res = await fetch(style.href);
+        const cssText = res.ok ? await res.text() : '';
+        result.push({ cssText, media: style.media || 'all' });
+      } catch {
+        result.push({ cssText: '', media: style.media || 'all' });
+      }
+    } else {
+      result.push({ href: style.href, media: style.media || 'all' });
+    }
+  }
+
+  return result;
+}
+
 async function loadSnapshot(stateId: string): Promise<void> {
   if (!screen.value) {
     return;
@@ -62,6 +104,7 @@ async function loadSnapshot(stateId: string): Promise<void> {
   const state = screen.value.states.find((s) => s.id === stateId);
   if (!state) {
     snapshotHtml.value = '';
+    stylesheets.value = [];
     return;
   }
   const base = import.meta.env.BASE_URL;
@@ -71,6 +114,7 @@ async function loadSnapshot(stateId: string): Promise<void> {
     return;
   }
   snapshotHtml.value = await res.text();
+  stylesheets.value = await resolveStylesheets(stateId);
 }
 
 function onSelectState(stateId: string): void {
@@ -115,7 +159,9 @@ watch(
         :html="snapshotHtml"
         :item-order="screen.itemOrder"
         :selected-item-id="selectedItemId"
+        :stylesheets="stylesheets"
         :preview-css="previewCss"
+        :document-context="currentDocumentContext"
         @select="selectedItemId = $event"
       />
     </section>

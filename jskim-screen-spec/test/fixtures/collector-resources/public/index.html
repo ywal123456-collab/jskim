@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="demo">
+  <head>
+    <meta charset="utf-8" />
+    <title>collector-resources-demo</title>
+    <link rel="stylesheet" href="./css/main.css" />
+    <link rel="stylesheet" href="https://cdn.example.com/external.css" />
+    <style>
+      .inline-box {
+        background-image: url("./img/inline-bg.png");
+      }
+    </style>
+  </head>
+  <body class="app-body">
+    <main data-jskim-spec-screen="collector-resources-demo">
+      <h1 data-jskim-spec-item="page-title">リソース収集検証</h1>
+      <img
+        data-jskim-spec-item="hero-image"
+        src="./img/hero.png"
+        srcset="./img/hero.png 1x, ./img/hero-2x.png 2x"
+        alt="hero"
+      />
+      <img
+        data-jskim-spec-item="sprite-ref"
+        src="./img/sprite.svg#icon"
+        alt="sprite"
+      />
+      <div
+        data-jskim-spec-item="styled-box"
+        class="panel"
+        style="background-image: url('./img/style-attr.png')"
+      >
+        style attr
+      </div>
+      <img
+        data-jskim-spec-item="data-uri"
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+        alt="data"
+      />
+      <img
+        data-jskim-spec-item="external-img"
+        src="https://cdn.example.com/remote.png"
+        alt="external"
+      />
+    </main>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "collector-resources-demo",
+    "path": "/index.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期",
+      "viewer": { "visible": true, "order": 1 },
+      "collect": { "actions": [] }
+    }
+  ],
+  "interactions": []
+}

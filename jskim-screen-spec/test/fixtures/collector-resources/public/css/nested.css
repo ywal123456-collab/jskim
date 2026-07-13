@@ -1,0 +1,4 @@
+.nested {
+  outline: 1px solid #ccc;
+  background-image: url("../img/nested-bg.png");
+}

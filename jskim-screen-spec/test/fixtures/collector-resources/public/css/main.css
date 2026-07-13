@@ -1,0 +1,19 @@
+@import url("./nested.css");
+
+:root {
+  --sample-color: rgb(1, 2, 3);
+}
+
+body.app-body {
+  background-color: rgb(10, 20, 30);
+}
+
+.panel {
+  color: #111;
+  background-image: url("../img/panel-bg.png");
+}
+
+@font-face {
+  font-family: "DemoFont";
+  src: url("../fonts/demo.woff2") format("woff2");
+}

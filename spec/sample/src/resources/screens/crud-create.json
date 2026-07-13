@@ -1,0 +1,35 @@
+{
+  "screenId": "crud-create",
+  "states": {
+    "default": {
+      "styles": [
+        {
+          "kind": "link",
+          "resourceId": "8e8e30327133.css",
+          "media": "all",
+          "disabled": false
+        },
+        {
+          "kind": "link",
+          "resourceId": "5c65951b8187.css",
+          "media": "all",
+          "disabled": false
+        }
+      ],
+      "documentContext": {
+        "html": {
+          "class": [],
+          "attributes": {
+            "lang": "ja"
+          }
+        },
+        "body": {
+          "class": [
+            "app-body"
+          ],
+          "attributes": {}
+        }
+      }
+    }
+  }
+}

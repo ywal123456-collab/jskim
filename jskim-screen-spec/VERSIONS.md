@@ -1,10 +1,13 @@
 # jskim-screen-spec installed versions
 
-Recorded for Phase 5A (Playwright collector).
+Recorded for Phase 5A (Playwright collector) / Phase 5B (CSS·asset auto-collection).
 
 | Package | Role | Notes |
 |---------|------|-------|
 | playwright | dependency | Chromium collector（stable） — installed 1.61.1 |
+| postcss | dependency | CSS @import / url() / Shadow 互換 rewrite — **8.5.18** |
+| postcss-selector-parser | dependency | Shadow 互換セレクタのトークン書き換え — **7.1.4** |
+| postcss-value-parser | dependency | url() 値の解析 — **4.2.0** |
 | vue | dependency | viewer |
 | vue-router | dependency | viewer |
 | vite | dependency | viewer build + Node builder runtime |
@@ -20,4 +23,4 @@ npm --prefix jskim-screen-spec run install:browsers
 
 Package remains `"private": true` — do not publish.
 
-Root `@ywal123456/jskim` and `create-jskim` have no vue/vite/playwright deps.
+Root `@ywal123456/jskim` and `create-jskim` have no vue/vite/playwright/postcss deps.

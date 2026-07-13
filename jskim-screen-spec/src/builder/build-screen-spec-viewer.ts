@@ -45,6 +45,7 @@ export async function buildScreenSpecViewer(
     base,
     screens: project.screens,
     registeredScreenIds,
+    resourceFiles: project.resources?.files,
   });
 
   const pkgRoot = packageRootDir();
@@ -64,6 +65,7 @@ export async function buildScreenSpecViewer(
   fs.mkdirSync(path.join(dataDir, 'screens'), { recursive: true });
   fs.mkdirSync(path.join(dataDir, 'snapshots'), { recursive: true });
   fs.mkdirSync(path.join(dataDir, 'theme'), { recursive: true });
+  fs.mkdirSync(path.join(dataDir, 'resources', 'files'), { recursive: true });
 
   fs.writeFileSync(
     path.join(dataDir, 'manifest.json'),
@@ -83,6 +85,12 @@ export async function buildScreenSpecViewer(
     const target = path.join(dataDir, snap.relativePath);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, snap.html, 'utf8');
+  }
+
+  for (const file of payload.resourceFiles) {
+    const target = path.join(dataDir, file.relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.bytes);
   }
 
   if (project.previewCssPath) {

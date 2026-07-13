@@ -30,6 +30,23 @@ export type ScreenInteraction = {
   unregisteredTarget?: boolean;
 };
 
+export type ScreenStateStyle = {
+  kind: 'link' | 'style';
+  href: string;
+  media: string;
+  disabled?: boolean;
+};
+
+export type DocumentContextNode = {
+  class: string[];
+  attributes: Record<string, string>;
+};
+
+export type DocumentContext = {
+  html: DocumentContextNode;
+  body: DocumentContextNode;
+};
+
 export type ScreenState = {
   id: string;
   name: string;
@@ -38,6 +55,8 @@ export type ScreenState = {
     order: number;
   };
   snapshotFile: string;
+  styles?: ScreenStateStyle[];
+  documentContext?: DocumentContext;
 };
 
 export type ScreenData = {

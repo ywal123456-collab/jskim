@@ -151,10 +151,27 @@ spec/{project}/src/snapshots/{screenId}/{stateId}.html
 
 収集時は `[data-jskim-spec-screen]` の outerHTML を、input / textarea / select / checkbox / details / dialog のランタイム状態を attribute へ反映したうえで保存します（クローン上で処理し、ライブ DOM は壊しません）。
 
+## CSS / アセット自動収集（Phase 5B）
+
+`jskim spec collect` は各 state で stylesheet（`link` / `style`）と HTML 内リソース（`img` / `srcset` / `style` url など）を収集し、次へ書き込みます。
+
+```text
+spec/{project}/src/resources/
+├─ manifest.json
+├─ screens/{screenId}.json
+└─ files/{contentHash12}.{ext}
+```
+
+- ローカル / 同一 origin のみ収集。外部 URL は除去して warning
+- CSS の `@import` / `url()` を再帰解決し、`jskim-spec-resource://{id}` token に置換
+- Shadow DOM 互換セレクタ（`postcss-selector-parser`）: `:root`/`html` → `:host`、`body` → `.preview-root`（`body.app-body` → `.preview-root.app-body`）。`:is()` / `:not()` 内も対象。クラス名・属性値・`@keyframes` 名・宣言値は変更しない
+- collect 時に state ごとの `documentContext`（html/body の class と安全属性）を `resources/screens/{id}.json` へ保存し、DomPreview が wrapper / host に反映
+- `spec build` で token を `{base}data/resources/files/{id}` に展開（最終 dist に token は残さない）
+
 ## preview CSS
 
-`spec/{project}/src/theme/preview.css` を DomPreview の Shadow DOM に注入します。
-元 CSS の自動収集は **将来対応** です。
+`spec/{project}/src/theme/preview.css` は DomPreview の **viewer 上書き**（badge 視認性など）専用です。
+画面本体の見た目は resources の自動収集 CSS が担当します。
 
 ## 出力構成
 
@@ -166,6 +183,7 @@ spec/sample/dist/
    ├─ manifest.json
    ├─ screens/*.json
    ├─ snapshots/**/*.html
+   ├─ resources/files/*
    └─ theme/preview.css
 ```
 

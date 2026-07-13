@@ -12,3 +12,10 @@ export type {
   CollectScreenSpecProjectOptions,
   CollectScreenSpecProjectResult,
 } from './collector/collect-screen-spec-project.js';
+export {
+  rewriteResourceTokens,
+  toResourceToken,
+  SpecResourceTokenError,
+} from './collector/resources/resource-token.js';
+export { applyShadowCompatCss } from './collector/resources/shadow-compat-css.js';
+export { contentHash12 } from './collector/resources/content-hash.js';

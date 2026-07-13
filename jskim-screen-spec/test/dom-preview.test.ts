@@ -164,4 +164,46 @@ describe('DomPreview', () => {
 
     wrapper.unmount();
   });
+
+  it('documentContext で wrapper に preview-root app-body を付ける', async () => {
+    const wrapper = mount(DomPreview, {
+      props: {
+        html: FIXTURE_HTML,
+        itemOrder: ['a', 'b'],
+        selectedItemId: null,
+        previewCss: '',
+        documentContext: {
+          html: {
+            class: ['html-theme'],
+            attributes: { lang: 'ja', 'data-theme': 'dark' },
+          },
+          body: {
+            class: ['app-body'],
+            attributes: { 'data-layout': 'wide' },
+          },
+        },
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+
+    const host = wrapper.element as HTMLElement;
+    expect(host.classList.contains('dom-preview')).toBe(true);
+    expect(host.classList.contains('html-theme')).toBe(true);
+    expect(host.getAttribute('lang')).toBe('ja');
+    expect(host.getAttribute('data-theme')).toBe('dark');
+
+    const shadow = host.shadowRoot!;
+    const previewBody = shadow.querySelector(
+      '[data-jskim-spec-preview-body]',
+    ) as HTMLElement;
+    expect(previewBody.className.split(/\s+/).sort()).toEqual(
+      ['app-body', 'preview-root'].sort(),
+    );
+    expect(previewBody.getAttribute('data-layout')).toBe('wide');
+
+    wrapper.unmount();
+    expect(host.classList.contains('html-theme')).toBe(false);
+    expect(host.getAttribute('lang')).toBeNull();
+  });
 });

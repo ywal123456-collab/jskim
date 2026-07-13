@@ -17,6 +17,20 @@ import {
 } from './run-collect-actions.js';
 import { scanSourceSpecs, sortStatesForCollect } from './scan-source-specs.js';
 import { writeSnapshot } from './write-snapshot.js';
+import {
+  captureDocumentContext,
+  type DocumentContext,
+} from './capture-document-context.js';
+import { ResourceBag, type StyleRef } from './resources/resource-bag.js';
+import {
+  collectStylesheetsFromPage,
+  createPageFetchResource,
+} from './resources/collect-stylesheets.js';
+import { rewriteHtmlResources } from './resources/html-resource-rewrite.js';
+import {
+  writeResourcesAtomic,
+  type ScreenResourcesJson,
+} from './resources/write-resources.js';
 
 export type CollectScreenSpecProjectOptions = {
   rootDir: string;
@@ -30,6 +44,10 @@ export type CollectScreenSpecProjectResult = {
   states: number;
   updated: number;
   unchanged: number;
+  stylesheets: number;
+  resources: number;
+  resourcesReused: number;
+  resourceWarnings: string[];
   warnings: string[];
   browserName: string;
   browserVersion: string;
@@ -49,13 +67,16 @@ type CapturedState = {
   screenId: string;
   stateId: string;
   html: string;
+  styles: StyleRef[];
+  stylesheetCount: number;
+  documentContext: DocumentContext;
 };
 
 const LOCAL_HOST = '127.0.0.1';
 
 /**
  * Playwright で Source JSON の全 state を収集し、
- * snapshot / description merge をコマンド単位で原子的に書き込む。
+ * snapshot / description / resources をコマンド単位で原子的に書き込む。
  */
 export async function collectScreenSpecProject(
   options: CollectScreenSpecProjectOptions,
@@ -71,6 +92,10 @@ export async function collectScreenSpecProject(
       states: 0,
       updated: 0,
       unchanged: 0,
+      stylesheets: 0,
+      resources: 0,
+      resourcesReused: 0,
+      resourceWarnings: [],
       warnings: [
         `Source JSON が見つかりませんでした: src/${projectName}/pages/**/*.spec.json`,
       ],
@@ -79,7 +104,6 @@ export async function collectScreenSpecProject(
     };
   }
 
-  // ブラウザ起動前に wait 上限と path を検証
   for (const entry of scanned) {
     const screenId = entry.source.screen.id;
     assertLocalScreenPath(entry.source.screen.path, screenId);
@@ -99,6 +123,7 @@ export async function collectScreenSpecProject(
 
   let browser: Browser | null = null;
   let browserVersion = '';
+  const bag = new ResourceBag();
 
   try {
     browser = await launchChromium();
@@ -106,6 +131,7 @@ export async function collectScreenSpecProject(
 
     const capturedByScreen = new Map<string, CapturedState[]>();
     let stateCount = 0;
+    let stylesheetTotal = 0;
 
     for (const entry of scanned) {
       const screenId = entry.source.screen.id;
@@ -127,12 +153,41 @@ export async function collectScreenSpecProject(
             screenId,
             stateId: state.id,
           });
-          const html = await captureScreenRoot({
+
+          const pageUrl = page.url();
+          const fetchResource = createPageFetchResource(page);
+
+          const collected = await collectStylesheetsFromPage({
+            page,
+            pageUrl,
+            bag,
+            fetchResource,
+          });
+          stylesheetTotal += collected.stylesheetCount;
+
+          const documentContext = await captureDocumentContext(page);
+
+          let html = await captureScreenRoot({
             page,
             screenId,
             stateId: state.id,
           });
-          captured.push({ screenId, stateId: state.id, html });
+
+          html = await rewriteHtmlResources({
+            html,
+            pageUrl,
+            bag,
+            fetchResource,
+          });
+
+          captured.push({
+            screenId,
+            stateId: state.id,
+            html,
+            styles: collected.styles,
+            stylesheetCount: collected.stylesheetCount,
+            documentContext,
+          });
         } finally {
           await page.close().catch(() => undefined);
         }
@@ -141,9 +196,9 @@ export async function collectScreenSpecProject(
       capturedByScreen.set(screenId, captured);
     }
 
-    // ここまで成功したら初めてディスクへ書く
     const pendingSnapshots: PendingSnapshot[] = [];
     const pendingDescriptions: PendingDescription[] = [];
+    const pendingScreenResources: ScreenResourcesJson[] = [];
     const snapshotsRoot = path.join(
       rootDir,
       'spec',
@@ -152,20 +207,32 @@ export async function collectScreenSpecProject(
       'snapshots',
     );
     const dataDir = path.join(rootDir, 'spec', projectName, 'src', 'data');
+    const resourcesDir = path.join(
+      rootDir,
+      'spec',
+      projectName,
+      'src',
+      'resources',
+    );
 
     for (const entry of scanned) {
       const screenId = entry.source.screen.id;
       const captured = capturedByScreen.get(screenId) || [];
       const stateIds = new Set(captured.map((c) => c.stateId));
 
+      const statesMap: ScreenResourcesJson['states'] = {};
       for (const item of captured) {
         pendingSnapshots.push({
           filePath: path.join(snapshotsRoot, screenId, `${item.stateId}.html`),
           html: item.html,
         });
+        statesMap[item.stateId] = {
+          styles: item.styles,
+          documentContext: item.documentContext,
+        };
       }
+      pendingScreenResources.push({ screenId, states: statesMap });
 
-      // orphan snapshot 警告（削除しない）
       const screenSnapDir = path.join(snapshotsRoot, screenId);
       if (fs.existsSync(screenSnapDir)) {
         for (const name of fs.readdirSync(screenSnapDir)) {
@@ -222,6 +289,7 @@ export async function collectScreenSpecProject(
 
     let updated = 0;
     let unchanged = 0;
+    const resourceWarnings = [...bag.warnings];
 
     try {
       for (const snap of pendingSnapshots) {
@@ -246,19 +314,32 @@ export async function collectScreenSpecProject(
         fs.writeFileSync(tempPath, nextBuf);
         fs.renameSync(tempPath, desc.filePath);
       }
+
+      writeResourcesAtomic({
+        resourcesDir,
+        projectName,
+        bag,
+        screens: pendingScreenResources,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw createError(
         'SPEC_COLLECT_SNAPSHOT_WRITE_FAILED',
-        `snapshot / description の書き込みに失敗しました。原因: ${message}`,
+        `snapshot / description / resources の書き込みに失敗しました。原因: ${message}`,
       );
     }
+
+    warnings.push(...resourceWarnings);
 
     return {
       screens: scanned.length,
       states: stateCount,
       updated,
       unchanged,
+      stylesheets: stylesheetTotal,
+      resources: bag.size,
+      resourcesReused: bag.resourcesReused,
+      resourceWarnings,
       warnings,
       browserName: 'chromium',
       browserVersion,

@@ -1,6 +1,15 @@
-import type { LoadedScreen } from './load-screen-spec-project.js';
+import type {
+  LoadedResourceFile,
+  LoadedScreen,
+  LoadedStyleRef,
+} from './load-screen-spec-project.js';
 import { computeItemOrder } from './item-order.js';
 import { sanitizeSnapshot } from './sanitize-snapshot.js';
+import {
+  rewriteResourceTokens,
+  resourceTokenToViewerUrl,
+  findResourceTokens,
+} from '../collector/resources/resource-token.js';
 
 export type ViewerInteraction = {
   itemId: string;
@@ -14,6 +23,13 @@ export type ViewerInteraction = {
   unregisteredTarget?: boolean;
 };
 
+export type ViewerStateStyle = {
+  kind: 'link' | 'style';
+  href: string;
+  media: string;
+  disabled: boolean;
+};
+
 export type ViewerState = {
   id: string;
   name: string;
@@ -22,6 +38,11 @@ export type ViewerState = {
     order: number;
   };
   snapshotFile: string;
+  styles: ViewerStateStyle[];
+  documentContext?: {
+    html: { class: string[]; attributes: Record<string, string> };
+    body: { class: string[]; attributes: Record<string, string> };
+  };
 };
 
 export type ViewerScreenData = {
@@ -64,20 +85,34 @@ export type CreatedViewerPayload = {
     html: string;
     relativePath: string;
   }>;
+  resourceFiles: Array<{
+    id: string;
+    bytes: Buffer;
+    relativePath: string;
+  }>;
 };
 
 /**
  * 登録済み画面集合を基準に viewer 用 manifest / screen JSON を組み立てる。
  * 未登録の screen-transition 先は unregisteredTarget: true にする（build は続行）。
+ * resource token は base 付き viewer URL に置換する。
  */
 export function createViewerManifest(options: {
   projectName: string;
   base: string;
   screens: LoadedScreen[];
   registeredScreenIds: Set<string>;
+  resourceFiles?: Map<string, LoadedResourceFile>;
 }): CreatedViewerPayload {
-  const { projectName, base, screens, registeredScreenIds } = options;
+  const {
+    projectName,
+    base,
+    screens,
+    registeredScreenIds,
+    resourceFiles = new Map(),
+  } = options;
 
+  const knownIds = new Set(resourceFiles.keys());
   const viewerScreens: ViewerScreenData[] = [];
   const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
 
@@ -104,10 +139,13 @@ export function createViewerManifest(options: {
         continue;
       }
       const relativePath = `snapshots/${screen.screenId}/${state.id}.html`;
+      const sanitized = sanitizeSnapshot(snap.html);
+      const html = rewriteResourceTokens(sanitized, base, knownIds);
+      assertNoTokens(html, relativePath);
       snapshotFiles.push({
         screenId: screen.screenId,
         stateId: state.id,
-        html: sanitizeSnapshot(snap.html),
+        html,
         relativePath,
       });
       viewerStates.push({
@@ -118,19 +156,29 @@ export function createViewerManifest(options: {
           order: state.viewer?.order ?? 0,
         },
         snapshotFile: relativePath,
+        styles: resolveStyles(
+          screen.stateStyles[state.id] || [],
+          base,
+          knownIds,
+        ),
+        ...(screen.stateDocumentContexts[state.id]
+          ? { documentContext: screen.stateDocumentContexts[state.id] }
+          : {}),
       });
     }
 
-    // Source に無い snapshot ファイルも載せる
     for (const snap of screen.snapshots) {
       if (viewerStates.some((s) => s.id === snap.stateId)) {
         continue;
       }
       const relativePath = `snapshots/${screen.screenId}/${snap.stateId}.html`;
+      const sanitized = sanitizeSnapshot(snap.html);
+      const html = rewriteResourceTokens(sanitized, base, knownIds);
+      assertNoTokens(html, relativePath);
       snapshotFiles.push({
         screenId: screen.screenId,
         stateId: snap.stateId,
-        html: sanitizeSnapshot(snap.html),
+        html,
         relativePath,
       });
       viewerStates.push({
@@ -138,6 +186,14 @@ export function createViewerManifest(options: {
         name: snap.stateId,
         viewer: { visible: true, order: 1000 },
         snapshotFile: relativePath,
+        styles: resolveStyles(
+          screen.stateStyles[snap.stateId] || [],
+          base,
+          knownIds,
+        ),
+        ...(screen.stateDocumentContexts[snap.stateId]
+          ? { documentContext: screen.stateDocumentContexts[snap.stateId] }
+          : {}),
       });
     }
 
@@ -189,6 +245,34 @@ export function createViewerManifest(options: {
     });
   }
 
+  const outResourceFiles: CreatedViewerPayload['resourceFiles'] = [];
+  for (const file of resourceFiles.values()) {
+    const relativePath = `resources/files/${file.id}`;
+    let bytes = file.bytes;
+    if (file.ext === 'css' || file.kind === 'stylesheet') {
+      const text = rewriteResourceTokens(
+        bytes.toString('utf8'),
+        base,
+        knownIds,
+      );
+      assertNoTokens(text, relativePath);
+      bytes = Buffer.from(text, 'utf8');
+    } else {
+      // バイナリはそのまま（token は含まれない想定）
+      const asText = bytes.toString('utf8');
+      if (asText.includes('jskim-spec-resource://')) {
+        const text = rewriteResourceTokens(asText, base, knownIds);
+        assertNoTokens(text, relativePath);
+        bytes = Buffer.from(text, 'utf8');
+      }
+    }
+    outResourceFiles.push({
+      id: file.id,
+      bytes,
+      relativePath,
+    });
+  }
+
   const manifest: ViewerManifest = {
     schemaVersion: '1.0',
     projectName,
@@ -205,5 +289,42 @@ export function createViewerManifest(options: {
     manifest,
     screens: viewerScreens,
     snapshotFiles,
+    resourceFiles: outResourceFiles,
   };
+}
+
+function resolveStyles(
+  styles: LoadedStyleRef[],
+  base: string,
+  knownIds: Set<string>,
+): ViewerStateStyle[] {
+  return styles
+    .filter((s) => !s.disabled)
+    .map((s) => {
+      if (!knownIds.has(s.resourceId)) {
+        throw new Error(
+          `未知の resource token です: jskim-spec-resource://${s.resourceId}`,
+        );
+      }
+      return {
+        kind: s.kind,
+        href: resourceTokenToViewerUrl(s.resourceId, base),
+        media: s.media || 'all',
+        disabled: false,
+      };
+    });
+}
+
+function assertNoTokens(content: string, where: string): void {
+  const leftover = findResourceTokens(content);
+  if (leftover.length > 0) {
+    throw new Error(
+      `未知の resource token です: jskim-spec-resource://${leftover[0]} (${where})`,
+    );
+  }
+  if (content.includes('jskim-spec-resource://')) {
+    throw new Error(
+      `resource token が残っています (${where})`,
+    );
+  }
 }

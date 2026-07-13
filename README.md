@@ -20,7 +20,7 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
-- 画面設計書（optional / prototype）: `jskim spec collect` → `jskim spec build` → `jskim dev` の `/spec/` 静的提供
+- 画面設計書（optional / prototype）: `jskim spec collect`（snapshot + CSS/アセット自動収集）→ `jskim spec build` → `jskim dev` の `/spec/` 静的提供
 
 詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は現時点で private であり、一般利用向けの公開 npm 配布前です。
 

@@ -40,17 +40,21 @@
     "generate:snapshots": "tsx scripts/generate-sample-snapshots.ts",
     "dev:sample": "npm run build:sample && vite preview --base /spec/",
     "preview:sample": "vite preview --base /spec/",
-    "test": "vitest run --exclude **/collect-integration.test.ts",
+    "test": "vitest run --exclude **/collect-integration.test.ts --exclude **/resource-integration.test.ts",
     "test:collector": "vitest run test/collector",
+    "test:resources": "vitest run test/resources test/collector/resource-integration.test.ts",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
     "playwright": "^1.52.0",
+    "postcss": "^8.5.18",
+    "postcss-selector-parser": "^7.1.4",
+    "postcss-value-parser": "^4.2.0",
+    "vite": "^6.2.2",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "vite": "^6.2.2"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

@@ -123,6 +123,15 @@ async function runSpecCollectCommand(options = {}) {
   console.log(`states: ${collectResult.states}`);
   console.log(`updated: ${collectResult.updated}`);
   console.log(`unchanged: ${collectResult.unchanged}`);
+  if (typeof collectResult.stylesheets === 'number') {
+    console.log(`stylesheets: ${collectResult.stylesheets}`);
+  }
+  if (typeof collectResult.resources === 'number') {
+    console.log(`resources: ${collectResult.resources}`);
+  }
+  if (typeof collectResult.resourcesReused === 'number') {
+    console.log(`resources reused: ${collectResult.resourcesReused}`);
+  }
   if (collectResult.warnings && collectResult.warnings.length > 0) {
     console.log(`warnings: ${collectResult.warnings.length}`);
     for (const warning of collectResult.warnings) {
