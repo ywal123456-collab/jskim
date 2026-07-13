@@ -1,5 +1,14 @@
 export { buildScreenSpecViewer } from './builder/build-screen-spec-viewer.js';
 export type { BuildScreenSpecViewerOptions } from './builder/build-screen-spec-viewer.js';
+export { buildScreenSpecViewerAtomic } from './builder/build-screen-spec-viewer-atomic.js';
+export {
+  classifyScreenSpecWatchPath,
+  mergeScreenSpecWatchKinds,
+} from './watch/classify-watch-path.js';
+export type {
+  ScreenSpecWatchKind,
+  ClassifyScreenSpecWatchPathOptions,
+} from './watch/classify-watch-path.js';
 export {
   extractItemIdsInDomOrder,
   computeItemOrder,

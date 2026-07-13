@@ -16,6 +16,7 @@ function getHelpText() {
     '  jskim dev [<project>] [--host <host>] [--port <port>] [--open]',
     '  jskim spec build [<project>]',
     '  jskim spec collect [<project>]',
+    '  jskim spec dev [<project>] [--host <host>] [--port <port>] [--open]',
     '',
     'コマンド:',
     '  build   静的ファイルをビルドします。',
@@ -26,16 +27,17 @@ function getHelpText() {
     '',
     'オプション:',
     '  --all           設定内の全projectを順にbuildします（buildのみ）。',
-    '  --host <host>   serve / dev の待受ホストを上書きします。',
-    '  --port <port>   serve / dev の待受ポートを上書きします。',
-    '  --open          listen成功後にbrowserを1回開きます（devのみ）。',
+    '  --host <host>   serve / dev / spec dev の待受ホストを上書きします。',
+    '  --port <port>   serve / dev / spec dev の待受ポートを上書きします。',
+    '  --open          listen成功後にbrowserを1回開きます（dev / spec dev）。',
     '  -h, --help      ヘルプを表示します。',
     '  -v, --version   バージョンを表示します。',
     '',
     '補足:',
     '  projectを省略できるのは、設定内のprojectが1件だけの場合です。',
-    '  spec collect / build は @ywal123456/jskim-screen-spec（開発中）が必要です。',
-    '  画面設計書の手順: jskim spec collect → jskim spec build → jskim dev の /spec/',
+    '  spec collect / build / dev は @ywal123456/jskim-screen-spec（開発中）が必要です。',
+    '  画面設計書の開発: jskim spec dev （collect + viewer build + /spec/ 自動更新）',
+    '  手動手順: jskim spec collect → jskim spec build → jskim dev の /spec/',
   ].join('\n');
 }
 
@@ -56,6 +58,7 @@ function getUnknownCommandText(command) {
     '  dev [<project>] [--host <host>] [--port <port>] [--open]',
     '  spec build [<project>]',
     '  spec collect [<project>]',
+    '  spec dev [<project>]',
   ].join('\n');
 }
 

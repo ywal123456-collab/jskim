@@ -24,12 +24,30 @@ function getMissingScreenSpecModuleMessage() {
 }
 
 /**
+ * jskim spec dev 用の未インストールメッセージ。
+ * @returns {string}
+ */
+function getMissingScreenSpecDevMessage() {
+  return [
+    '[JSKim] 画面設計書の開発機能を使用するには',
+    `${COMPANION_PACKAGE_NAME} が必要です。`,
+    '',
+    '現在、この module は開発中です（private prototype）。',
+    '公開 npm registry からはまだインストールできません。',
+    '',
+    '開発リポジトリでは companion を build したうえで、',
+    'ローカル package としてプロジェクトへ追加してください。',
+  ].join('\n');
+}
+
+/**
  * optional companion module を解決します。
  *
  * @param {object} options
  * @param {string} options.projectRoot
  * @param {string} [options.modulePath]
  * @param {boolean} [options.requireCollect]
+ * @param {boolean} [options.requireWatchHelpers]
  * @returns {Promise<object>}
  */
 async function resolveScreenSpecModule(options = {}) {
@@ -75,9 +93,29 @@ async function resolveScreenSpecModule(options = {}) {
     );
   }
 
+  if (options.requireWatchHelpers) {
+    if (typeof mod.classifyScreenSpecWatchPath !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に classifyScreenSpecWatchPath がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.mergeScreenSpecWatchKinds !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に mergeScreenSpecWatchKinds がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
+    buildScreenSpecViewerAtomic: mod.buildScreenSpecViewerAtomic,
     collectScreenSpecProject: mod.collectScreenSpecProject,
+    classifyScreenSpecWatchPath: mod.classifyScreenSpecWatchPath,
+    mergeScreenSpecWatchKinds: mod.mergeScreenSpecWatchKinds,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };
@@ -106,5 +144,6 @@ function resolveInstalledEntry(projectRoot) {
 module.exports = {
   resolveScreenSpecModule,
   getMissingScreenSpecModuleMessage,
+  getMissingScreenSpecDevMessage,
   COMPANION_PACKAGE_NAME,
 };

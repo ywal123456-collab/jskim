@@ -43,6 +43,10 @@ npm --prefix jskim-screen-spec run install:browsers
 companion をプロジェクトへローカル追加したうえで:
 
 ```bash
+# 開発用（推奨）: 初期 collect/build + 同一 port + 自動更新
+jskim spec dev sample
+
+# 手動手順
 jskim spec collect sample
 jskim spec build sample
 jskim dev sample
@@ -54,7 +58,26 @@ jskim dev sample
 ```
 
 `jskim spec collect` は preserve ビルド → 一時サーバー → companion collector の順で実行します。
-`jskim dev` は Screen Spec を自動 build しません。先に `jskim spec build` が必要です。
+`jskim spec dev` は初期 collect / atomic viewer build のあと、既存の開発 server で `/` と `/spec/` を提供し、変更に応じて collect/build と full-page reload を行います。
+`jskim dev` は Screen Spec を自動 collect / build しません。
+
+### `jskim spec dev` の監視
+
+| 対象 | 動作 |
+|------|------|
+| `src/{project}/pages` / `layouts` / `components` / assets / `*.spec.json` | project rebuild 後に **collect + build** |
+| `spec/{project}/src/data`（Description） | **build only**（Playwright なし） |
+| `spec/{project}/src/theme` | **build only** |
+| `spec/{project}/src/snapshots` / `resources` / `dist` | **監視しない**（生成物の feedback loop 防止） |
+
+失敗時:
+
+- 直前の正常な `spec/{project}/dist` を維持
+- browser reload しない
+- watcher / server は継続し、次の変更で再試行
+
+終了（Ctrl+C）時は server・watcher・debounce timer・実行中 collect を整理します。
+現状の reload は **full-page reload** です（Vite HMR ではありません）。
 
 ## 使い方（package-local）
 
@@ -87,6 +110,17 @@ await buildScreenSpecViewer({
 ```
 
 既定の `outDir` は `spec/{projectName}/dist` です。
+開発中の差し替えには `buildScreenSpecViewerAtomic`（TEMP build → 原子的 rename）を使います。
+
+### Watch helpers
+
+```ts
+import {
+  classifyScreenSpecWatchPath,
+  mergeScreenSpecWatchKinds,
+  buildScreenSpecViewerAtomic,
+} from '@ywal123456/jskim-screen-spec';
+```
 
 ### Collect（Playwright）
 
@@ -190,6 +224,7 @@ spec/sample/dist/
 ## 制限（現状）
 
 - companion は private prototype（npm publish 前）
-- Screen Spec watch / Vite middleware / HMR なし
+- Vite middleware / Vue HMR / screen 単位 incremental collect / persistent browser なし
+- reload は既存 SSE による full-page reload
 - original application JavaScript は viewer では実行しない（collect 時の一時サーバーでは実行する）
 - create-jskim 生成 project へ companion dependency は自動追加しない

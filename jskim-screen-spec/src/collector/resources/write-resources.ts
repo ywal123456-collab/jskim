@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DocumentContext } from '../capture-document-context.js';
 import type { ResourceBag, StyleRef } from './resource-bag.js';
+import { replaceDirAtomic } from '../../util/replace-dir-atomic.js';
 
 export type ScreenResourcesJson = {
   screenId: string;
@@ -103,40 +104,5 @@ export function writeResourcesAtomic(input: WriteResourcesInput): void {
       // temp 掃除失敗は無視
     }
     throw err;
-  }
-}
-
-function replaceDirAtomic(targetDir: string, tmpDir: string): void {
-  const parent = path.dirname(targetDir);
-  const backupDir = path.join(parent, `.resources.bak-${process.pid}`);
-
-  if (fs.existsSync(backupDir)) {
-    fs.rmSync(backupDir, { recursive: true, force: true });
-  }
-
-  if (fs.existsSync(targetDir)) {
-    try {
-      fs.renameSync(targetDir, backupDir);
-    } catch {
-      fs.rmSync(targetDir, { recursive: true, force: true });
-    }
-  }
-
-  try {
-    fs.renameSync(tmpDir, targetDir);
-  } catch (err) {
-    // rename 失敗時、backup があれば戻す
-    if (fs.existsSync(backupDir) && !fs.existsSync(targetDir)) {
-      try {
-        fs.renameSync(backupDir, targetDir);
-      } catch {
-        // ignore
-      }
-    }
-    throw err;
-  }
-
-  if (fs.existsSync(backupDir)) {
-    fs.rmSync(backupDir, { recursive: true, force: true });
   }
 }

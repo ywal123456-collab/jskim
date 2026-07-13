@@ -1,26 +1,15 @@
 'use strict';
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { loadConfig } = require('../lib/load-config');
 const { selectProjectName } = require('../lib/select-project-name');
 const { resolveProject } = require('../lib/resolve-project');
-const { runBuild } = require('../lib/build-project');
-const { createStaticServer } = require('../lib/create-static-server');
-const { getFreePort } = require('../lib/get-free-port');
 const { resolveScreenSpecModule } = require('../lib/resolve-screen-spec-module');
+const { runScreenSpecCollect } = require('../lib/run-screen-spec-collect');
 const { toDisplayPath } = require('./path-display');
 
 /**
  * jskim spec collect を実行します。
- *
- * 流れ:
- * 1. preserve build → OS TEMP
- * 2. 127.0.0.1 の一時サーバー
- * 3. companion collectScreenSpecProject
- * 4. 成功・失敗どちらでも TEMP / server を整理
  *
  * @param {object} options
  * @param {string|undefined} options.projectName
@@ -56,61 +45,13 @@ async function runSpecCollectCommand(options = {}) {
     requireCollect: true,
   });
 
-  const tempDir = await fsp.mkdtemp(
-    path.join(os.tmpdir(), `jskim-spec-collect-${projectName}-`)
-  );
-
-  let staticServer = null;
-  let collectResult = null;
-
-  const collectProject = {
-    ...project,
-    build: {
-      ...project.build,
-      clean: true,
-    },
-  };
-
-  try {
-    await runBuild(collectProject, {
-      preserveScreenSpecAttributes: true,
-      outputDir: tempDir,
-      log: false,
-      includeOutput: false,
-    });
-
-    const port = await getFreePort();
-    staticServer = createStaticServer({
-      rootDir: tempDir,
-      host: '127.0.0.1',
-      port,
-      projectName,
-    });
-    await staticServer.start();
-
-    const baseUrl = `http://127.0.0.1:${port}`;
-
-    collectResult = await collectScreenSpecProject({
-      rootDir: workspaceRoot,
-      projectName,
-      baseUrl,
-      renderedRootDir: tempDir,
-    });
-  } finally {
-    if (staticServer) {
-      try {
-        await staticServer.stop();
-      } catch {
-        // 終了時の close エラーは無視
-      }
-    }
-    try {
-      await fsp.rm(tempDir, { recursive: true, force: true });
-    } catch {
-      // TEMP 削除失敗は警告のみ
-      console.warn(`[JSKim] 一時ビルドの削除に失敗しました: ${tempDir}`);
-    }
-  }
+  const collectResult = await runScreenSpecCollect({
+    project,
+    workspaceRoot,
+    projectName,
+    collectScreenSpecProject,
+    log: true,
+  });
 
   const snapDisplay = toDisplayPath(
     path.join(workspaceRoot, 'spec', projectName, 'src', 'snapshots'),
@@ -143,6 +84,8 @@ async function runSpecCollectCommand(options = {}) {
     '次の手順: jskim spec build ' +
       projectName +
       ' → jskim dev ' +
+      projectName +
+      ' または jskim spec dev ' +
       projectName
   );
 

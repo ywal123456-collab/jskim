@@ -20,11 +20,19 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
-- 画面設計書（optional / prototype）: `jskim spec collect`（snapshot + CSS/アセット自動収集）→ `jskim spec build` → `jskim dev` の `/spec/` 静的提供
+- 画面設計書（optional / prototype）: `jskim spec collect` / `jskim spec build` / **`jskim spec dev`**（収集・viewer build・同一 port の `/spec/` 自動更新）。通常の `jskim dev` は Screen Spec を自動実行しません。
 
 詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は現時点で private であり、一般利用向けの公開 npm 配布前です。
 
-Screen Spec（optional）の流れ:
+Screen Spec（optional）の開発用流れ:
+
+```bash
+jskim spec dev sample
+# /       → 実装画面
+# /spec/  → 画面設計書（変更監視で collect/build + reload）
+```
+
+手動の段階実行（`jskim dev` と組み合わせる場合）:
 
 ```bash
 jskim spec collect sample
@@ -32,6 +40,12 @@ jskim spec build sample
 jskim dev sample
 ```
 
+`jskim spec dev` と `jskim dev` の違い:
+
+| コマンド | Playwright collect | viewer 自動 build | `/spec/` 自動 reload |
+|----------|--------------------|-------------------|----------------------|
+| `jskim spec dev` | あり（初期 + source 変更時） | あり | あり |
+| `jskim dev` | なし | なし | なし（静的 mount のみ） |
 ## 現在の非対応範囲
 
 - ブラウザ選択 option / `serve --open`
@@ -48,7 +62,7 @@ jskim dev sample
 
 | 名称 | 種類 | 役割 |
 |------|------|------|
-| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec collect` / `spec build` |
+| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec collect` / `spec build` / `spec dev` |
 | `create-jskim` | npm creator package | 新しい JSKim 作業空間の生成 |
 | `@ywal123456/jskim-screen-spec` | companion（開発中 / private） | 画面設計書 collect / viewer build（optional） |
 | `jskim` | CLI binary | インストール後に実行するコマンド名 |
@@ -98,6 +112,7 @@ jskim serve [<project>] [--host <host>] [--port <port>]
 jskim dev [<project>] [--host <host>] [--port <port>] [--open]
 jskim spec collect [<project>]
 jskim spec build [<project>]
+jskim spec dev [<project>] [--host <host>] [--port <port>] [--open]
 ```
 
 `package.json` の scripts 例:

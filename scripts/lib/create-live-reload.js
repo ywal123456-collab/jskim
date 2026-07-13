@@ -163,6 +163,14 @@ function createLiveReload({ projectName, enabled = true }) {
       return html;
     }
 
+    // 二重注入を避ける
+    if (
+      html.includes('/* jskim-live-reload */') ||
+      html.includes(LIVE_RELOAD_PATH)
+    ) {
+      return html;
+    }
+
     const script = getClientScript();
     const bodyClose = html.search(/<\/body>/i);
     if (bodyClose !== -1) {
@@ -256,7 +264,7 @@ function createLiveReload({ projectName, enabled = true }) {
     return true;
   }
 
-  function broadcastReload() {
+  function broadcastReload(target = 'all') {
     if (!enabled || closed) {
       return false;
     }
@@ -264,6 +272,7 @@ function createLiveReload({ projectName, enabled = true }) {
     clearErrorState();
     broadcast('reload', {
       project: projectName,
+      target: normalizeReloadTarget(target),
     });
     return true;
   }
@@ -271,9 +280,10 @@ function createLiveReload({ projectName, enabled = true }) {
   /**
    * source rebuild 成功時専用。config error が残っていれば何もしない。
    * @param {'css'|'reload'} kind
+   * @param {'all'|'app'|'spec'} [target='all']
    * @returns {boolean}
    */
-  function notifySourceBuildSuccess(kind) {
+  function notifySourceBuildSuccess(kind, target = 'all') {
     if (!enabled || closed) {
       return false;
     }
@@ -283,7 +293,7 @@ function createLiveReload({ projectName, enabled = true }) {
     if (kind === 'css') {
       return broadcastCssReload();
     }
-    return broadcastReload();
+    return broadcastReload(target);
   }
 
   function close() {
@@ -364,6 +374,7 @@ function buildClientScript(options) {
 
   return [
     '<script>',
+    '/* jskim-live-reload */',
     '(function () {',
     '  var LIVE_RELOAD_PATH = ' + liveReloadPath + ';',
     '  var OVERLAY_HOST_ID = ' + overlayHostId + ';',
@@ -374,6 +385,22 @@ function buildClientScript(options) {
       isSameOriginStylesheetHref.toString() +
       ';',
     '  var appendCacheBustParam = ' + appendCacheBustParam.toString() + ';',
+    '',
+    '  function shouldHandleReloadTarget(target) {',
+    '    var t = target || "all";',
+    '    if (t === "all") {',
+    '      return true;',
+    '    }',
+    '    var pathname = window.location.pathname || "";',
+    '    var onSpec = pathname === "/spec" || pathname.indexOf("/spec/") === 0;',
+    '    if (t === "spec") {',
+    '      return onSpec;',
+    '    }',
+    '    if (t === "app") {',
+    '      return !onSpec;',
+    '    }',
+    '    return true;',
+    '  }',
     '',
     '  function scheduleFullReload() {',
     '    if (fallbackReloadScheduled) {',
@@ -548,7 +575,19 @@ function buildClientScript(options) {
     '',
     '  try {',
     '    var source = new EventSource(LIVE_RELOAD_PATH);',
-    '    source.addEventListener("reload", function () {',
+    '    source.addEventListener("reload", function (event) {',
+    '      var target = "all";',
+    '      try {',
+    '        if (event && typeof event.data === "string" && event.data) {',
+    '          var payload = JSON.parse(event.data);',
+    '          if (payload && payload.target) {',
+    '            target = payload.target;',
+    '          }',
+    '        }',
+    '      } catch (err) {}',
+    '      if (!shouldHandleReloadTarget(target)) {',
+    '        return;',
+    '      }',
     '      window.location.reload();',
     '    });',
     '    source.addEventListener("error", function (event) {',
@@ -579,6 +618,13 @@ function buildClientScript(options) {
     '})();',
     '</script>',
   ].join('\n');
+}
+
+function normalizeReloadTarget(target) {
+  if (target === 'app' || target === 'spec' || target === 'all') {
+    return target;
+  }
+  return 'all';
 }
 
 module.exports = {

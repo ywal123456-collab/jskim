@@ -43,6 +43,7 @@
     "test": "vitest run --exclude **/collect-integration.test.ts --exclude **/resource-integration.test.ts",
     "test:collector": "vitest run test/collector",
     "test:resources": "vitest run test/resources test/collector/resource-integration.test.ts",
+    "test:watch": "vitest run test/watch",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit"
   },

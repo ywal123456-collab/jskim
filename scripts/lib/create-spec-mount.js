@@ -16,6 +16,7 @@ const SPEC_BASE = '/spec';
  * @param {string} options.workspaceRoot
  * @param {string} options.projectName
  * @param {string} [options.specDistDir]
+ * @param {(html: string) => string} [options.transformHtml]
  * @returns {{ handleRequest: Function, specDistDir: string }}
  */
 function createSpecMount(options) {
@@ -25,6 +26,8 @@ function createSpecMount(options) {
     options.specDistDir ||
       path.join(workspaceRoot, 'spec', projectName, 'dist')
   );
+  const transformHtml =
+    typeof options.transformHtml === 'function' ? options.transformHtml : null;
 
   /**
    * @param {import('node:http').IncomingMessage} req
@@ -93,7 +96,7 @@ function createSpecMount(options) {
           try {
             const indexStat = await fsp.stat(safeIndex);
             if (indexStat.isFile()) {
-              await sendFile(res, safeIndex, indexStat, method);
+              await sendFile(res, safeIndex, indexStat, method, transformHtml);
               return true;
             }
           } catch {
@@ -101,7 +104,7 @@ function createSpecMount(options) {
           }
         }
       } else if (stat && stat.isFile()) {
-        await sendFile(res, safePath, stat, method);
+        await sendFile(res, safePath, stat, method, transformHtml);
         return true;
       }
     }
@@ -113,7 +116,7 @@ function createSpecMount(options) {
         try {
           const indexStat = await fsp.stat(safeIndex);
           if (indexStat.isFile()) {
-            await sendFile(res, safeIndex, indexStat, method);
+            await sendFile(res, safeIndex, indexStat, method, transformHtml);
             return true;
           }
         } catch {
@@ -202,9 +205,26 @@ async function resolveSafePath(rootDir, candidatePath) {
   }
 }
 
-async function sendFile(res, filePath, stat, method) {
+async function sendFile(res, filePath, stat, method, transformHtml) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  const isHtml = ext === '.html' || ext === '.htm';
+
+  if (isHtml && typeof transformHtml === 'function') {
+    let html = await fsp.readFile(filePath, 'utf8');
+    html = transformHtml(html);
+    const payload = Buffer.from(html, 'utf8');
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Length', String(payload.length));
+    res.setHeader('Cache-Control', 'no-store');
+    if (method === 'HEAD') {
+      res.end();
+      return;
+    }
+    res.end(payload);
+    return;
+  }
 
   res.statusCode = 200;
   res.setHeader('Content-Type', contentType);

@@ -36,6 +36,10 @@ const DEV_RESTART_KEYS = [
  * @param {string} [options.commandName]
  * @param {string} [options.usageLine]
  * @param {{ host?: string, port?: string|number, open?: boolean }} [options.cliOverrides]
+ * @param {'default'|'spec-dev'|false} [options.initialDevLog='default']
+ * @param {boolean} [options.injectSpecLiveReload=false]
+ * @param {(payload: object) => void} [options.afterSourceBuildSuccess]
+ * @param {(ctx: object) => void} [options.onDevSessionReady]
  * @returns {{ start: Function, close: Function }}
  */
 function createWatchRuntime(options) {
@@ -50,6 +54,17 @@ function createWatchRuntime(options) {
     port: options.cliOverrides && options.cliOverrides.port,
     open: Boolean(options.cliOverrides && options.cliOverrides.open),
   };
+  const initialDevLog =
+    options.initialDevLog === undefined ? 'default' : options.initialDevLog;
+  const injectSpecLiveReload = Boolean(options.injectSpecLiveReload);
+  const afterSourceBuildSuccess =
+    typeof options.afterSourceBuildSuccess === 'function'
+      ? options.afterSourceBuildSuccess
+      : null;
+  const onDevSessionReady =
+    typeof options.onDevSessionReady === 'function'
+      ? options.onDevSessionReady
+      : null;
 
   /** @type {string|undefined} */
   let selectedProjectName = options.projectName;
@@ -160,6 +175,10 @@ function createWatchRuntime(options) {
     const specMount = createSpecMount({
       workspaceRoot,
       projectName: project.name,
+      transformHtml:
+        liveReloadEnabled && injectSpecLiveReload
+          ? (html) => liveReload.injectHtml(html)
+          : undefined,
     });
 
     staticServer = createStaticServer({
@@ -185,6 +204,7 @@ function createWatchRuntime(options) {
 
     wireSourceBuildTracking(projectWatcher);
     wireDevSourceReload(projectWatcher);
+    wireSpecDevHooks(projectWatcher);
 
     await projectWatcher.start({ watchFiles: false });
 
@@ -204,7 +224,28 @@ function createWatchRuntime(options) {
 
     await projectWatcher.startWatching();
 
-    if (initial) {
+    if (typeof onDevSessionReady === 'function') {
+      onDevSessionReady({
+        project,
+        liveReload,
+        staticServer,
+        browserUrl,
+      });
+    }
+
+    if (initial && initialDevLog === 'spec-dev') {
+      console.log('[JSKim] 画面設計書の開発serverを開始しました。');
+      console.log(`project: ${project.name}`);
+      console.log(`application: ${browserUrl}`);
+      console.log(
+        `screen spec: ${browserUrl.replace(/\/$/, '')}/spec/`
+      );
+      console.log(
+        `ライブリロード: ${liveReloadEnabled ? '有効' : '無効'}`
+      );
+      console.log('終了するには Ctrl+C を押してください。');
+      maybeOpenBrowser(browserUrl);
+    } else if (initial && initialDevLog !== false) {
       console.log('[JSKim] 開発サーバーを起動しました。');
       console.log(`プロジェクト: ${project.name}`);
       console.log(`ルート: ${outputDisplay}`);
@@ -266,7 +307,8 @@ function createWatchRuntime(options) {
         sourceDir: currentProject && currentProject.sourceDir,
         templates: currentProject && currentProject.templates,
       });
-      liveReload.notifySourceBuildSuccess(kind);
+      // 実装画面向け。/spec/ タブは target=app でスキップ（client 側）
+      liveReload.notifySourceBuildSuccess(kind, 'app');
     });
 
     watcher.on('build:failure', ({ error }) => {
@@ -275,6 +317,20 @@ function createWatchRuntime(options) {
       }
       // Error.message は完成済みの診断文字列を再利用する
       liveReload.broadcastBuildError(error);
+    });
+  }
+
+  function wireSpecDevHooks(watcher) {
+    if (!afterSourceBuildSuccess) {
+      return;
+    }
+    watcher.on('build:success', (payload) => {
+      try {
+        afterSourceBuildSuccess(payload);
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`[JSKim] Screen Spec orchestration エラー: ${message}`);
+      }
     });
   }
 
@@ -487,6 +543,7 @@ function createWatchRuntime(options) {
     wireSourceBuildTracking(projectWatcher);
     if (mode === 'dev') {
       wireDevSourceReload(projectWatcher);
+      wireSpecDevHooks(projectWatcher);
     }
 
     const onSuccess = ({ initial }) => {
