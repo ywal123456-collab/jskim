@@ -1,0 +1,53 @@
+{
+  "$schema": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "wizard-confirm",
+    "name": "入力内容確認",
+    "description": "確認画面の構成を確認する静的 UI sample です。"
+  },
+  "items": {
+    "confirm-name": {
+      "name": "氏名",
+      "type": "表示",
+      "description": "確認用に表示する氏名です（固定値）。",
+      "note": ""
+    },
+    "confirm-email": {
+      "name": "メールアドレス",
+      "type": "表示",
+      "description": "確認用に表示するメールアドレスです（固定値）。",
+      "note": ""
+    },
+    "confirm-phone": {
+      "name": "電話番号",
+      "type": "表示",
+      "description": "確認用に表示する電話番号です（固定値）。",
+      "note": ""
+    },
+    "confirm-category": {
+      "name": "お問い合わせ種別",
+      "type": "表示",
+      "description": "確認用に表示するお問い合わせ種別です（固定値）。",
+      "note": ""
+    },
+    "confirm-message": {
+      "name": "お問い合わせ内容",
+      "type": "表示",
+      "description": "確認用に表示するお問い合わせ内容です（固定値）。",
+      "note": ""
+    },
+    "back-to-input": {
+      "name": "入力画面へ戻る",
+      "type": "ボタン",
+      "description": "入力画面へ戻る操作です。",
+      "note": "静的リンク。入力内容の引き継ぎは行いません。"
+    },
+    "submit-wizard": {
+      "name": "送信する",
+      "type": "ボタン",
+      "description": "完了画面へ進む操作です。",
+      "note": "静的リンク。実際の送信処理は行いません。"
+    }
+  }
+}

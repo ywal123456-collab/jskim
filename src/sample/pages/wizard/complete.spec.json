@@ -1,0 +1,37 @@
+{
+  "$schema": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/source-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "wizard-complete",
+    "path": "/wizard/complete.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "itemId": "restart-wizard",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "wizard-input",
+      "label": "最初から確認する"
+    },
+    {
+      "itemId": "back-to-portal",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "portal",
+      "label": "Portal へ戻る"
+    }
+  ]
+}

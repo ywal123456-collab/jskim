@@ -1,0 +1,23 @@
+{
+  "$schema": "../../schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "synthetic-help-demo",
+    "name": "合成 fixture（state-transition 検証用）",
+    "description": "公式 sample には存在しない合成 fixture です。contract test と schema 検証のためにのみ使います。"
+  },
+  "items": {
+    "open-help-button": {
+      "name": "ヘルプ",
+      "type": "ボタン",
+      "description": "",
+      "note": ""
+    },
+    "terms-link": {
+      "name": "利用規約",
+      "type": "リンク",
+      "description": "",
+      "note": ""
+    }
+  }
+}

@@ -5,6 +5,9 @@ const fse = require('fs-extra');
 const fg = require('fast-glob');
 const { formatRenderError, formatIoError } = require('./format-diagnostic');
 const { toDisplayPath } = require('./to-display-path');
+const {
+  transformScreenSpecAttributes,
+} = require('./strip-screen-spec-attributes');
 
 /**
  * 出力ファイルのディレクトリから outputDir までの相対パスとして rootPath を計算します。
@@ -40,7 +43,7 @@ function computeRootPath(outputFilePath, outputDir) {
  * @param {object} options.project 解決済みプロジェクト
  * @returns {Promise<{ renderedCount: number, files: string[] }>}
  */
-async function renderPages({ env, project }) {
+async function renderPages({ env, project, preserveScreenSpecAttributes = false }) {
   const { name, sourceDir, outputDir, render, workspaceRoot } = project;
   let renderedCount = 0;
   const files = [];
@@ -117,6 +120,10 @@ async function renderPages({ env, project }) {
           })
         );
       }
+
+      html = transformScreenSpecAttributes(html, {
+        preserve: preserveScreenSpecAttributes === true,
+      });
 
       try {
         await fse.ensureDir(path.dirname(outputFile));

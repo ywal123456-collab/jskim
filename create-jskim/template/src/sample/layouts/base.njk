@@ -15,7 +15,7 @@
       {% if breadcrumbs %}
         {% include "components/breadcrumb.njk" %}
       {% endif %}
-      <main class="app-content" id="main">
+      <main class="app-content" id="main"{% if jskimSpecScreen %} data-jskim-spec-screen="{{ jskimSpecScreen }}"{% endif %}>
         {% block content %}{% endblock %}
       </main>
       {% include "components/footer.njk" %}

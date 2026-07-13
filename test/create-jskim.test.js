@@ -272,6 +272,20 @@ describe('create-jskim', () => {
     }
   });
 
+  it('template/spec/sample は root spec/sample と一致する', async () => {
+    const rootSpec = path.join(REPO_ROOT, 'spec/sample');
+    const templateSpec = path.join(CREATE_ROOT, 'template/spec/sample');
+    const rootFiles = listRelativeFiles(rootSpec);
+    const templateFiles = listRelativeFiles(templateSpec);
+    assert.deepEqual(templateFiles, rootFiles);
+
+    for (const rel of rootFiles) {
+      const a = await fsp.readFile(path.join(rootSpec, rel), 'utf8');
+      const b = await fsp.readFile(path.join(templateSpec, rel), 'utf8');
+      assert.equal(a, b, `内容が一致すべき: ${rel}`);
+    }
+  });
+
   it('生成結果の sample は日本語を含み韓国語を含まない', async () => {
     const cwd = await makeCwd();
     await runCreate(['lang-check'], { cwd });
@@ -324,6 +338,10 @@ function listRelativeFiles(root) {
   const out = [];
   function walk(dir, prefix) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      // viewer 成果物 dist は gitignore 対象のため mirror 比較から除外
+      if (entry.isDirectory() && entry.name === 'dist') {
+        continue;
+      }
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {

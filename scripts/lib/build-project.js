@@ -63,11 +63,19 @@ async function runBuild(project, options = {}) {
   let copiedCount = 0;
 
   if (project.pipelineMode === 'files') {
-    const result = await processFiles({ env, project });
+    const result = await processFiles({
+      env,
+      project,
+      preserveScreenSpecAttributes: options.preserveScreenSpecAttributes === true,
+    });
     renderedCount = result.renderedCount;
     copiedCount = result.copiedCount;
   } else {
-    const rendered = await renderPages({ env, project });
+    const rendered = await renderPages({
+      env,
+      project,
+      preserveScreenSpecAttributes: options.preserveScreenSpecAttributes === true,
+    });
     const copied = await copyFiles({ project });
     renderedCount = rendered.renderedCount;
     copiedCount = copied.copiedCount;

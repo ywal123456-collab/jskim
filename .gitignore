@@ -1,6 +1,7 @@
 # 依存とビルド成果物
 node_modules/
 dist/
+spec/*/dist/
 
 # npm pack / 一時成果物
 *.tgz

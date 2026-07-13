@@ -1,0 +1,56 @@
+{
+  "$schema": "../../schema/source-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "synthetic-help-demo",
+    "path": "/fixtures/synthetic-help-demo.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    },
+    {
+      "id": "help-modal",
+      "name": "ヘルプ表示",
+      "viewer": {
+        "visible": true,
+        "order": 20
+      },
+      "collect": {
+        "actions": [
+          {
+            "type": "click",
+            "target": "open-help-button"
+          },
+          {
+            "type": "wait",
+            "milliseconds": 100
+          }
+        ]
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "itemId": "open-help-button",
+      "type": "state-transition",
+      "category": "modal",
+      "targetStateId": "help-modal",
+      "label": "ヘルプを表示"
+    },
+    {
+      "itemId": "terms-link",
+      "type": "external-link",
+      "url": "https://example.com/terms",
+      "label": "利用規約を確認"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 {% extends "layouts/base.njk" %}
+{% set jskimSpecScreen = "wizard-input" %}
 {% set currentSection = "wizard" %}
 {% set currentStep = 1 %}
 {% set breadcrumbs = [
@@ -36,19 +37,19 @@
     <h2 id="wizard-input-heading">入力フォーム（見た目のみ）</h2>
   </div>
   <div class="form-grid">
-    <div class="form-field">
+    <div class="form-field" data-jskim-spec-item="applicant-name">
       <label for="wizard-name">氏名</label>
       <input id="wizard-name" name="name" type="text" value="" readonly>
     </div>
-    <div class="form-field">
+    <div class="form-field" data-jskim-spec-item="applicant-email">
       <label for="wizard-email">メールアドレス</label>
       <input id="wizard-email" name="email" type="text" value="" readonly>
     </div>
-    <div class="form-field">
+    <div class="form-field" data-jskim-spec-item="applicant-phone">
       <label for="wizard-phone">電話番号</label>
       <input id="wizard-phone" name="phone" type="text" value="" readonly>
     </div>
-    <div class="form-field">
+    <div class="form-field" data-jskim-spec-item="inquiry-category">
       <label for="wizard-category">お問い合わせ種別</label>
       <select id="wizard-category" name="category" disabled>
         <option>商品について</option>
@@ -56,7 +57,7 @@
         <option>その他</option>
       </select>
     </div>
-    <div class="form-field form-field--full">
+    <div class="form-field form-field--full" data-jskim-spec-item="inquiry-message">
       <label for="wizard-message">お問い合わせ内容</label>
       <textarea id="wizard-message" name="message" rows="4" readonly></textarea>
     </div>
@@ -64,7 +65,7 @@
 </section>
 
 <section class="page-nav" aria-label="入力操作">
-  <a class="button button--secondary" href="../index.html">Portal へ戻る</a>
-  <a class="button" href="confirm.html">入力内容を確認する</a>
+  <a class="button button--secondary" href="../index.html" data-jskim-spec-item="back-to-portal" data-jskim-spec-action="back-to-portal">Portal へ戻る</a>
+  <a class="button" href="confirm.html" data-jskim-spec-item="go-to-confirm" data-jskim-spec-action="go-to-confirm">入力内容を確認する</a>
 </section>
 {% endblock %}

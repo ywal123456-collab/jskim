@@ -1,4 +1,5 @@
 {% extends "layouts/base.njk" %}
+{% set jskimSpecScreen = "wizard-confirm" %}
 {% set currentSection = "wizard" %}
 {% set currentStep = 2 %}
 {% set breadcrumbs = [
@@ -47,23 +48,23 @@
     <h2 id="wizard-confirm-heading">確認内容（固定値）</h2>
   </div>
   <dl class="detail-list">
-    <div class="detail-list__row">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-name">
       <dt>氏名</dt>
       <dd>{{ application.name }}</dd>
     </div>
-    <div class="detail-list__row">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-email">
       <dt>メールアドレス</dt>
       <dd>{{ application.email }}</dd>
     </div>
-    <div class="detail-list__row">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-phone">
       <dt>電話番号</dt>
       <dd>{{ application.phone }}</dd>
     </div>
-    <div class="detail-list__row">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-category">
       <dt>お問い合わせ種別</dt>
       <dd>{{ application.category }}</dd>
     </div>
-    <div class="detail-list__row">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-message">
       <dt>お問い合わせ内容</dt>
       <dd>{{ application.message }}</dd>
     </div>
@@ -71,8 +72,8 @@
 </section>
 
 <section class="page-nav" aria-label="確認操作">
-  <a class="button button--secondary" href="input.html">入力画面へ戻る</a>
-  <a class="button" href="complete.html">送信する</a>
+  <a class="button button--secondary" href="input.html" data-jskim-spec-item="back-to-input" data-jskim-spec-action="back-to-input">入力画面へ戻る</a>
+  <a class="button" href="complete.html" data-jskim-spec-item="submit-wizard" data-jskim-spec-action="submit-wizard">送信する</a>
 </section>
 <p class="wizard-note">
   「送信する」は完了画面への静的な移動です。実際の送信処理は行われません。

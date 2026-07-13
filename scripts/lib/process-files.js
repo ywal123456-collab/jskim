@@ -12,6 +12,9 @@ const {
   formatPathOutsideError,
   formatIoError,
 } = require('./format-diagnostic');
+const {
+  transformScreenSpecAttributes,
+} = require('./strip-screen-spec-attributes');
 
 const RESERVED_CONTEXT_KEYS = new Set(['rootPath']);
 
@@ -25,7 +28,7 @@ const RESERVED_CONTEXT_KEYS = new Set(['rootPath']);
  * @param {object} options.project
  * @returns {Promise<{ renderedCount: number, copiedCount: number, files: string[] }>}
  */
-async function processFiles({ env, project }) {
+async function processFiles({ env, project, preserveScreenSpecAttributes = false }) {
   const { name, sourceDir, outputDir, files, templates, data } = project;
   const rules = Array.isArray(files) ? files : [];
   const templateRoots = resolveTemplateRoots(sourceDir, templates);
@@ -66,6 +69,11 @@ async function processFiles({ env, project }) {
       const sourceFile = path.join(fromDir, relativeMatch);
 
       if (isInsideAny(templateRoots, sourceFile)) {
+        continue;
+      }
+
+      // Screen Spec sidecar（*.spec.json）は production build 対象外
+      if (isScreenSpecSidecar(normalizedRel)) {
         continue;
       }
 
@@ -163,6 +171,12 @@ async function processFiles({ env, project }) {
       );
     }
 
+    if (isHtmlOutputPath(item.outputFile)) {
+      text = transformScreenSpecAttributes(text, {
+        preserve: preserveScreenSpecAttributes === true,
+      });
+    }
+
     try {
       await fse.writeFile(item.outputFile, text, 'utf8');
     } catch (err) {
@@ -220,6 +234,15 @@ function stripTrailingNjk(relativePath) {
     return relativePath.slice(0, -4);
   }
   return relativePath;
+}
+
+function isScreenSpecSidecar(relativePath) {
+  const normalized = String(relativePath).split(path.sep).join('/');
+  return normalized.toLowerCase().endsWith('.spec.json');
+}
+
+function isHtmlOutputPath(filePath) {
+  return path.extname(filePath).toLowerCase() === '.html';
 }
 
 function resolveTemplateRoots(sourceDir, templates) {
@@ -303,5 +326,6 @@ function buildRenderContext(data, rootPath) {
 module.exports = {
   processFiles,
   stripTrailingNjk,
+  isScreenSpecSidecar,
   RESERVED_CONTEXT_KEYS,
 };

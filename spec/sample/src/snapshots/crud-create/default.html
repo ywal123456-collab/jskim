@@ -1,0 +1,62 @@
+<main class="app-content" id="main" data-jskim-spec-screen="crud-create">
+        
+<section class="page-intro">
+  <h1>商品登録</h1>
+  <p class="lead">
+    商品登録 formの見た目を確認する静的 UI sample です。
+  </p>
+</section>
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    商品の登録、更新、削除および入力内容の保存は行いません。
+  </p>
+  <p>
+    入力内容は保存されません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="create-form-heading">
+  <div class="panel__header">
+    <h2 id="create-form-heading">登録フォーム（見た目のみ）</h2>
+  </div>
+  <div class="form-grid">
+    <div class="form-field" data-jskim-spec-item="product-id">
+      <label for="create-id">商品ID</label>
+      <input id="create-id" name="id" type="text" value="" readonly>
+    </div>
+    <div class="form-field" data-jskim-spec-item="product-name">
+      <label for="create-name">商品名</label>
+      <input id="create-name" name="name" type="text" value="" readonly>
+    </div>
+    <div class="form-field" data-jskim-spec-item="product-category">
+      <label for="create-category">カテゴリ</label>
+      <input id="create-category" name="category" type="text" value="" readonly>
+    </div>
+    <div class="form-field" data-jskim-spec-item="product-price">
+      <label for="create-price">価格</label>
+      <input id="create-price" name="price" type="text" value="" readonly>
+    </div>
+    <div class="form-field" data-jskim-spec-item="product-status">
+      <label for="create-status">ステータス</label>
+      <select id="create-status" name="status" disabled>
+        <option>公開</option>
+        <option>非公開</option>
+        <option>下書き</option>
+      </select>
+    </div>
+    <div class="form-field form-field--full" data-jskim-spec-item="product-description">
+      <label for="create-description">商品説明</label>
+      <textarea id="create-description" name="description" rows="4" readonly></textarea>
+    </div>
+  </div>
+</section>
+
+<section class="page-nav" aria-label="登録操作">
+  <a class="button button--secondary" href="index.html" data-jskim-spec-item="back-to-list" data-jskim-spec-action="back-to-list">一覧へ戻る</a>
+  <a class="button" href="complete.html" data-jskim-spec-item="submit-create" data-jskim-spec-action="submit-create">登録する</a>
+</section>
+
+      </main>

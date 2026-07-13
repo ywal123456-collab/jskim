@@ -1,0 +1,37 @@
+{
+  "$schema": "../../schema/source-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "crud-create",
+    "path": "/crud/create.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "itemId": "back-to-list",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "crud-list",
+      "label": "一覧へ戻る"
+    },
+    {
+      "itemId": "submit-create",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "crud-complete",
+      "label": "登録する"
+    }
+  ]
+}

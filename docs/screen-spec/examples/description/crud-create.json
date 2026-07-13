@@ -1,0 +1,59 @@
+{
+  "$schema": "../../schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "crud-create",
+    "name": "商品登録",
+    "description": "商品登録 formの見た目を確認する静的 UI sample です。"
+  },
+  "items": {
+    "product-id": {
+      "name": "商品ID",
+      "type": "テキスト入力",
+      "description": "登録対象の商品IDを表示する欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "product-name": {
+      "name": "商品名",
+      "type": "テキスト入力",
+      "description": "商品名の入力欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "product-category": {
+      "name": "カテゴリ",
+      "type": "テキスト入力",
+      "description": "カテゴリの入力欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "product-price": {
+      "name": "価格",
+      "type": "テキスト入力",
+      "description": "価格の入力欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "product-status": {
+      "name": "ステータス",
+      "type": "セレクト",
+      "description": "公開 / 非公開 / 下書きを選ぶ欄です（見た目のみ / disabled）。",
+      "note": ""
+    },
+    "product-description": {
+      "name": "商品説明",
+      "type": "テキストエリア",
+      "description": "商品説明の入力欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "back-to-list": {
+      "name": "一覧へ戻る",
+      "type": "ボタン",
+      "description": "商品一覧画面へ戻る操作です。",
+      "note": "静的リンク。実データ保存は行いません。"
+    },
+    "submit-create": {
+      "name": "登録する",
+      "type": "ボタン",
+      "description": "登録完了画面へ進む操作です。",
+      "note": "静的リンク。実際の登録処理は行いません。"
+    }
+  }
+}

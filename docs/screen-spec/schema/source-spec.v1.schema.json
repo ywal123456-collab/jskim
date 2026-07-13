@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/source-spec.v1.schema.json",
+  "title": "JSKim Screen Spec Source v1",
+  "description": "実際の実装 source 横に置く収集用 JSON（機械向け）。説明文は含めない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "screen", "states", "interactions"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "type": "string",
+          "description": "実装画面の URL path（例: /crud/create.html）",
+          "pattern": "^/"
+        }
+      }
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/state"
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interaction"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "viewer", "collect"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "viewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["visible", "order"],
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "order": {
+              "type": "integer"
+            }
+          }
+        },
+        "collect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actions"],
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/collectAction"
+              }
+            }
+          }
+        }
+      }
+    },
+    "collectAction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "click"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "check"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "uncheck"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target", "value"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "fill"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target", "value"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "select"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "milliseconds"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "wait"
+            },
+            "milliseconds": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "interaction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["itemId", "type", "targetStateId"],
+          "properties": {
+            "itemId": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "type": "string",
+              "const": "state-transition"
+            },
+            "category": {
+              "$ref": "#/$defs/interactionCategory"
+            },
+            "targetStateId": {
+              "$ref": "#/$defs/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["itemId", "type", "targetScreenId"],
+          "properties": {
+            "itemId": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "type": "string",
+              "const": "screen-transition"
+            },
+            "category": {
+              "$ref": "#/$defs/interactionCategory"
+            },
+            "targetScreenId": {
+              "$ref": "#/$defs/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["itemId", "type", "url"],
+          "properties": {
+            "itemId": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "type": "string",
+              "const": "external-link"
+            },
+            "category": {
+              "$ref": "#/$defs/interactionCategory"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "interactionCategory": {
+      "type": "string",
+      "enum": ["modal", "tab", "accordion", "validation", "navigation"]
+    }
+  }
+}

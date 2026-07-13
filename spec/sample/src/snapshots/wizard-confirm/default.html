@@ -1,0 +1,92 @@
+<main class="app-content" id="main" data-jskim-spec-screen="wizard-confirm">
+        
+<section class="page-intro">
+  <h1>入力内容確認</h1>
+  <p class="lead">
+    確認画面の構成を確認する静的 UI sample です。
+  </p>
+</section>
+
+<ol class="wizard-steps" aria-label="申込手順">
+  <li
+    class="wizard-steps__item is-complete"
+    
+  >
+    <span class="wizard-steps__number">1</span>
+    <span class="wizard-steps__label">情報入力</span>
+    
+      <span class="wizard-steps__state">完了</span>
+    
+  </li>
+  <li
+    class="wizard-steps__item is-current"
+    aria-current="step"
+  >
+    <span class="wizard-steps__number">2</span>
+    <span class="wizard-steps__label">入力内容確認</span>
+    
+      <span class="wizard-steps__state">現在</span>
+    
+  </li>
+  <li
+    class="wizard-steps__item"
+    
+  >
+    <span class="wizard-steps__number">3</span>
+    <span class="wizard-steps__label">完了</span>
+    
+      <span class="wizard-steps__state">未実施</span>
+    
+  </li>
+</ol>
+
+
+<section class="notice notice--info" aria-label="静的 UI の案内">
+  <h2 class="notice__title">静的 UI sample について</h2>
+  <p>
+    この画面は静的 UI sample です。
+    入力内容の保存、画面間の引き継ぎおよび送信処理は行いません。
+  </p>
+  <p>
+    表示している内容は確認画面の構成を示すための固定値です。
+    入力画面の内容は引き継がれていません。
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="wizard-confirm-heading">
+  <div class="panel__header">
+    <h2 id="wizard-confirm-heading">確認内容（固定値）</h2>
+  </div>
+  <dl class="detail-list">
+    <div class="detail-list__row" data-jskim-spec-item="confirm-name">
+      <dt>氏名</dt>
+      <dd>山田 太郎</dd>
+    </div>
+    <div class="detail-list__row" data-jskim-spec-item="confirm-email">
+      <dt>メールアドレス</dt>
+      <dd>taro@example.com</dd>
+    </div>
+    <div class="detail-list__row" data-jskim-spec-item="confirm-phone">
+      <dt>電話番号</dt>
+      <dd>090-0000-0000</dd>
+    </div>
+    <div class="detail-list__row" data-jskim-spec-item="confirm-category">
+      <dt>お問い合わせ種別</dt>
+      <dd>商品について</dd>
+    </div>
+    <div class="detail-list__row" data-jskim-spec-item="confirm-message">
+      <dt>お問い合わせ内容</dt>
+      <dd>sampleのお問い合わせ内容です。</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="page-nav" aria-label="確認操作">
+  <a class="button button--secondary" href="input.html" data-jskim-spec-item="back-to-input" data-jskim-spec-action="back-to-input">入力画面へ戻る</a>
+  <a class="button" href="complete.html" data-jskim-spec-item="submit-wizard" data-jskim-spec-action="submit-wizard">送信する</a>
+</section>
+<p class="wizard-note">
+  「送信する」は完了画面への静的な移動です。実際の送信処理は行われません。
+</p>
+
+      </main>

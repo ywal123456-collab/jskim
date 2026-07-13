@@ -1,0 +1,29 @@
+{
+  "$schema": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "wizard-complete",
+    "name": "完了",
+    "description": "画面遷移 sample の完了画面です。"
+  },
+  "items": {
+    "complete-message": {
+      "name": "画面遷移が完了しました",
+      "type": "表示",
+      "description": "完了メッセージと静的 UI の案内を表示する領域です。",
+      "note": ""
+    },
+    "restart-wizard": {
+      "name": "最初から確認する",
+      "type": "ボタン",
+      "description": "入力画面へ戻って最初から確認する操作です。",
+      "note": "静的リンク。"
+    },
+    "back-to-portal": {
+      "name": "Portal へ戻る",
+      "type": "ボタン",
+      "description": "Portal 画面へ戻る操作です。",
+      "note": ""
+    }
+  }
+}

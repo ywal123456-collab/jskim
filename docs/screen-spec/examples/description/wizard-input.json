@@ -1,0 +1,53 @@
+{
+  "$schema": "../../schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "wizard-input",
+    "name": "情報入力",
+    "description": "3 ステップ申込画面の入力ステップ構成を確認する静的 UI sample です。"
+  },
+  "items": {
+    "applicant-name": {
+      "name": "氏名",
+      "type": "テキスト入力",
+      "description": "申込者の氏名欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "applicant-email": {
+      "name": "メールアドレス",
+      "type": "テキスト入力",
+      "description": "メールアドレス欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "applicant-phone": {
+      "name": "電話番号",
+      "type": "テキスト入力",
+      "description": "電話番号欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "inquiry-category": {
+      "name": "お問い合わせ種別",
+      "type": "セレクト",
+      "description": "お問い合わせ種別の選択欄です（見た目のみ / disabled）。",
+      "note": ""
+    },
+    "inquiry-message": {
+      "name": "お問い合わせ内容",
+      "type": "テキストエリア",
+      "description": "お問い合わせ内容の入力欄です（見た目のみ / readonly）。",
+      "note": ""
+    },
+    "back-to-portal": {
+      "name": "Portal へ戻る",
+      "type": "ボタン",
+      "description": "Portal 画面へ戻る操作です。",
+      "note": ""
+    },
+    "go-to-confirm": {
+      "name": "入力内容を確認する",
+      "type": "ボタン",
+      "description": "確認画面へ進む操作です。",
+      "note": "静的リンク。入力内容の引き継ぎは行いません。"
+    }
+  }
+}

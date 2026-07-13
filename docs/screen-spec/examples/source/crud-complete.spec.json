@@ -1,0 +1,22 @@
+{
+  "$schema": "../../schema/source-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "crud-complete",
+    "path": "/crud/complete.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    }
+  ],
+  "interactions": []
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../../../docs/screen-spec/schema/description-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "synthetic-help-demo",
+    "name": "合成 fixture（state-transition 検証用）",
+    "description": "状態切替と item 順序の結合を検証する合成 fixture です。"
+  },
+  "items": {
+    "open-help-button": {
+      "name": "ヘルプ",
+      "type": "ボタン",
+      "description": "ヘルプモーダルを開きます。",
+      "note": ""
+    },
+    "terms-link": {
+      "name": "利用規約",
+      "type": "リンク",
+      "description": "外部の利用規約へ移動します。",
+      "note": ""
+    },
+    "help-title": {
+      "name": "ヘルプタイトル",
+      "type": "表示",
+      "description": "ヘルプモーダルの見出しです。",
+      "note": ""
+    },
+    "close-help-button": {
+      "name": "閉じる",
+      "type": "ボタン",
+      "description": "ヘルプモーダルを閉じます。",
+      "note": ""
+    }
+  }
+}

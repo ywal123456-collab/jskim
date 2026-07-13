@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/description-spec.v1.schema.json",
+  "title": "JSKim Screen Spec Description v1",
+  "description": "spec/{projectName}/src/data に置く説明用 JSON（人向け）。収集手順は含めない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "screen", "items"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "items": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/itemDescription"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "itemDescription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "description", "note"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "空文字を許可（draft / 再収集時の未記入）"
+        },
+        "type": {
+          "type": "string",
+          "description": "空文字を許可（draft / 再収集時の未記入）"
+        },
+        "description": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

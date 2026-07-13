@@ -1,0 +1,37 @@
+{
+  "$schema": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/source-spec.v1.schema.json",
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "wizard-confirm",
+    "path": "/wizard/confirm.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "itemId": "back-to-input",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "wizard-input",
+      "label": "入力画面へ戻る"
+    },
+    {
+      "itemId": "submit-wizard",
+      "type": "screen-transition",
+      "category": "navigation",
+      "targetScreenId": "wizard-complete",
+      "label": "送信する"
+    }
+  ]
+}
