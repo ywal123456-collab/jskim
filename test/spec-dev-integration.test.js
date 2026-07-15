@@ -110,9 +110,15 @@ describe('spec dev orchestration', () => {
       JSON.stringify(
         {
           schemaVersion: '1.0',
-          screenId: 'demo',
-          route: '/',
-          states: [{ id: 'default', label: '初期' }],
+          screen: { id: 'demo', path: '/' },
+          states: [
+            {
+              id: 'default',
+              name: '初期',
+              viewer: { visible: true, order: 1 },
+            },
+          ],
+          interactions: [],
         },
         null,
         2
@@ -129,9 +135,15 @@ describe('spec dev orchestration', () => {
       JSON.stringify(
         {
           schemaVersion: '1.0',
-          screenId: 'demo',
-          title: 'Demo',
-          states: [{ id: 'default', summary: '初期表示' }],
+          screen: { id: 'demo', name: 'Demo', description: '' },
+          items: {
+            title: {
+              name: 'Title',
+              type: 'text',
+              description: '',
+              note: '',
+            },
+          },
         },
         null,
         2
@@ -234,6 +246,8 @@ describe('spec dev orchestration', () => {
       },
       classifyPath: companion.classifyScreenSpecWatchPath,
       mergeKinds: companion.mergeScreenSpecWatchKinds,
+      createFileDescriptionStore: companion.createFileDescriptionStore,
+      loadScreenSpecProject: companion.loadScreenSpecProject,
       ...options,
     });
 
@@ -284,9 +298,15 @@ describe('spec dev orchestration', () => {
       JSON.stringify(
         {
           schemaVersion: '1.0',
-          screenId: 'demo',
-          title: 'Demo Updated',
-          states: [{ id: 'default', summary: '更新' }],
+          screen: { id: 'demo', name: 'Demo Updated', description: '更新' },
+          items: {
+            title: {
+              name: 'Title',
+              type: 'text',
+              description: '',
+              note: '',
+            },
+          },
         },
         null,
         2
@@ -389,9 +409,15 @@ describe('spec dev orchestration', () => {
       JSON.stringify(
         {
           schemaVersion: '1.0',
-          screenId: 'demo',
-          route: '/',
-          states: [{ id: 'default', label: '初期(touch)' }],
+          screen: { id: 'demo', path: '/' },
+          states: [
+            {
+              id: 'default',
+              name: '初期(touch)',
+              viewer: { visible: true, order: 1 },
+            },
+          ],
+          interactions: [],
         },
         null,
         2
@@ -488,5 +514,133 @@ describe('spec dev orchestration', () => {
     const recovered = await httpRequest({ port, path: '/spec/' });
     assert.match(recovered.body.toString('utf8'), /SPEC_V2/);
     sse.close();
+  });
+
+  it('Description 編集 API: GET/PUT → build:1 collect:0 reload(spec):1', async () => {
+    const { workspaceRoot, port, counters } = await startSpecDev();
+    const sse = await openSse({ port });
+    await sleep(120);
+
+    const specHtml = await httpRequest({ port, path: '/spec/' });
+    assert.match(specHtml.body.toString('utf8'), /__JSKIM_SPEC_EDIT__/);
+
+    const getRes = await httpRequest({
+      port,
+      path: '/_jskim/spec/descriptions/demo',
+    });
+    assert.equal(getRes.status, 200);
+    const getJson = JSON.parse(getRes.body.toString('utf8'));
+    assert.equal(getJson.screenId, 'demo');
+    assert.match(getJson.revision, /^sha256:/);
+
+    const beforeSpec = countReloadTarget(sse, 'spec');
+    const nextDoc = structuredClone(getJson.document);
+    nextDoc.screen.description = 'APIから更新';
+
+    const putRes = await httpRequest({
+      port,
+      method: 'PUT',
+      path: '/_jskim/spec/descriptions/demo',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      },
+      body: JSON.stringify({
+        expectedRevision: getJson.revision,
+        document: nextDoc,
+      }),
+    });
+    assert.equal(putRes.status, 200);
+    const putJson = JSON.parse(putRes.body.toString('utf8'));
+    assert.equal(putJson.saved, true);
+    assert.equal(putJson.written, true);
+
+    await waitFor(() => counters.build === 1, {
+      timeoutMs: 10000,
+      label: 'api put build once',
+    });
+    await assertStableCounts(
+      counters,
+      { collect: 0, build: 1 },
+      sse,
+      beforeSpec + 1
+    );
+
+    const saved = JSON.parse(
+      await fsp.readFile(
+        path.join(workspaceRoot, 'spec', 'sample', 'src', 'data', 'demo.json'),
+        'utf8'
+      )
+    );
+    assert.equal(saved.screen.description, 'APIから更新');
+
+    const deep = await httpRequest({ port, path: '/spec/screens/demo' });
+    assert.equal(deep.status, 200);
+    sse.close();
+  });
+
+  it('外部編集後の古い revision PUT は 409 で内容を保全する', async () => {
+    const { workspaceRoot, port } = await startSpecDev();
+
+    const getRes = await httpRequest({
+      port,
+      path: '/_jskim/spec/descriptions/demo',
+    });
+    const getJson = JSON.parse(getRes.body.toString('utf8'));
+
+    await fsp.writeFile(
+      path.join(workspaceRoot, 'spec', 'sample', 'src', 'data', 'demo.json'),
+      JSON.stringify(
+        {
+          schemaVersion: '1.0',
+          screen: {
+            id: 'demo',
+            name: 'Demo External',
+            description: '外部更新',
+          },
+          items: {
+            title: {
+              name: 'Title',
+              type: 'text',
+              description: '',
+              note: '',
+            },
+          },
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+
+    const conflictDoc = structuredClone(getJson.document);
+    conflictDoc.screen.description = '衝突しようとした内容';
+    const putRes = await httpRequest({
+      port,
+      method: 'PUT',
+      path: '/_jskim/spec/descriptions/demo',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      },
+      body: JSON.stringify({
+        expectedRevision: getJson.revision,
+        document: conflictDoc,
+      }),
+    });
+    assert.equal(putRes.status, 409);
+    const putJson = JSON.parse(putRes.body.toString('utf8'));
+    assert.equal(putJson.code, 'SPEC_DESCRIPTION_REVISION_CONFLICT');
+
+    const kept = JSON.parse(
+      await fsp.readFile(
+        path.join(workspaceRoot, 'spec', 'sample', 'src', 'data', 'demo.json'),
+        'utf8'
+      )
+    );
+    assert.equal(kept.screen.description, '外部更新');
+    assert.equal(kept.screen.name, 'Demo External');
   });
 });

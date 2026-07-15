@@ -5,11 +5,21 @@ import type { ScreenData, ScreenInteraction } from '../types';
 const props = defineProps<{
   screen: ScreenData;
   selectedItemId: string | null;
+  editable?: boolean;
+  draftItems?: Record<
+    string,
+    { name: string; type: string; description: string; note: string }
+  > | null;
 }>();
 
 const emit = defineEmits<{
   select: [itemId: string];
   'change-state': [stateId: string];
+  'update-item': [
+    itemId: string,
+    field: 'name' | 'type' | 'description' | 'note',
+    value: string,
+  ];
 }>();
 
 const router = useRouter();
@@ -43,14 +53,25 @@ function buttonLabel(interaction: ScreenInteraction): string {
   }
   return interaction.label || interaction.type;
 }
+
+function itemField(
+  itemId: string,
+  field: 'name' | 'type' | 'description' | 'note',
+): string {
+  if (props.editable && props.draftItems && props.draftItems[itemId]) {
+    return props.draftItems[itemId][field] || '';
+  }
+  return props.screen.items[itemId]?.[field] || '';
+}
 </script>
 
 <template>
   <div class="item-table-wrap">
-    <table class="item-table">
+    <table class="item-table" :class="{ 'item-table--editable': editable }">
       <thead>
         <tr>
           <th scope="col">番号</th>
+          <th scope="col">項目 ID</th>
           <th scope="col">項目名</th>
           <th scope="col">種別</th>
           <th scope="col">説明</th>
@@ -61,15 +82,83 @@ function buttonLabel(interaction: ScreenInteraction): string {
       <tbody>
         <tr
           v-for="(itemId, index) in screen.itemOrder"
+          :id="`item-row-${itemId}`"
           :key="itemId"
           :class="{ 'is-selected': selectedItemId === itemId }"
           @click="emit('select', itemId)"
         >
           <td>{{ index + 1 }}</td>
-          <td>{{ screen.items[itemId]?.name || itemId }}</td>
-          <td>{{ screen.items[itemId]?.type || '' }}</td>
-          <td>{{ screen.items[itemId]?.description || '' }}</td>
-          <td>{{ screen.items[itemId]?.note || '' }}</td>
+          <td class="item-table__id">
+            <code>{{ itemId }}</code>
+          </td>
+          <td>
+            <input
+              v-if="editable"
+              :value="itemField(itemId, 'name')"
+              type="text"
+              @click.stop
+              @input="
+                emit(
+                  'update-item',
+                  itemId,
+                  'name',
+                  ($event.target as HTMLInputElement).value,
+                )
+              "
+            />
+            <template v-else>{{ itemField(itemId, 'name') || itemId }}</template>
+          </td>
+          <td>
+            <input
+              v-if="editable"
+              :value="itemField(itemId, 'type')"
+              type="text"
+              @click.stop
+              @input="
+                emit(
+                  'update-item',
+                  itemId,
+                  'type',
+                  ($event.target as HTMLInputElement).value,
+                )
+              "
+            />
+            <template v-else>{{ itemField(itemId, 'type') }}</template>
+          </td>
+          <td>
+            <textarea
+              v-if="editable"
+              :value="itemField(itemId, 'description')"
+              rows="2"
+              @click.stop
+              @input="
+                emit(
+                  'update-item',
+                  itemId,
+                  'description',
+                  ($event.target as HTMLTextAreaElement).value,
+                )
+              "
+            />
+            <template v-else>{{ itemField(itemId, 'description') }}</template>
+          </td>
+          <td>
+            <textarea
+              v-if="editable"
+              :value="itemField(itemId, 'note')"
+              rows="2"
+              @click.stop
+              @input="
+                emit(
+                  'update-item',
+                  itemId,
+                  'note',
+                  ($event.target as HTMLTextAreaElement).value,
+                )
+              "
+            />
+            <template v-else>{{ itemField(itemId, 'note') }}</template>
+          </td>
           <td>
             <div class="item-table__actions">
               <button

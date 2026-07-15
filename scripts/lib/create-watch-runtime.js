@@ -9,8 +9,13 @@ const { selectProjectName } = require('./select-project-name');
 const { applyServeCliOverrides } = require('./apply-serve-cli-overrides');
 const { createProjectWatcher } = require('./create-project-watcher');
 const { createStaticServer } = require('./create-static-server');
-const { createSpecMount } = require('./create-spec-mount');
+const {
+  createSpecMount,
+} = require('./create-spec-mount');
 const { createLiveReload } = require('./create-live-reload');
+const {
+  injectDescriptionEditingBootstrap,
+} = require('./create-description-edit-api');
 const { formatListenError } = require('../commands/serve-errors');
 const { classifyReload } = require('./classify-reload');
 const {
@@ -65,6 +70,12 @@ function createWatchRuntime(options) {
     typeof options.onDevSessionReady === 'function'
       ? options.onDevSessionReady
       : null;
+  const descriptionEditApi =
+    options.descriptionEditApi &&
+    typeof options.descriptionEditApi.handleRequest === 'function'
+      ? options.descriptionEditApi
+      : null;
+  const injectDescriptionEditing = Boolean(options.injectDescriptionEditing);
 
   /** @type {string|undefined} */
   let selectedProjectName = options.projectName;
@@ -175,10 +186,16 @@ function createWatchRuntime(options) {
     const specMount = createSpecMount({
       workspaceRoot,
       projectName: project.name,
-      transformHtml:
-        liveReloadEnabled && injectSpecLiveReload
-          ? (html) => liveReload.injectHtml(html)
-          : undefined,
+      transformHtml: (html) => {
+        let next = html;
+        if (liveReloadEnabled && injectSpecLiveReload && liveReload) {
+          next = liveReload.injectHtml(next);
+        }
+        if (injectDescriptionEditing) {
+          next = injectDescriptionEditingBootstrap(next);
+        }
+        return next;
+      },
     });
 
     staticServer = createStaticServer({
@@ -188,6 +205,12 @@ function createWatchRuntime(options) {
       projectName: project.name,
       handleInternalRequest: async (req, res, meta) => {
         if (await liveReload.handleRequest(req, res, meta)) {
+          return true;
+        }
+        if (
+          descriptionEditApi &&
+          (await descriptionEditApi.handleRequest(req, res, meta))
+        ) {
           return true;
         }
         return specMount.handleRequest(req, res, meta);

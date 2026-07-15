@@ -70,6 +70,37 @@ jskim dev sample
 `jskim spec dev` は初期 collect / atomic viewer build のあと、既存の開発 server で `/` と `/spec/` を提供し、変更に応じて collect/build と full-page reload を行います。
 `jskim dev` は Screen Spec を自動 collect / build しません。
 
+### Viewer Description 編集（phase 7A-1）
+
+`jskim spec dev` 実行中のみ、Viewer から Description JSON を編集してローカル保存できます。
+
+```text
+Vue Viewer
+  → same-origin GET/PUT /_jskim/spec/descriptions/:screenId
+  → FileDescriptionStore（companion）
+  → spec/{project}/src/data/{screenId}.json（安全なファイル置換）
+  → 既存 Description build-only watcher
+  → viewer build + reload(target=spec)
+```
+
+編集可能フィールド:
+
+- 画面: `name` / `description`
+- 項目: `name` / `type` / `description` / `note`
+
+読み取り専用: `screenId` / `itemId`
+
+境界:
+
+- 書き込み API は `jskim spec dev` 専用（`jskim serve` / 通常の `jskim dev` では無効）
+- same-origin・Content-Type・body サイズ・path traversal を検証
+- revision（SHA-256）不一致は `409`（強制上書きなし）
+- ファイル書き込みは TEMP + rename（Windows 等では backup swap）。partial JSON を残さない
+- Collector も同じ revision 契約で再試行し、手動 field を保全する
+- `--host 0.0.0.0` は LAN に露出するため注意
+- Viewer はファイルパスを組み立てず、API のみを使う
+- collected / documented 分離や Remote Store は将来拡張枠（今回は FileDescriptionStore のみ）
+
 ### `jskim spec dev` の監視
 
 | 対象 | 動作 |
@@ -130,6 +161,23 @@ import {
   buildScreenSpecViewerAtomic,
 } from '@ywal123456/jskim-screen-spec';
 ```
+
+### FileDescriptionStore（ローカル編集）
+
+```ts
+import { createFileDescriptionStore } from '@ywal123456/jskim-screen-spec';
+
+const store = createFileDescriptionStore({
+  rootDir: process.cwd(),
+  projectName: 'sample',
+  listScreenIds: () => ['crud-create'],
+});
+
+const current = store.read('crud-create');
+store.write('crud-create', current.document, current.revision);
+```
+
+JSKim core の `jskim spec dev` がこの store を HTTP API に接続します。
 
 ### Collect（Playwright）
 

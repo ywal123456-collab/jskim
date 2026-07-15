@@ -5,6 +5,7 @@ import DomPreview, {
 } from '../components/DomPreview.vue';
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
+import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import type { DocumentContext, ScreenData, ViewerManifest } from '../types';
 
 const props = defineProps<{
@@ -21,12 +22,40 @@ const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
 
+const editor = useDescriptionEditor(() => props.screenId);
+
 const currentDocumentContext = computed<DocumentContext | null>(() => {
   if (!screen.value) {
     return null;
   }
   const state = screen.value.states.find((s) => s.id === selectedStateId.value);
   return state?.documentContext ?? null;
+});
+
+const displayName = computed(() => {
+  if (editor.editingEnabled && editor.draftDocument.value) {
+    return editor.draftDocument.value.screen.name || screen.value?.name || '';
+  }
+  return screen.value?.name || '';
+});
+
+const statusLabel = computed(() => {
+  switch (editor.status.value) {
+    case 'dirty':
+      return '未保存の変更あり';
+    case 'saving':
+      return '保存中…';
+    case 'saved':
+      return '保存済み';
+    case 'conflict':
+      return '外部変更の衝突';
+    case 'error':
+      return '保存失敗';
+    case 'clean':
+      return '保存済み';
+    default:
+      return '';
+  }
 });
 
 async function loadScreen(screenId: string): Promise<void> {
@@ -54,6 +83,10 @@ async function loadScreen(screenId: string): Promise<void> {
   }
   const data = (await screenRes.json()) as ScreenData;
   screen.value = data;
+
+  if (editor.editingEnabled) {
+    await editor.loadDescription(screenId);
+  }
 
   const firstVisible =
     data.states.find((s) => s.viewer.visible) || data.states[0];
@@ -122,6 +155,29 @@ function onSelectState(stateId: string): void {
   void loadSnapshot(stateId);
 }
 
+function scrollToSection(id: string): void {
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function onSelectItem(itemId: string): void {
+  selectedItemId.value = itemId;
+  const row = document.getElementById(`item-row-${itemId}`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function copyDraftJson(): void {
+  if (!editor.draftDocument.value) {
+    return;
+  }
+  const text = JSON.stringify(editor.draftDocument.value, null, 2);
+  void navigator.clipboard?.writeText(text);
+}
+
 watch(
   () => props.screenId,
   (id) => {
@@ -138,15 +194,59 @@ watch(
   <div v-else-if="!screen" class="spec-page">
     <p>読み込み中…</p>
   </div>
-  <div v-else class="spec-page">
+  <div v-else class="spec-page" :class="{ 'spec-page--editing': editor.editingEnabled }">
     <header class="spec-page__header">
-      <h1>{{ screen.name }}</h1>
-      <p class="spec-page__desc">{{ screen.description }}</p>
-      <p class="spec-page__meta">
-        <span>画面 ID: {{ screen.id }}</span>
-        <span>実装 path: {{ screen.path }}</span>
-      </p>
+      <div class="spec-page__header-main">
+        <h1>{{ displayName || screen.id }}</h1>
+        <p class="spec-page__meta">
+          <span>画面 ID: {{ screen.id }}</span>
+          <span>実装 path: {{ screen.path }}</span>
+        </p>
+      </div>
+
+      <div v-if="editor.editingEnabled" class="spec-page__edit-bar">
+        <span
+          class="spec-page__status"
+          :data-status="editor.status.value"
+        >{{ statusLabel }}</span>
+        <button
+          type="button"
+          class="spec-page__btn"
+          :disabled="!editor.dirty.value || editor.saving.value"
+          @click="editor.save()"
+        >
+          保存
+        </button>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          :disabled="!editor.dirty.value || editor.saving.value"
+          @click="editor.cancel()"
+        >
+          キャンセル
+        </button>
+      </div>
     </header>
+
+    <div
+      v-if="editor.statusMessage.value"
+      class="spec-page__banner"
+      :data-status="editor.status.value"
+    >
+      <p>{{ editor.statusMessage.value }}</p>
+      <div v-if="editor.status.value === 'conflict'" class="spec-page__banner-actions">
+        <button type="button" class="spec-page__btn" @click="editor.reloadLatest()">
+          最新内容を読み込む
+        </button>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          @click="copyDraftJson()"
+        >
+          編集中の内容をコピー
+        </button>
+      </div>
+    </div>
 
     <StateSelector
       :states="screen.states"
@@ -154,26 +254,78 @@ watch(
       @select="onSelectState"
     />
 
-    <section class="spec-page__preview" aria-label="DOM プレビュー">
-      <DomPreview
-        :html="snapshotHtml"
-        :item-order="screen.itemOrder"
-        :selected-item-id="selectedItemId"
-        :stylesheets="stylesheets"
-        :preview-css="previewCss"
-        :document-context="currentDocumentContext"
-        @select="selectedItemId = $event"
-      />
-    </section>
+    <nav v-if="editor.editingEnabled" class="spec-page__nav" aria-label="セクション">
+      <button type="button" @click="scrollToSection('section-preview')">Preview</button>
+      <button type="button" @click="scrollToSection('section-basic')">基本情報</button>
+      <button type="button" @click="scrollToSection('section-items')">項目定義</button>
+    </nav>
 
-    <section class="spec-page__table" aria-label="項目説明">
-      <h2>項目説明</h2>
-      <ItemDescriptionTable
-        :screen="screen"
-        :selected-item-id="selectedItemId"
-        @select="selectedItemId = $event"
-        @change-state="onSelectState"
-      />
-    </section>
+    <div class="spec-page__workspace">
+      <aside id="section-preview" class="spec-page__preview-pane" aria-label="DOM プレビュー">
+        <h2 class="spec-page__section-title">Preview</h2>
+        <DomPreview
+          :html="snapshotHtml"
+          :item-order="screen.itemOrder"
+          :selected-item-id="selectedItemId"
+          :stylesheets="stylesheets"
+          :preview-css="previewCss"
+          :document-context="currentDocumentContext"
+          @select="onSelectItem"
+        />
+      </aside>
+
+      <div class="spec-page__doc-pane">
+        <section
+          v-if="editor.editingEnabled && editor.draftDocument.value"
+          id="section-basic"
+          class="spec-page__basic"
+          aria-label="基本情報"
+        >
+          <h2 class="spec-page__section-title">基本情報</h2>
+          <label class="spec-field">
+            <span>画面名</span>
+            <input
+              :value="editor.draftDocument.value.screen.name"
+              type="text"
+              @input="editor.updateScreenField('name', ($event.target as HTMLInputElement).value)"
+            />
+          </label>
+          <label class="spec-field">
+            <span>画面説明</span>
+            <textarea
+              :value="editor.draftDocument.value.screen.description"
+              rows="4"
+              @input="editor.updateScreenField('description', ($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+          <p class="spec-field__hint">画面 ID（{{ screen.id }}）は変更できません。</p>
+        </section>
+
+        <section
+          v-else
+          id="section-basic"
+          class="spec-page__basic"
+          aria-label="基本情報"
+        >
+          <h2 class="spec-page__section-title">基本情報</h2>
+          <p class="spec-page__desc">{{ screen.description }}</p>
+        </section>
+
+        <section id="section-items" class="spec-page__table" aria-label="項目定義">
+          <h2 class="spec-page__section-title">項目定義</h2>
+          <ItemDescriptionTable
+            :screen="screen"
+            :selected-item-id="selectedItemId"
+            :editable="editor.editingEnabled"
+            :draft-items="editor.draftDocument.value?.items || null"
+            @select="onSelectItem"
+            @change-state="onSelectState"
+            @update-item="
+              (itemId, field, value) => editor.updateItemField(itemId, field, value)
+            "
+          />
+        </section>
+      </div>
+    </div>
   </div>
 </template>

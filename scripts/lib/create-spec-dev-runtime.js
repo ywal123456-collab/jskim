@@ -10,6 +10,7 @@ const {
 const { runScreenSpecCollect } = require('./run-screen-spec-collect');
 const { createWatchRuntime } = require('./create-watch-runtime');
 const { createSpecDevOrchestrator } = require('./create-spec-dev-orchestrator');
+const { createDescriptionEditApi } = require('./create-description-edit-api');
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -56,12 +57,16 @@ function createSpecDevRuntime(options = {}) {
     let buildViewer = options.buildFn;
     let classifyPath = options.classifyPath;
     let mergeKinds = options.mergeKinds;
+    let createFileDescriptionStore = options.createFileDescriptionStore;
+    let loadScreenSpecProject = options.loadScreenSpecProject;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
       typeof buildViewer !== 'function' ||
       typeof classifyPath !== 'function' ||
-      typeof mergeKinds !== 'function';
+      typeof mergeKinds !== 'function' ||
+      typeof createFileDescriptionStore !== 'function' ||
+      typeof loadScreenSpecProject !== 'function';
 
     if (needsCompanion) {
       let companion;
@@ -71,6 +76,7 @@ function createSpecDevRuntime(options = {}) {
           modulePath: options.modulePath,
           requireCollect: true,
           requireWatchHelpers: true,
+          requireEditing: true,
         });
       } catch (err) {
         if (err && err.code === 'JSKIM_SCREEN_SPEC_NOT_FOUND') {
@@ -89,6 +95,10 @@ function createSpecDevRuntime(options = {}) {
         companion.buildScreenSpecViewer;
       classifyPath = classifyPath || companion.classifyScreenSpecWatchPath;
       mergeKinds = mergeKinds || companion.mergeScreenSpecWatchKinds;
+      createFileDescriptionStore =
+        createFileDescriptionStore || companion.createFileDescriptionStore;
+      loadScreenSpecProject =
+        loadScreenSpecProject || companion.loadScreenSpecProject;
     }
 
     if (options.skipInitialCollect !== true) {
@@ -116,6 +126,30 @@ function createSpecDevRuntime(options = {}) {
       });
     }
 
+    const descriptionStore = createFileDescriptionStore({
+      rootDir: workspaceRoot,
+      projectName,
+      listScreenIds: () => {
+        const loaded = loadScreenSpecProject({
+          rootDir: workspaceRoot,
+          projectName,
+        });
+        return loaded.screens.map((s) => s.screenId);
+      },
+    });
+
+    const host =
+      (options.host != null && String(options.host).trim()) ||
+      project.serve.host;
+    const port =
+      options.port != null ? Number(options.port) : Number(project.serve.port);
+
+    const descriptionEditApi = createDescriptionEditApi({
+      store: descriptionStore,
+      host,
+      port,
+    });
+
     runtime = createWatchRuntime({
       mode: 'dev',
       workspaceRoot,
@@ -131,6 +165,8 @@ function createSpecDevRuntime(options = {}) {
       initialDevLog:
         options.initialDevLog === undefined ? 'spec-dev' : options.initialDevLog,
       injectSpecLiveReload: options.injectSpecLiveReload !== false,
+      injectDescriptionEditing: options.injectDescriptionEditing !== false,
+      descriptionEditApi,
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);
@@ -168,6 +204,8 @@ function createSpecDevRuntime(options = {}) {
             project: readyProject,
             liveReload,
             orchestrator,
+            descriptionStore,
+            descriptionEditApi,
           });
         }
       },

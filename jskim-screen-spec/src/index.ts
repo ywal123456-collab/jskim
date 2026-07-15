@@ -16,6 +16,28 @@ export {
 export { sanitizeSnapshot } from './builder/sanitize-snapshot.js';
 export { loadScreenSpecProject } from './builder/load-screen-spec-project.js';
 export { createViewerManifest } from './builder/create-viewer-manifest.js';
+export { createFileDescriptionStore } from './editing/file-description-store.js';
+export type {
+  DescriptionReadResult,
+  DescriptionWriteResult,
+  FileDescriptionStore,
+} from './editing/file-description-store.js';
+export {
+  validateEditableDescriptionDocument,
+  toEditableDocument,
+  createEmptyEditableDocument,
+} from './editing/validate-description-document.js';
+export type { EditableDescriptionDocument } from './editing/validate-description-document.js';
+export {
+  writeFileAtomic,
+  writeFileAtomicOrThrow,
+  computeContentRevision,
+  computeEmptyDescriptionRevision,
+} from './util/write-file-atomic.js';
+export {
+  writeCollectedDescription,
+  DESCRIPTION_WRITE_MAX_RETRIES,
+} from './collector/write-collected-description.js';
 export { collectScreenSpecProject } from './collector/collect-screen-spec-project.js';
 export type {
   CollectScreenSpecProjectOptions,

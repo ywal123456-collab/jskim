@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
-import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
 import { extractItemIdsInDomOrder } from '../builder/item-order.js';
 import { createError } from './collector-errors.js';
 import { captureScreenRoot } from './capture-screen-root.js';
+import { mergeDescription } from './merge-description.js';
 import {
-  mergeDescription,
-  stringifyDescription,
-} from './merge-description.js';
+  writeCollectedDescription,
+} from './write-collected-description.js';
 import {
   assertWaitWithinLimit,
   normalizeCollectActions,
@@ -60,7 +59,8 @@ type PendingSnapshot = {
 
 type PendingDescription = {
   filePath: string;
-  json: string;
+  screenId: string;
+  foundItemIds: string[];
 };
 
 type CapturedState = {
@@ -261,20 +261,25 @@ export async function collectScreenSpecProject(
       }
 
       const descriptionPath = path.join(dataDir, `${screenId}.json`);
-      let existing: DescriptionSpec | null = null;
-      if (fs.existsSync(descriptionPath)) {
-        existing = JSON.parse(
-          fs.readFileSync(descriptionPath, 'utf8'),
-        ) as DescriptionSpec;
-      }
 
-      const merged = mergeDescription({
-        existing,
+      // orphan 警告のみ先に計算（実際の書き込みは revision-aware で再 merge）
+      let existingForWarn: Parameters<typeof mergeDescription>[0]['existing'] =
+        null;
+      if (fs.existsSync(descriptionPath)) {
+        try {
+          existingForWarn = JSON.parse(
+            fs.readFileSync(descriptionPath, 'utf8'),
+          );
+        } catch {
+          existingForWarn = null;
+        }
+      }
+      const warnMerge = mergeDescription({
+        existing: existingForWarn,
         screenId,
         foundItemIds,
       });
-
-      for (const orphanId of merged.orphanItemIds) {
+      for (const orphanId of warnMerge.orphanItemIds) {
         warnings.push(
           `orphan description item を検出しました（削除しません）: ` +
             `screenId=${screenId} itemId=${orphanId}`,
@@ -283,7 +288,8 @@ export async function collectScreenSpecProject(
 
       pendingDescriptions.push({
         filePath: descriptionPath,
-        json: stringifyDescription(merged.description),
+        screenId,
+        foundItemIds,
       });
     }
 
@@ -303,16 +309,11 @@ export async function collectScreenSpecProject(
 
       for (const desc of pendingDescriptions) {
         fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
-        const nextBuf = Buffer.from(desc.json, 'utf8');
-        if (fs.existsSync(desc.filePath)) {
-          const existingBuf = fs.readFileSync(desc.filePath);
-          if (Buffer.compare(existingBuf, nextBuf) === 0) {
-            continue;
-          }
-        }
-        const tempPath = `${desc.filePath}.${process.pid}.tmp`;
-        fs.writeFileSync(tempPath, nextBuf);
-        fs.renameSync(tempPath, desc.filePath);
+        writeCollectedDescription({
+          filePath: desc.filePath,
+          screenId: desc.screenId,
+          foundItemIds: desc.foundItemIds,
+        });
       }
 
       writeResourcesAtomic({
@@ -322,6 +323,18 @@ export async function collectScreenSpecProject(
         screens: pendingScreenResources,
       });
     } catch (err) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: string }).code ===
+          'SPEC_COLLECT_DESCRIPTION_REVISION_CONFLICT'
+      ) {
+        throw createError(
+          'SPEC_COLLECT_DESCRIPTION_REVISION_CONFLICT',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       const message = err instanceof Error ? err.message : String(err);
       throw createError(
         'SPEC_COLLECT_SNAPSHOT_WRITE_FAILED',

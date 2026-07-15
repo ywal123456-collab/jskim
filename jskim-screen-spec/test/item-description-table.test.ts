@@ -101,9 +101,10 @@ describe('ItemDescriptionTable', () => {
     const rows = wrapper.findAll('tbody tr');
     expect(rows).toHaveLength(4);
     expect(rows[0].findAll('td')[0].text()).toBe('1');
-    expect(rows[0].findAll('td')[1].text()).toBe('タイトル');
+    expect(rows[0].findAll('td')[1].text()).toContain('title');
+    expect(rows[0].findAll('td')[2].text()).toBe('タイトル');
     expect(rows[1].findAll('td')[0].text()).toBe('2');
-    expect(rows[2].findAll('td')[1].text()).toBe('一覧へ');
+    expect(rows[2].findAll('td')[2].text()).toBe('一覧へ');
   });
 
   it('行クリックで select を emit する', async () => {

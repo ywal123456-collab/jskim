@@ -114,12 +114,31 @@ async function resolveScreenSpecModule(options = {}) {
     }
   }
 
+  if (options.requireEditing) {
+    if (typeof mod.createFileDescriptionStore !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に createFileDescriptionStore がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.loadScreenSpecProject !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に loadScreenSpecProject がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
     buildScreenSpecViewerAtomic: mod.buildScreenSpecViewerAtomic,
     collectScreenSpecProject: mod.collectScreenSpecProject,
     classifyScreenSpecWatchPath: mod.classifyScreenSpecWatchPath,
     mergeScreenSpecWatchKinds: mod.mergeScreenSpecWatchKinds,
+    createFileDescriptionStore: mod.createFileDescriptionStore,
+    loadScreenSpecProject: mod.loadScreenSpecProject,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };

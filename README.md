@@ -42,10 +42,13 @@ jskim dev sample
 
 `jskim spec dev` と `jskim dev` の違い:
 
-| コマンド | Playwright collect | viewer 自動 build | `/spec/` 自動 reload |
-|----------|--------------------|-------------------|----------------------|
-| `jskim spec dev` | あり（初期 + source 変更時） | あり | あり |
-| `jskim dev` | なし | なし | なし（静的 mount のみ） |
+| コマンド | Playwright collect | viewer 自動 build | `/spec/` 自動 reload | Viewer 編集（ローカル JSON 保存） |
+|----------|--------------------|-------------------|----------------------|-----------------------------------|
+| `jskim spec dev` | あり（初期 + source 変更時） | あり | あり | あり（same-origin API） |
+| `jskim dev` | なし | なし | なし（静的 mount のみ） | なし |
+| `jskim serve` | なし | なし | なし | なし（読み取り専用） |
+
+`jskim spec dev` では Viewer から画面名 / 画面説明 / 項目の名称・種別・説明・備考を編集し、`spec/{project}/src/data/{screenId}.json` へローカル保存できます。書き込み API は `spec dev` 専用です。`--host 0.0.0.0` で待受けると LAN 上の他端末からも到達し得るため、信頼できるネットワークでのみ使用してください。
 ## 現在の非対応範囲
 
 - ブラウザ選択 option / `serve --open`

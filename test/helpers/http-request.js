@@ -11,6 +11,7 @@ const http = require('node:http');
  * @param {string} [options.method='GET']
  * @param {string} options.path
  * @param {object} [options.headers]
+ * @param {string|Buffer} [options.body]
  * @param {number} [options.timeoutMs=5000]
  */
 function httpRequest(options) {
@@ -20,8 +21,21 @@ function httpRequest(options) {
     method = 'GET',
     path: reqPath,
     headers = {},
+    body,
     timeoutMs = 5000,
   } = options;
+
+  const payload =
+    body == null
+      ? null
+      : Buffer.isBuffer(body)
+        ? body
+        : Buffer.from(String(body), 'utf8');
+
+  const nextHeaders = { ...headers };
+  if (payload && nextHeaders['Content-Length'] == null) {
+    nextHeaders['Content-Length'] = String(payload.length);
+  }
 
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -30,7 +44,7 @@ function httpRequest(options) {
         port,
         method,
         path: reqPath,
-        headers,
+        headers: nextHeaders,
       },
       (res) => {
         const chunks = [];
@@ -49,7 +63,11 @@ function httpRequest(options) {
       req.destroy(new Error(`HTTP タイムアウト: ${method} ${reqPath}`));
     });
     req.on('error', reject);
-    req.end();
+    if (payload) {
+      req.end(payload);
+    } else {
+      req.end();
+    }
   });
 }
 
