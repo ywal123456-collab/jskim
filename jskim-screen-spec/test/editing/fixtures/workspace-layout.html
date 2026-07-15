@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>workspace layout fixture</title>
+    <link rel="stylesheet" href="/viewer.css" />
+    <style>
+      /* fixture 専用: サイドバー相当の余白を再現せず、workspace 自体の挙動を測る */
+      body {
+        margin: 0;
+        padding: 1rem;
+      }
+      .wide-preview-inner {
+        width: 1200px;
+        height: 200px;
+        background: #dbeafe;
+      }
+      .wide-table {
+        width: 900px;
+        border-collapse: collapse;
+      }
+      .wide-table td {
+        border: 1px solid #ccc;
+        padding: 0.5rem;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="spec-page">
+      <header class="spec-page__header">
+        <h1>Layout Fixture</h1>
+        <div class="spec-page__edit-bar">
+          <button type="button" class="spec-page__btn" id="save">保存</button>
+          <button type="button" class="spec-page__btn spec-page__btn--secondary" id="cancel">
+            キャンセル
+          </button>
+        </div>
+      </header>
+      <nav class="spec-page__nav" aria-label="セクション">
+        <button type="button">Preview</button>
+        <button type="button">基本情報</button>
+        <button type="button">項目定義</button>
+      </nav>
+      <div class="spec-page__workspace" id="workspace">
+        <aside class="spec-page__preview-pane" id="preview" aria-label="DOM プレビュー">
+          <h2 class="spec-page__section-title">Preview</h2>
+          <div class="dom-preview" id="host">
+            <div class="wide-preview-inner">wide preview content</div>
+          </div>
+        </aside>
+        <div class="spec-page__doc-pane" id="doc">
+          <section class="spec-page__basic" id="basic">
+            <h2 class="spec-page__section-title">基本情報</h2>
+            <label class="spec-field">
+              <span>画面名</span>
+              <input type="text" value="商品登録" />
+            </label>
+          </section>
+          <section class="spec-page__table" id="items">
+            <h2 class="spec-page__section-title">項目定義</h2>
+            <div class="item-table-wrap">
+              <table class="item-table wide-table">
+                <tbody>
+                  <tr>
+                    <td>1</td>
+                    <td>product-name</td>
+                    <td>とても長い項目名のセル内容</td>
+                    <td>テキスト入力</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -164,7 +164,10 @@ body,
 }
 
 .item-table-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  min-width: 0;
   background: var(--spec-surface);
   border: 1px solid var(--spec-border);
   border-radius: 0.375rem;
@@ -223,11 +226,7 @@ body,
   color: #b91c1c;
 }
 
-.dom-preview {
-  min-height: 8rem;
-}
-
-/* ?붴?Description editing (spec dev) ?붴?*/
+/* —— Description editing (spec dev) —— */
 
 .spec-page--editing .spec-page__header {
   display: flex;
@@ -329,17 +328,25 @@ body,
   cursor: pointer;
 }
 
+/*
+ * Viewer workspace（Preview | 編集）
+ * - 広い画面: 2 列。grid 子の min-width:auto 既定を打ち消し、Preview 実寸で列が溢れないようにする
+ * - 狭い画面（max-width: 960px）: 1 列。sticky を解除し Preview が項目定義を覆わないようにする
+ */
 .spec-page__workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
   gap: 1.25rem;
   align-items: start;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
-@media (max-width: 960px) {
-  .spec-page__workspace {
-    grid-template-columns: 1fr;
-  }
+.spec-page__preview-pane,
+.spec-page__doc-pane {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .spec-page__preview-pane {
@@ -353,6 +360,29 @@ body,
   overflow: auto;
 }
 
+.spec-page__doc-pane {
+  overflow-x: hidden;
+}
+
+.dom-preview {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 8rem;
+}
+
+@media (max-width: 960px) {
+  .spec-page__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .spec-page__preview-pane {
+    position: static;
+    max-height: none;
+  }
+}
+
 .spec-page__section-title {
   margin: 0 0 0.75rem;
   font-size: 1.05rem;
@@ -364,6 +394,8 @@ body,
   border-radius: 0.375rem;
   padding: 1rem;
   margin-bottom: 1.25rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .spec-field {
