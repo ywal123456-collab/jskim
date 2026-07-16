@@ -4,9 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   computeContentRevision,
+  createFileAtomic,
   writeFileAtomic,
   type WriteFileAtomicFs,
 } from '../../src/util/write-file-atomic.js';
+
+const MEMORY_COPYFILE_EXCL = 1;
 
 function createMemoryFs(initial: Record<string, Buffer> = {}) {
   const files = new Map<string, Buffer>(
@@ -56,6 +59,19 @@ function createMemoryFs(initial: Record<string, Buffer> = {}) {
       }
       files.delete(p);
     },
+    copyFileSync: (src, dest, mode) => {
+      const buf = files.get(src);
+      if (!buf) {
+        throw new Error(`ENOENT copyFileSync from ${src}`);
+      }
+      const exclusive =
+        typeof mode === 'number' && (mode & MEMORY_COPYFILE_EXCL) !== 0;
+      if (exclusive && files.has(dest)) {
+        throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
+      }
+      files.set(dest, Buffer.from(buf));
+    },
+    constants: { COPYFILE_EXCL: MEMORY_COPYFILE_EXCL },
   };
 
   return { io, files, failOn };
@@ -205,6 +221,53 @@ describe('writeFileAtomic', () => {
     expect(files.get(dest)?.toString('utf8')).toBe(original);
     expect(files.has('/data/.demo.json.tmp')).toBe(false);
     expect(files.has('/data/.demo.json.bak')).toBe(false);
+  });
+
+  it('createFileAtomic: 新規作成は created を返す', () => {
+    const { io, files } = createMemoryFs();
+    const dest = '/data/demo.json';
+    const result = createFileAtomic(dest, '{"ok":1}\n', {
+      fs: io,
+      tempPath: '/data/.demo.json.tmp',
+    });
+    expect(result.status).toBe('created');
+    expect(files.get(dest)?.toString('utf8')).toBe('{"ok":1}\n');
+    expect(files.has('/data/.demo.json.tmp')).toBe(false);
+  });
+
+  it('createFileAtomic: 既存ファイルは上書きせず exists を返す', () => {
+    const dest = '/data/demo.json';
+    const original = '{"old":1}\n';
+    const { io, files } = createMemoryFs({ [dest]: Buffer.from(original) });
+    const result = createFileAtomic(dest, '{"new":2}\n', {
+      fs: io,
+      tempPath: '/data/.demo.json.tmp',
+    });
+    expect(result.status).toBe('exists');
+    expect(files.get(dest)?.toString('utf8')).toBe(original);
+    expect(files.has('/data/.demo.json.tmp')).toBe(false);
+  });
+
+  it('createFileAtomic: 実ファイルでも create-if-absent が成立する', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-create-atomic-'));
+    try {
+      const dest = path.join(root, 'demo.json');
+      const first = createFileAtomic(dest, '{"a":1}\n');
+      expect(first.status).toBe('created');
+      expect(JSON.parse(fs.readFileSync(dest, 'utf8'))).toEqual({ a: 1 });
+
+      const second = createFileAtomic(dest, '{"b":2}\n');
+      expect(second.status).toBe('exists');
+      // 上書きされていないこと
+      expect(JSON.parse(fs.readFileSync(dest, 'utf8'))).toEqual({ a: 1 });
+
+      const leftovers = fs
+        .readdirSync(root)
+        .filter((n) => n.includes('.tmp') || n.includes('.bak'));
+      expect(leftovers).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('実ファイルでも backup swap 後に完全 JSON を残す', () => {

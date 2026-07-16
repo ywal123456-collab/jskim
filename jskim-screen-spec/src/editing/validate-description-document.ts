@@ -1,4 +1,20 @@
 import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
+import {
+  SCREEN_ID_RE,
+  MAX_SCREEN_ID_LENGTH,
+  isValidScreenId,
+  isReservedScreenId,
+} from '../util/screen-id.js';
+
+export {
+  SCREEN_ID_RE,
+  MAX_SCREEN_ID_LENGTH,
+  isValidScreenId,
+  isReservedScreenId,
+};
+
+export const MAX_NAME_LENGTH = 200;
+export const MAX_DESCRIPTION_LENGTH = 10000;
 
 export type EditableDescriptionDocument = {
   schemaVersion: string;
@@ -23,18 +39,20 @@ export type DescriptionValidationError = {
   message: string;
 };
 
-const SCREEN_ID_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-
 /**
  * Viewer 編集用 document を検証する。
  * 既存ファイルがある場合は item ID 集合の変更を拒否する。
+ * 既存ファイルが無い場合、`requiredItemIds` が指定されていれば
+ * その集合と完全一致することを要求する（IMPLEMENTATION_ONLY 初回保存用）。
  */
 export function validateEditableDescriptionDocument(options: {
   screenId: string;
   document: unknown;
   existing: DescriptionSpec | null;
+  /** existing が null の場合のみ参照する item ID の必須集合 */
+  requiredItemIds?: string[] | null;
 }): DescriptionValidationError | null {
-  const { screenId, document, existing } = options;
+  const { screenId, document, existing, requiredItemIds } = options;
 
   if (!document || typeof document !== 'object' || Array.isArray(document)) {
     return {
@@ -85,7 +103,7 @@ export function validateEditableDescriptionDocument(options: {
     };
   }
 
-  if (!SCREEN_ID_RE.test(screenId)) {
+  if (!isValidScreenId(screenId)) {
     return {
       code: 'SPEC_DESCRIPTION_INVALID',
       message: '画面 ID の形式が不正です。',
@@ -99,10 +117,24 @@ export function validateEditableDescriptionDocument(options: {
     };
   }
 
+  if (screen.name.length > MAX_NAME_LENGTH) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `screen.name は${MAX_NAME_LENGTH}文字以内である必要があります。`,
+    };
+  }
+
   if (typeof screen.description !== 'string') {
     return {
       code: 'SPEC_DESCRIPTION_INVALID',
       message: 'screen.description は文字列である必要があります。',
+    };
+  }
+
+  if (screen.description.length > MAX_DESCRIPTION_LENGTH) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `screen.description は${MAX_DESCRIPTION_LENGTH}文字以内である必要があります。`,
     };
   }
 
@@ -174,6 +206,19 @@ export function validateEditableDescriptionDocument(options: {
           'item ID の追加・削除・変更はできません。既存の項目 ID を維持してください。',
       };
     }
+  } else if (requiredItemIds != null) {
+    const requiredSorted = [...requiredItemIds].sort();
+    const nextSorted = [...itemIds].sort();
+    if (
+      requiredSorted.length !== nextSorted.length ||
+      requiredSorted.some((id, i) => id !== nextSorted[i])
+    ) {
+      return {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message:
+          '実装側から検出された項目 ID の集合と一致しません。項目 ID の追加・削除はできません。',
+      };
+    }
   }
 
   return null;
@@ -219,5 +264,28 @@ export function createEmptyEditableDocument(
       description: '',
     },
     items: {},
+  };
+}
+
+/**
+ * IMPLEMENTATION_ONLY の初回 GET/PUT 用ドラフト document。
+ * snapshot から集めた item ID を空欄 placeholder として seed する。
+ */
+export function buildImplementationDraftDocument(
+  screenId: string,
+  itemIds: string[],
+): EditableDescriptionDocument {
+  const items: EditableDescriptionDocument['items'] = {};
+  for (const id of itemIds) {
+    items[id] = { name: '', type: '', description: '', note: '' };
+  }
+  return {
+    schemaVersion: '1.0',
+    screen: {
+      id: screenId,
+      name: '',
+      description: '',
+    },
+    items,
   };
 }

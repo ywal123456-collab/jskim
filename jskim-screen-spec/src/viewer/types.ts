@@ -1,8 +1,14 @@
+export type ScreenSpecStatus = 'design-only' | 'implementation-only' | 'linked';
+
 export type ManifestScreen = {
   id: string;
   name: string;
   path: string;
   dataFile: string;
+  status: ScreenSpecStatus;
+  hasDescription: boolean;
+  hasImplementation: boolean;
+  hasPreview: boolean;
 };
 
 export type ViewerManifest = {
@@ -68,4 +74,15 @@ export type ScreenData = {
   items: Record<string, ScreenItem>;
   states: ScreenState[];
   interactions: ScreenInteraction[];
+  status: ScreenSpecStatus;
+  hasDescription: boolean;
+  hasImplementation: boolean;
+  hasPreview: boolean;
+};
+
+/** status ごとの日本語表示ラベル（badge 用） */
+export const SCREEN_SPEC_STATUS_LABEL: Record<ScreenSpecStatus, string> = {
+  'design-only': '設計のみ',
+  'implementation-only': '実装のみ',
+  linked: '連携済み',
 };

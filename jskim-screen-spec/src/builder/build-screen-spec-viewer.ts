@@ -31,14 +31,7 @@ export async function buildScreenSpecViewer(
 
   const project = loadScreenSpecProject({ rootDir, projectName });
 
-  if (project.screens.length === 0) {
-    throw new Error(
-      `[jskim-screen-spec] 登録画面がありません。` +
-        ` Source JSON・Description JSON・snapshot が揃った画面が必要です` +
-        `（project=${projectName}）。`,
-    );
-  }
-
+  // 0 画面（Description/Source ともに無い）でも viewer は空 manifest として build する。
   const registeredScreenIds = new Set(project.screens.map((s) => s.screenId));
   const payload = createViewerManifest({
     projectName,

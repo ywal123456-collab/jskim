@@ -14,12 +14,20 @@ const manifest: ViewerManifest = {
       name: '新規作成',
       path: '/crud/create.html',
       dataFile: 'screens/crud-create.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
     },
     {
       id: 'crud-index',
       name: '一覧',
       path: '/crud/index.html',
       dataFile: 'screens/crud-index.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
     },
   ],
 };
@@ -54,6 +62,10 @@ const createScreen: ScreenData = {
       label: '一覧へ遷移',
     },
   ],
+  status: 'linked',
+  hasDescription: true,
+  hasImplementation: true,
+  hasPreview: true,
 };
 
 const indexScreen: ScreenData = {
@@ -72,6 +84,10 @@ const indexScreen: ScreenData = {
     },
   ],
   interactions: [],
+  status: 'linked',
+  hasDescription: true,
+  hasImplementation: true,
+  hasPreview: true,
 };
 
 function mockFetch(): void {

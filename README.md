@@ -49,6 +49,9 @@ jskim dev sample
 | `jskim serve` | なし | なし | なし | なし（読み取り専用） |
 
 `jskim spec dev` では Viewer から画面名 / 画面説明 / 項目の名称・種別・説明・備考を編集し、`spec/{project}/src/data/{screenId}.json` へローカル保存できます。書き込み API は `spec dev` 専用です。`--host 0.0.0.0` で待受けると LAN 上の他端末からも到達し得るため、信頼できるネットワークでのみ使用してください。
+
+`jskim spec dev` の Viewer からは、実装より先に画面を作る「設計先行」で新しい画面設計書を作成できます（Sidebar の「＋ 画面を作成」）。作成直後の画面はまだ実装（Source JSON / snapshot）と連携していないため、Preview 領域には「No Preview」表示が出ます。実装と連携して `jskim spec collect` を実行すると Preview が表示されます。この画面作成 UI は `jskim spec dev`（same-origin 編集 API）専用で、`jskim serve` / 通常の `jskim dev` の静的 mount は読み取り専用のままです。
+
 ## 現在の非対応範囲
 
 - ブラウザ選択 option / `serve --open`

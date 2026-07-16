@@ -49,6 +49,10 @@ function loadFixtureScreen(): LoadedScreen {
     ],
     stateStyles: {},
     stateDocumentContexts: {},
+    hasDescription: true,
+    hasImplementation: true,
+    hasPreview: true,
+    status: 'linked',
   };
 }
 
@@ -66,7 +70,7 @@ describe('builder', () => {
 
   it('未登録の screen-transition 先を unregisteredTarget にする', () => {
     const screen = loadFixtureScreen();
-    screen.source.interactions.push({
+    screen.source!.interactions.push({
       itemId: 'open-help-button',
       type: 'screen-transition',
       category: 'navigation',
@@ -122,6 +126,111 @@ describe('builder', () => {
     expect(outer).toContain('data-jskim-spec-screen="demo"');
     expect(outer).toContain('data-jskim-spec-item="a"');
     expect(outer).not.toContain('<header>');
+  });
+
+  it('design-only 画面は path/states/interactions が空で items は Description から', () => {
+    const screen: LoadedScreen = {
+      screenId: 'design-screen',
+      sourcePath: null,
+      descriptionPath: '/tmp/design-screen.json',
+      source: null,
+      description: {
+        schemaVersion: '1.0',
+        screen: { id: 'design-screen', name: '設計中画面', description: '説明文' },
+        items: {
+          'inquiry-type': { name: '種別', type: 'select', description: '', note: '' },
+        },
+      },
+      snapshots: [],
+      stateStyles: {},
+      stateDocumentContexts: {},
+      hasDescription: true,
+      hasImplementation: false,
+      hasPreview: false,
+      status: 'design-only',
+    };
+
+    const payload = createViewerManifest({
+      projectName: 'fixture',
+      base: '/spec/',
+      screens: [screen],
+      registeredScreenIds: new Set(['design-screen']),
+    });
+
+    const viewerScreen = payload.screens[0];
+    expect(viewerScreen.path).toBe('');
+    expect(viewerScreen.states).toEqual([]);
+    expect(viewerScreen.interactions).toEqual([]);
+    expect(viewerScreen.name).toBe('設計中画面');
+    expect(viewerScreen.description).toBe('説明文');
+    expect(viewerScreen.items['inquiry-type'].name).toBe('種別');
+    expect(viewerScreen.itemOrder).toEqual(['inquiry-type']);
+    expect(viewerScreen.status).toBe('design-only');
+    expect(viewerScreen.hasDescription).toBe(true);
+    expect(viewerScreen.hasImplementation).toBe(false);
+    expect(viewerScreen.hasPreview).toBe(false);
+    expect(payload.manifest.screens[0]).toMatchObject({
+      id: 'design-screen',
+      path: '',
+      status: 'design-only',
+    });
+    expect(payload.snapshotFiles).toEqual([]);
+  });
+
+  it('implementation-only 画面は snapshot から集めた item を空欄 placeholder にする', () => {
+    const screen: LoadedScreen = {
+      screenId: 'impl-screen',
+      sourcePath: '/tmp/impl-screen.spec.json',
+      descriptionPath: null,
+      source: {
+        schemaVersion: '1.0',
+        screen: { id: 'impl-screen', path: '/impl-screen' },
+        states: [
+          { id: 'default', name: '初期', viewer: { visible: true, order: 0 } },
+        ],
+        interactions: [
+          { itemId: 'submit', type: 'state-transition', targetStateId: 'default' },
+        ],
+      },
+      description: null,
+      snapshots: [
+        {
+          stateId: 'default',
+          filePath: '/tmp/impl-screen/default.html',
+          html: '<div data-jskim-spec-item="submit">送信</div>',
+        },
+      ],
+      stateStyles: {},
+      stateDocumentContexts: {},
+      hasDescription: false,
+      hasImplementation: true,
+      hasPreview: true,
+      status: 'implementation-only',
+    };
+
+    const payload = createViewerManifest({
+      projectName: 'fixture',
+      base: '/spec/',
+      screens: [screen],
+      registeredScreenIds: new Set(['impl-screen']),
+    });
+
+    const viewerScreen = payload.screens[0];
+    expect(viewerScreen.path).toBe('/impl-screen');
+    expect(viewerScreen.name).toBe('impl-screen');
+    expect(viewerScreen.description).toBe('');
+    expect(viewerScreen.states).toHaveLength(1);
+    expect(viewerScreen.items.submit).toEqual({
+      name: '',
+      type: '',
+      description: '',
+      note: '',
+    });
+    expect(viewerScreen.status).toBe('implementation-only');
+    expect(viewerScreen.hasDescription).toBe(false);
+    expect(viewerScreen.hasImplementation).toBe(true);
+    expect(viewerScreen.hasPreview).toBe(true);
+    expect(payload.snapshotFiles).toHaveLength(1);
   });
 
   it('help-modal 切替後の DOM 項目が増える', () => {

@@ -101,6 +101,33 @@ Vue Viewer
 - Viewer はファイルパスを組み立てず、API のみを使う
 - collected / documented 分離や Remote Store は将来拡張枠（今回は FileDescriptionStore のみ）
 
+### 画面の新規作成（design-first / phase 7B-1）
+
+`loadScreenSpecProject` は Source JSON（実装側）と Description JSON（設計側）の **和集合（union）** で画面一覧を組み立てます。どちらか一方しか無い画面も `design-only` / `implementation-only` として読み込まれ、両方揃った画面だけが `linked` になります。
+
+```text
+status = 'linked'               … Description あり + Source(+snapshot) あり
+status = 'design-only'          … Description のみ
+status = 'implementation-only'  … Source(+snapshot) のみ
+```
+
+`jskim spec dev` 実行中は、実装が無い画面でも Viewer から先に画面設計書だけを作成できます（設計先行）。
+
+```text
+Vue Viewer（「＋ 画面を作成」）
+  → same-origin POST /_jskim/spec/descriptions（screenId 無し）
+  → FileDescriptionStore.create()
+  → createFileAtomic（同時作成の重複 / path traversal を検証し、原子的に新規ファイルを書く）
+  → spec/{project}/src/data/{screenId}.json（新規）
+  → 既存 Description build-only watcher → viewer build + reload(target=spec)
+```
+
+- 新規作成は `POST`（`GET/PUT` は既存 `screenId` に対する読み書き専用のまま）
+- 同じ `screenId` で 2 回目の `POST` は `409 SPEC_DESCRIPTION_ALREADY_EXISTS`
+- 作成直後の画面は `design-only` かつ `hasPreview: false`。Viewer は Preview 領域に No Preview を表示し、`states` が無いため State selector も表示しない
+- 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
+- item（項目）の新規作成、画面の rename / archive は本 phase の対象外（未実装）
+
 ### `jskim spec dev` の監視
 
 | 対象 | 動作 |

@@ -71,10 +71,30 @@ body,
   padding: 1.25rem 0.75rem;
 }
 
+.spec-sidebar__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .spec-sidebar__title {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 0.875rem;
   color: var(--spec-muted);
+}
+
+.spec-sidebar__create-btn {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #1d4ed8;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .spec-sidebar__list {
@@ -88,17 +108,60 @@ body,
 }
 
 .spec-sidebar__link {
-  display: block;
-  padding: 0.45rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
   border-radius: 0.375rem;
   text-decoration: none;
   color: var(--spec-text);
+  min-width: 0;
+}
+
+.spec-sidebar__link-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.spec-sidebar__badge {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.4;
+  background: #e5e7eb;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.spec-sidebar__badge[data-status='design-only'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.spec-sidebar__badge[data-status='implementation-only'] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.spec-sidebar__badge[data-status='linked'] {
+  background: #d1fae5;
+  color: #065f46;
 }
 
 .spec-sidebar__link.is-active {
   background: var(--spec-accent);
   color: var(--spec-accent-text);
   font-weight: 700;
+}
+
+.spec-sidebar__link.is-active .spec-sidebar__badge {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .spec-main {
@@ -224,6 +287,74 @@ body,
 
 .spec-page--error {
   color: #b91c1c;
+}
+
+.spec-page--empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  max-width: 32rem;
+}
+
+.spec-page__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.spec-page__title-row h1 {
+  margin: 0;
+}
+
+.spec-page__status-badge {
+  flex: 0 0 auto;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.spec-page__status-badge[data-status='design-only'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.spec-page__status-badge[data-status='implementation-only'] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.spec-page__status-badge[data-status='linked'] {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.spec-page__no-preview {
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--spec-border);
+  border-radius: 0.375rem;
+  color: var(--spec-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.spec-page__no-preview p {
+  margin: 0 0 0.5rem;
+}
+
+.spec-page__no-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.spec-page__no-preview code {
+  background: #f3f4f6;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
 }
 
 /* —— Description editing (spec dev) —— */
@@ -428,4 +559,70 @@ body,
 .item-table__id code {
   font-size: 0.75rem;
   color: #4b5563;
+}
+
+/* —— 画面作成 dialog（design-first create, phase 7B-1） —— */
+
+.create-screen-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.create-screen-dialog {
+  width: 100%;
+  max-width: 28rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  background: var(--spec-surface);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  padding: 1.25rem 1.5rem;
+}
+
+.create-screen-dialog__title {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+}
+
+.create-screen-dialog__form {
+  display: flex;
+  flex-direction: column;
+}
+
+.create-screen-dialog__server-error {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #fca5a5;
+  border-radius: 0.375rem;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.8125rem;
+}
+
+.create-screen-dialog__waiting {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--spec-border);
+  border-radius: 0.375rem;
+  background: #f9fafb;
+  color: var(--spec-muted);
+  font-size: 0.8125rem;
+}
+
+.create-screen-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.spec-field__error {
+  color: #b91c1c;
+  font-size: 0.75rem;
 }

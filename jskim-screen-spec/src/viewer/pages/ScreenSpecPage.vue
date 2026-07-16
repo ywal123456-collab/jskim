@@ -6,16 +6,24 @@ import DomPreview, {
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
-import type { DocumentContext, ScreenData, ViewerManifest } from '../types';
+import {
+  SCREEN_SPEC_STATUS_LABEL,
+  type DocumentContext,
+  type ScreenData,
+  type ViewerManifest,
+} from '../types';
 
 const props = defineProps<{
   screenId: string;
 }>();
 
 const manifest = inject<ComputedRef<ViewerManifest>>('manifest');
+const editingEnabled = inject<boolean>('editingEnabled', false);
+const openCreateScreen = inject<() => void>('openCreateScreen', () => {});
 
 const screen = ref<ScreenData | null>(null);
-const selectedStateId = ref('default');
+const isEmptyState = ref(false);
+const selectedStateId = ref('');
 const selectedItemId = ref<string | null>(null);
 const snapshotHtml = ref('');
 const previewCss = ref('');
@@ -23,6 +31,17 @@ const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
 
 const editor = useDescriptionEditor(() => props.screenId);
+
+const specStatusLabel = computed(() => {
+  if (!screen.value) {
+    return '';
+  }
+  return SCREEN_SPEC_STATUS_LABEL[screen.value.status] ?? '';
+});
+
+const showPreview = computed(
+  () => Boolean(screen.value?.hasPreview) && (screen.value?.states.length ?? 0) > 0,
+);
 
 const currentDocumentContext = computed<DocumentContext | null>(() => {
   if (!screen.value) {
@@ -60,12 +79,15 @@ const statusLabel = computed(() => {
 
 async function loadScreen(screenId: string): Promise<void> {
   loadError.value = null;
+  isEmptyState.value = false;
   screen.value = null;
   selectedItemId.value = null;
+  selectedStateId.value = '';
+  snapshotHtml.value = '';
   stylesheets.value = [];
 
   if (screenId === '_empty') {
-    loadError.value = '表示できる画面がありません。';
+    isEmptyState.value = true;
     return;
   }
 
@@ -88,16 +110,19 @@ async function loadScreen(screenId: string): Promise<void> {
     await editor.loadDescription(screenId);
   }
 
+  // 状態が無い画面（design-only 等）は default state を発明しない
   const firstVisible =
     data.states.find((s) => s.viewer.visible) || data.states[0];
-  selectedStateId.value = firstVisible?.id ?? 'default';
+  selectedStateId.value = firstVisible?.id ?? '';
 
   if (!previewCss.value) {
     const cssRes = await fetch(`${base}data/theme/preview.css`);
     previewCss.value = cssRes.ok ? await cssRes.text() : '';
   }
 
-  await loadSnapshot(selectedStateId.value);
+  if (firstVisible) {
+    await loadSnapshot(selectedStateId.value);
+  }
 }
 
 async function resolveStylesheets(
@@ -188,7 +213,22 @@ watch(
 </script>
 
 <template>
-  <div v-if="loadError" class="spec-page spec-page--error">
+  <div v-if="isEmptyState" class="spec-page spec-page--empty">
+    <template v-if="editingEnabled">
+      <p>画面がまだありません。</p>
+      <p>
+        画面設計を先に作成するか、<br />
+        実装画面を収集すると、ここに表示されます。
+      </p>
+      <button type="button" class="spec-page__btn" @click="openCreateScreen()">
+        ＋ 画面を作成
+      </button>
+    </template>
+    <template v-else>
+      <p>表示できる画面がありません。</p>
+    </template>
+  </div>
+  <div v-else-if="loadError" class="spec-page spec-page--error">
     <p>{{ loadError }}</p>
   </div>
   <div v-else-if="!screen" class="spec-page">
@@ -197,10 +237,17 @@ watch(
   <div v-else class="spec-page" :class="{ 'spec-page--editing': editor.editingEnabled }">
     <header class="spec-page__header">
       <div class="spec-page__header-main">
-        <h1>{{ displayName || screen.id }}</h1>
+        <div class="spec-page__title-row">
+          <h1>{{ displayName || screen.id }}</h1>
+          <span
+            class="spec-page__status-badge"
+            :data-status="screen.status"
+            >{{ specStatusLabel }}</span
+          >
+        </div>
         <p class="spec-page__meta">
           <span>画面 ID: {{ screen.id }}</span>
-          <span>実装 path: {{ screen.path }}</span>
+          <span>実装 path: {{ screen.path || '（未連携）' }}</span>
         </p>
       </div>
 
@@ -249,6 +296,7 @@ watch(
     </div>
 
     <StateSelector
+      v-if="screen.states.length > 0"
       :states="screen.states"
       :selected-state-id="selectedStateId"
       @select="onSelectState"
@@ -264,6 +312,7 @@ watch(
       <aside id="section-preview" class="spec-page__preview-pane" aria-label="DOM プレビュー">
         <h2 class="spec-page__section-title">Preview</h2>
         <DomPreview
+          v-if="showPreview"
           :html="snapshotHtml"
           :item-order="screen.itemOrder"
           :selected-item-id="selectedItemId"
@@ -272,6 +321,11 @@ watch(
           :document-context="currentDocumentContext"
           @select="onSelectItem"
         />
+        <div v-else class="spec-page__no-preview" data-testid="no-preview">
+          <p>この画面はまだ実装画面と連携されていません。</p>
+          <p>基本情報は先に編集できます。</p>
+          <p>実装後に <code>jskim spec collect</code> を実行すると Preview が表示されます。</p>
+        </div>
       </aside>
 
       <div class="spec-page__doc-pane">

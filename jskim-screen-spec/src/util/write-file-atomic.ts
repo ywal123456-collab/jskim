@@ -12,6 +12,10 @@ export type WriteFileAtomicFs = {
   writeFileSync: (p: string, data: Buffer) => void;
   renameSync: (from: string, to: string) => void;
   unlinkSync: (p: string) => void;
+  /** createFileAtomic 用（未指定時は node:fs を使う） */
+  copyFileSync?: (src: string, dest: string, mode?: number) => void;
+  /** createFileAtomic 用（未指定時は node:fs.constants を使う） */
+  constants?: { COPYFILE_EXCL: number };
 };
 
 export type WriteFileAtomicOptions = {
@@ -232,6 +236,61 @@ export function writeFileAtomicOrThrow(
   return result.status;
 }
 
+export type CreateFileAtomicResult =
+  | { status: 'created' }
+  | { status: 'exists' };
+
+/**
+ * 新規ファイルのみを作成する（create-if-absent）。
+ *
+ * - 同一 dir の TEMP に全文を書き込む
+ * - `fs.copyFileSync(TEMP, dest, COPYFILE_EXCL)`（相当）で排他的に作成する
+ * - destination が既に存在する場合（EEXIST）は上書きせず `{ status: 'exists' }` を返す
+ * - 成否に関わらず TEMP は cleanup する
+ */
+export function createFileAtomic(
+  filePath: string,
+  content: string | Buffer,
+  options: WriteFileAtomicOptions = {},
+): CreateFileAtomicResult {
+  const io = options.fs || fs;
+  const buf = Buffer.isBuffer(content)
+    ? content
+    : Buffer.from(content, 'utf8');
+
+  const dir = path.dirname(filePath);
+  io.mkdirSync(dir, { recursive: true });
+
+  const stamp = `${process.pid}.${Date.now()}`;
+  const tempPath =
+    options.tempPath ||
+    path.join(dir, `.${path.basename(filePath)}.${stamp}.tmp`);
+
+  try {
+    io.writeFileSync(tempPath, buf);
+  } catch (err) {
+    cleanupPath(io, tempPath);
+    throw err;
+  }
+
+  const copyFileSync = io.copyFileSync || fs.copyFileSync;
+  const constants = io.constants || fs.constants;
+
+  try {
+    copyFileSync(tempPath, filePath, constants.COPYFILE_EXCL);
+  } catch (err) {
+    cleanupPath(io, tempPath);
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'EEXIST') {
+      return { status: 'exists' };
+    }
+    throw err;
+  }
+
+  cleanupPath(io, tempPath);
+  return { status: 'created' };
+}
+
 export function computeContentRevision(content: string | Buffer): string {
   const buf = Buffer.isBuffer(content)
     ? content
@@ -246,4 +305,13 @@ export function computeEmptyDescriptionRevision(screenId: string): string {
     items: {},
   };
   return computeContentRevision(`${JSON.stringify(empty, null, 2)}\n`);
+}
+
+/**
+ * IMPLEMENTATION_ONLY の初回 GET/PUT 用: `$schema` を含まない
+ * canonical stringify から revision を計算する。
+ * 保存対象ファイルの実体は無いため、常にこの関数で計算した値を使う。
+ */
+export function computeDraftRevision(document: unknown): string {
+  return computeContentRevision(`${JSON.stringify(document, null, 2)}\n`);
 }

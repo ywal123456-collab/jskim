@@ -16,6 +16,37 @@ function createMemoryStore(initial = {}) {
   }
 
   return {
+    create({ screenId, name, description }) {
+      if (docs.has(screenId)) {
+        const err = new Error(`画面設計書「${screenId}」は既に存在します。`);
+        err.code = 'SPEC_DESCRIPTION_ALREADY_EXISTS';
+        err.statusCode = 409;
+        throw err;
+      }
+      if (typeof screenId !== 'string' || !/^[a-z][a-z0-9-]*$/.test(screenId)) {
+        const err = new Error('画面 ID の形式が不正です。');
+        err.code = 'SPEC_DESCRIPTION_INVALID_SCREEN_ID';
+        err.statusCode = 400;
+        throw err;
+      }
+      if (typeof name !== 'string' || name.trim() === '') {
+        const err = new Error('name は空にできません。');
+        err.code = 'SPEC_DESCRIPTION_INVALID';
+        err.statusCode = 400;
+        throw err;
+      }
+      const document = {
+        schemaVersion: '1.0',
+        screen: { id: screenId, name, description: description || '' },
+        items: {},
+      };
+      docs.set(screenId, {
+        revision: 'sha256:created',
+        exists: true,
+        document,
+      });
+      return { screenId, revision: 'sha256:created', document, created: true };
+    },
     read(screenId) {
       const entry = docs.get(screenId);
       if (!entry) {
@@ -113,7 +144,7 @@ async function withServer(store, run) {
             } catch {
               json = null;
             }
-            resolve({ status: res.statusCode, body: buf, json });
+            resolve({ status: res.statusCode, body: buf, json, headers: res.headers });
           });
         }
       );
@@ -291,6 +322,79 @@ describe('createDescriptionEditApi', () => {
       });
       assert.equal(cross.status, 403);
       assert.equal(cross.json.code, 'SPEC_DESCRIPTION_FORBIDDEN_ORIGIN');
+    });
+  });
+
+  it('POST で新規 Description を作成し 201 + Location を返す', async () => {
+    const store = createMemoryStore();
+    await withServer(store, async ({ port, request }) => {
+      const res = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        },
+        body: JSON.stringify({
+          screenId: 'new-screen',
+          name: '新規画面',
+          description: '',
+        }),
+      });
+      assert.equal(res.status, 201);
+      assert.equal(res.json.screenId, 'new-screen');
+      assert.equal(
+        res.headers?.location,
+        `${DESCRIPTION_API_PREFIX}/new-screen`,
+      );
+      assert.equal(res.json.document.screen.name, '新規画面');
+
+      // 2 回目は 409
+      const dup = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        },
+        body: JSON.stringify({
+          screenId: 'new-screen',
+          name: '重複',
+          description: '',
+        }),
+      });
+      assert.equal(dup.status, 409);
+      assert.equal(dup.json.code, 'SPEC_DESCRIPTION_ALREADY_EXISTS');
+    });
+  });
+
+  it('POST の許可されていないフィールドは 400、GET/PUT/HEAD/POST 以外は 405', async () => {
+    const store = createMemoryStore();
+    await withServer(store, async ({ port, request }) => {
+      const badField = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        },
+        body: JSON.stringify({
+          screenId: 'x',
+          name: 'A',
+          description: '',
+          copyFromScreenId: 'other',
+        }),
+      });
+      assert.equal(badField.status, 400);
+
+      const methodNotAllowed = await request(
+        'DELETE',
+        DESCRIPTION_API_PREFIX
+      );
+      assert.equal(methodNotAllowed.status, 405);
+
+      const postOnScreenPath = await request(
+        'POST',
+        `${DESCRIPTION_API_PREFIX}/some-screen`
+      );
+      assert.equal(postOnScreenPath.status, 405);
     });
   });
 

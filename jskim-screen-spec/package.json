@@ -71,6 +71,7 @@
     "test:resources": "vitest run test/resources test/collector/resource-integration.test.ts",
     "test:watch": "vitest run test/watch",
     "test:editing": "vitest run test/editing",
+    "test:design-first": "vitest run test/builder test/editing test/viewer test/screen-page-router.test.ts",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit",
     "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"

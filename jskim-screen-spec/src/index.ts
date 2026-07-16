@@ -15,25 +15,48 @@ export {
 } from './builder/item-order.js';
 export { sanitizeSnapshot } from './builder/sanitize-snapshot.js';
 export { loadScreenSpecProject } from './builder/load-screen-spec-project.js';
+export type {
+  ScreenSpecStatus,
+  LoadedScreen,
+  ScreenSpecProject,
+} from './builder/load-screen-spec-project.js';
 export { createViewerManifest } from './builder/create-viewer-manifest.js';
 export { createFileDescriptionStore } from './editing/file-description-store.js';
 export type {
   DescriptionReadResult,
   DescriptionWriteResult,
+  DescriptionCreateInput,
+  DescriptionCreateResult,
   FileDescriptionStore,
 } from './editing/file-description-store.js';
 export {
   validateEditableDescriptionDocument,
   toEditableDocument,
   createEmptyEditableDocument,
+  buildImplementationDraftDocument,
+  SCREEN_ID_RE,
+  isValidScreenId,
+  isReservedScreenId,
+  MAX_SCREEN_ID_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
 } from './editing/validate-description-document.js';
 export type { EditableDescriptionDocument } from './editing/validate-description-document.js';
 export {
   writeFileAtomic,
   writeFileAtomicOrThrow,
+  createFileAtomic,
   computeContentRevision,
   computeEmptyDescriptionRevision,
+  computeDraftRevision,
 } from './util/write-file-atomic.js';
+export type {
+  WriteFileAtomicFs,
+  WriteFileAtomicOptions,
+  WriteFileAtomicResult,
+  CreateFileAtomicResult,
+} from './util/write-file-atomic.js';
+export { WINDOWS_RESERVED_NAMES } from './util/screen-id.js';
 export {
   writeCollectedDescription,
   DESCRIPTION_WRITE_MAX_RETRIES,

@@ -97,17 +97,26 @@ export type LoadedResources = {
   screens: Map<string, LoadedScreenResources>;
 };
 
+export type ScreenSpecStatus = 'design-only' | 'implementation-only' | 'linked';
+
 export type LoadedScreen = {
   screenId: string;
-  sourcePath: string;
-  descriptionPath: string;
-  source: SourceSpec;
-  description: DescriptionSpec;
+  sourcePath: string | null;
+  descriptionPath: string | null;
+  source: SourceSpec | null;
+  description: DescriptionSpec | null;
   snapshots: LoadedSnapshot[];
   /** collect 済み styles（resources がある場合） */
   stateStyles: Record<string, LoadedStyleRef[]>;
   /** collect 済み documentContext（resources がある場合） */
   stateDocumentContexts: Record<string, DocumentContext | undefined>;
+  /** Description JSON が存在するか */
+  hasDescription: boolean;
+  /** Source JSON（実装側）が存在するか */
+  hasImplementation: boolean;
+  /** 利用可能な snapshot HTML が 1 件以上あるか */
+  hasPreview: boolean;
+  status: ScreenSpecStatus;
 };
 
 export type ScreenSpecProject = {
@@ -116,6 +125,8 @@ export type ScreenSpecProject = {
   screens: LoadedScreen[];
   /** source JSON に登場する全 screen.id（snapshot 有無を問わない） */
   allSourceScreenIds: Set<string>;
+  /** Description JSON に登場する全 screen.id */
+  allDescriptionScreenIds: Set<string>;
   previewCssPath: string | null;
   resources: LoadedResources | null;
 };
@@ -142,7 +153,115 @@ function readJson<T>(filePath: string): T {
 }
 
 /**
- * Source / Description / Snapshot を読み込み、三者そろった画面だけを返す。
+ * Description JSON として無視すべきファイル名か判定する。
+ * 隠しファイル、writeFileAtomic / createFileAtomic の TEMP・backup 派生物
+ * （例: `.{basename}.{pid}.{ts}.tmp` / `.bak`）を除外する。
+ */
+function isSkippableDescriptionFile(name: string): boolean {
+  if (name.startsWith('.')) {
+    return true;
+  }
+  if (name.endsWith('.tmp') || name.endsWith('.bak')) {
+    return true;
+  }
+  if (/\.tmp\.[^.]+$/.test(name)) {
+    return true;
+  }
+  return false;
+}
+
+type DescriptionEntry = { filePath: string; data: DescriptionSpec };
+
+/**
+ * `spec/{project}/src/data/*.json` を走査し Description JSON を読み込む。
+ * 不正な内容は握りつぶさず日本語 Error を throw する。
+ */
+function loadDescriptions(dataDir: string): Map<string, DescriptionEntry> {
+  const descriptionById = new Map<string, DescriptionEntry>();
+  if (!fs.existsSync(dataDir)) {
+    return descriptionById;
+  }
+
+  const resolvedDataDir = path.resolve(dataDir);
+  const files = walkFiles(
+    dataDir,
+    (name) => name.endsWith('.json') && !isSkippableDescriptionFile(name),
+  );
+
+  for (const filePath of files) {
+    const resolved = path.resolve(filePath);
+    const relative = path.relative(resolvedDataDir, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(
+        `Description JSON のパスが不正です（data directory 外を参照しています）: ${filePath}`,
+      );
+    }
+
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Description JSON を読み込めません: ${filePath}\n原因: ${message}`,
+      );
+    }
+
+    let data: DescriptionSpec;
+    try {
+      data = JSON.parse(raw) as DescriptionSpec;
+    } catch {
+      throw new Error(
+        `Description JSON の形式が不正です（JSON の解析に失敗しました）: ${filePath}`,
+      );
+    }
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(
+        `Description JSON の内容が不正です（object ではありません）: ${filePath}`,
+      );
+    }
+
+    if (data.schemaVersion !== '1.0') {
+      throw new Error(
+        `Description JSON の schemaVersion は "1.0" である必要があります: ${filePath}`,
+      );
+    }
+
+    const basename = path.basename(filePath, '.json');
+    const screenIdFromFile =
+      data.screen && typeof data.screen.id === 'string' ? data.screen.id : '';
+
+    if (!screenIdFromFile) {
+      throw new Error(
+        `Description JSON に screen.id（string）がありません: ${filePath}`,
+      );
+    }
+
+    if (screenIdFromFile !== basename) {
+      throw new Error(
+        `Description JSON の screen.id はファイル名と一致する必要があります` +
+          `（screen.id="${screenIdFromFile}", file="${basename}.json"）: ${filePath}`,
+      );
+    }
+
+    const existing = descriptionById.get(screenIdFromFile);
+    if (existing) {
+      throw new Error(
+        `screenId が重複しています: "${screenIdFromFile}"` +
+          `（${existing.filePath} と ${filePath}）`,
+      );
+    }
+
+    descriptionById.set(screenIdFromFile, { filePath, data });
+  }
+
+  return descriptionById;
+}
+
+/**
+ * Source / Description / Snapshot の Description∪Source 和集合で画面を読み込む。
+ * 三者そろわない画面（design-only / implementation-only）も含まれる。
  */
 export function loadScreenSpecProject(options: {
   rootDir: string;
@@ -184,71 +303,77 @@ export function loadScreenSpecProject(options: {
     sourceById.set(id, { filePath, data });
   }
 
-  const descriptionFiles = walkFiles(dataDir, (name) => name.endsWith('.json'));
-  const descriptionById = new Map<
-    string,
-    { filePath: string; data: DescriptionSpec }
-  >();
+  const descriptionById = loadDescriptions(dataDir);
+  const allDescriptionScreenIds = new Set(descriptionById.keys());
 
-  for (const filePath of descriptionFiles) {
-    const data = readJson<DescriptionSpec>(filePath);
-    const id = data.screen?.id || path.basename(filePath, '.json');
-    descriptionById.set(id, { filePath, data });
-  }
+  const allScreenIds = Array.from(
+    new Set<string>([...allSourceScreenIds, ...allDescriptionScreenIds]),
+  );
 
   const screens: LoadedScreen[] = [];
 
-  for (const [screenId, sourceEntry] of sourceById) {
-    const descriptionEntry = descriptionById.get(screenId);
-    if (!descriptionEntry) {
-      continue;
-    }
+  for (const screenId of allScreenIds) {
+    const sourceEntry = sourceById.get(screenId) || null;
+    const descriptionEntry = descriptionById.get(screenId) || null;
 
-    const screenSnapshotDir = path.join(snapshotsRoot, screenId);
-    if (!fs.existsSync(screenSnapshotDir)) {
-      continue;
-    }
+    const hasDescription = descriptionEntry != null;
+    const hasImplementation = sourceEntry != null;
 
-    const snapshotFiles = fs
-      .readdirSync(screenSnapshotDir)
-      .filter((name) => name.endsWith('.html'))
-      .sort();
-
-    if (snapshotFiles.length === 0) {
-      continue;
-    }
-
-    const snapshots: LoadedSnapshot[] = snapshotFiles.map((name) => {
-      const filePath = path.join(screenSnapshotDir, name);
-      return {
-        stateId: path.basename(name, '.html'),
-        filePath,
-        html: fs.readFileSync(filePath, 'utf8'),
-      };
-    });
-
-    const screenResources = resources?.screens.get(screenId);
+    let snapshots: LoadedSnapshot[] = [];
     const stateStyles: Record<string, LoadedStyleRef[]> = {};
-    const stateDocumentContexts: Record<
-      string,
-      DocumentContext | undefined
-    > = {};
-    if (screenResources) {
-      for (const [stateId, state] of Object.entries(screenResources.states)) {
-        stateStyles[stateId] = state.styles || [];
-        stateDocumentContexts[stateId] = state.documentContext;
+    const stateDocumentContexts: Record<string, DocumentContext | undefined> = {};
+
+    if (hasImplementation) {
+      const screenSnapshotDir = path.join(snapshotsRoot, screenId);
+      if (fs.existsSync(screenSnapshotDir)) {
+        const snapshotFiles = fs
+          .readdirSync(screenSnapshotDir)
+          .filter((name) => name.endsWith('.html'))
+          .sort();
+
+        snapshots = snapshotFiles.map((name) => {
+          const filePath = path.join(screenSnapshotDir, name);
+          return {
+            stateId: path.basename(name, '.html'),
+            filePath,
+            html: fs.readFileSync(filePath, 'utf8'),
+          };
+        });
       }
+
+      const screenResources = resources?.screens.get(screenId);
+      if (screenResources) {
+        for (const [stateId, state] of Object.entries(screenResources.states)) {
+          stateStyles[stateId] = state.styles || [];
+          stateDocumentContexts[stateId] = state.documentContext;
+        }
+      }
+    }
+
+    const hasPreview = snapshots.length > 0;
+
+    let status: ScreenSpecStatus;
+    if (hasDescription && hasImplementation) {
+      status = 'linked';
+    } else if (hasDescription) {
+      status = 'design-only';
+    } else {
+      status = 'implementation-only';
     }
 
     screens.push({
       screenId,
-      sourcePath: sourceEntry.filePath,
-      descriptionPath: descriptionEntry.filePath,
-      source: sourceEntry.data,
-      description: descriptionEntry.data,
+      sourcePath: sourceEntry?.filePath ?? null,
+      descriptionPath: descriptionEntry?.filePath ?? null,
+      source: sourceEntry?.data ?? null,
+      description: descriptionEntry?.data ?? null,
       snapshots,
       stateStyles,
       stateDocumentContexts,
+      hasDescription,
+      hasImplementation,
+      hasPreview,
+      status,
     });
   }
 
@@ -259,6 +384,7 @@ export function loadScreenSpecProject(options: {
     projectName,
     screens,
     allSourceScreenIds,
+    allDescriptionScreenIds,
     previewCssPath: fs.existsSync(previewCssPath) ? previewCssPath : null,
     resources,
   };

@@ -39,7 +39,12 @@ function createDescriptionEditApi(options) {
     }
 
     const method = (meta.method || 'GET').toUpperCase();
-    if (method !== 'GET' && method !== 'PUT' && method !== 'HEAD') {
+    if (
+      method !== 'GET' &&
+      method !== 'PUT' &&
+      method !== 'HEAD' &&
+      method !== 'POST'
+    ) {
       sendJson(res, 405, {
         code: 'SPEC_DESCRIPTION_METHOD_NOT_ALLOWED',
         message: 'このHTTPメソッドは使用できません。',
@@ -47,11 +52,30 @@ function createDescriptionEditApi(options) {
       return true;
     }
 
+    if (pathname === DESCRIPTION_API_PREFIX) {
+      if (method !== 'POST') {
+        sendJson(res, 405, {
+          code: 'SPEC_DESCRIPTION_METHOD_NOT_ALLOWED',
+          message: 'このHTTPメソッドは使用できません。',
+        });
+        return true;
+      }
+      return handleCreate(req, res);
+    }
+
     const screenId = decodeScreenId(pathname);
     if (!screenId) {
       sendJson(res, 400, {
         code: 'SPEC_DESCRIPTION_INVALID_SCREEN_ID',
         message: '画面 ID が不正です。',
+      });
+      return true;
+    }
+
+    if (method === 'POST') {
+      sendJson(res, 405, {
+        code: 'SPEC_DESCRIPTION_METHOD_NOT_ALLOWED',
+        message: 'このHTTPメソッドは使用できません。',
       });
       return true;
     }
@@ -79,38 +103,9 @@ function createDescriptionEditApi(options) {
     }
 
     // PUT
-    if (!isSameOrigin(req, listenHost(), listenPort())) {
-      sendJson(res, 403, {
-        code: 'SPEC_DESCRIPTION_FORBIDDEN_ORIGIN',
-        message: '同一 origin 以外からの保存は許可されていません。',
-      });
-      return true;
-    }
-
-    const contentType = String(req.headers['content-type'] || '');
-    if (!contentType.toLowerCase().includes('application/json')) {
-      sendJson(res, 415, {
-        code: 'SPEC_DESCRIPTION_UNSUPPORTED_MEDIA',
-        message: 'Content-Type は application/json である必要があります。',
-      });
-      return true;
-    }
-
-    let body;
-    try {
-      body = await readJsonBody(req, MAX_BODY_BYTES);
-    } catch (err) {
-      if (err && err.code === 'SPEC_DESCRIPTION_BODY_TOO_LARGE') {
-        sendJson(res, 413, {
-          code: err.code,
-          message: 'リクエスト本文が大きすぎます。',
-        });
-        return true;
-      }
-      sendJson(res, 400, {
-        code: 'SPEC_DESCRIPTION_MALFORMED_JSON',
-        message: 'リクエスト本文の JSON が不正です。',
-      });
+    const body = await readSameOriginJsonBody(req, res);
+    if (body === undefined) {
+      // 既にエラー応答済み
       return true;
     }
 
@@ -129,6 +124,102 @@ function createDescriptionEditApi(options) {
       sendStoreError(res, err);
     }
     return true;
+  }
+
+  /**
+   * POST /_jskim/spec/descriptions（screenId 無しの新規作成）
+   *
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @returns {Promise<boolean>}
+   */
+  async function handleCreate(req, res) {
+    const body = await readSameOriginJsonBody(req, res);
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'リクエスト本文は object である必要があります。',
+      });
+      return true;
+    }
+
+    const allowedKeys = new Set(['screenId', 'name', 'description']);
+    const unknownKey = Object.keys(body).find((key) => !allowedKeys.has(key));
+    if (unknownKey) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: `許可されていないフィールドです: ${unknownKey}`,
+      });
+      return true;
+    }
+
+    try {
+      const result = store.create({
+        screenId: body.screenId,
+        name: body.name,
+        description: body.description,
+      });
+      res.setHeader(
+        'Location',
+        `${DESCRIPTION_API_PREFIX}/${encodeURIComponent(result.screenId)}`
+      );
+      sendJson(res, 201, {
+        screenId: result.screenId,
+        revision: result.revision,
+        document: result.document,
+      });
+    } catch (err) {
+      sendStoreError(res, err);
+    }
+    return true;
+  }
+
+  /**
+   * same-origin / JSON content-type / body size を検証して JSON body を返す。
+   * 検証に失敗した場合はここで応答済みにして undefined を返す。
+   *
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @returns {Promise<any>}
+   */
+  async function readSameOriginJsonBody(req, res) {
+    if (!isSameOrigin(req, listenHost(), listenPort())) {
+      sendJson(res, 403, {
+        code: 'SPEC_DESCRIPTION_FORBIDDEN_ORIGIN',
+        message: '同一 origin 以外からのリクエストは許可されていません。',
+      });
+      return undefined;
+    }
+
+    const contentType = String(req.headers['content-type'] || '');
+    if (!contentType.toLowerCase().includes('application/json')) {
+      sendJson(res, 415, {
+        code: 'SPEC_DESCRIPTION_UNSUPPORTED_MEDIA',
+        message: 'Content-Type は application/json である必要があります。',
+      });
+      return undefined;
+    }
+
+    try {
+      return await readJsonBody(req, MAX_BODY_BYTES);
+    } catch (err) {
+      if (err && err.code === 'SPEC_DESCRIPTION_BODY_TOO_LARGE') {
+        sendJson(res, 413, {
+          code: err.code,
+          message: 'リクエスト本文が大きすぎます。',
+        });
+        return undefined;
+      }
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_MALFORMED_JSON',
+        message: 'リクエスト本文の JSON が不正です。',
+      });
+      return undefined;
+    }
   }
 
   return {

@@ -1,9 +1,11 @@
 import type {
   LoadedResourceFile,
   LoadedScreen,
+  LoadedSnapshot,
   LoadedStyleRef,
+  ScreenSpecStatus,
 } from './load-screen-spec-project.js';
-import { computeItemOrder } from './item-order.js';
+import { computeItemOrder, extractItemIdsInDomOrder } from './item-order.js';
 import { sanitizeSnapshot } from './sanitize-snapshot.js';
 import {
   rewriteResourceTokens,
@@ -62,6 +64,10 @@ export type ViewerScreenData = {
   >;
   states: ViewerState[];
   interactions: ViewerInteraction[];
+  status: ScreenSpecStatus;
+  hasDescription: boolean;
+  hasImplementation: boolean;
+  hasPreview: boolean;
 };
 
 export type ViewerManifest = {
@@ -73,6 +79,10 @@ export type ViewerManifest = {
     name: string;
     path: string;
     dataFile: string;
+    status: ScreenSpecStatus;
+    hasDescription: boolean;
+    hasImplementation: boolean;
+    hasPreview: boolean;
   }>;
 };
 
@@ -93,9 +103,200 @@ export type CreatedViewerPayload = {
 };
 
 /**
- * 登録済み画面集合を基準に viewer 用 manifest / screen JSON を組み立てる。
+ * Description の name（trim 非空）→ screenId の優先順で表示名を決める。
+ * Source には表示用の name が無いため今日時点では skip する。
+ */
+function displayScreenName(screen: LoadedScreen): string {
+  const descName = screen.description?.screen?.name;
+  if (typeof descName === 'string' && descName.trim() !== '') {
+    return descName;
+  }
+  return screen.screenId;
+}
+
+function itemsFromDescriptionSpec(
+  description: LoadedScreen['description'],
+): ViewerScreenData['items'] {
+  const items: ViewerScreenData['items'] = {};
+  if (!description) {
+    return items;
+  }
+  for (const [itemId, item] of Object.entries(description.items || {})) {
+    items[itemId] = {
+      name: item.name ?? '',
+      type: item.type ?? '',
+      description: item.description ?? '',
+      note: item.note ?? '',
+    };
+  }
+  return items;
+}
+
+/**
+ * IMPLEMENTATION_ONLY 用: snapshot HTML から集めた item ID を
+ * 空欄 placeholder として並べる（Description が無いため）。
+ */
+function placeholderItemsFromSnapshots(
+  snapshots: LoadedSnapshot[],
+): ViewerScreenData['items'] {
+  const items: ViewerScreenData['items'] = {};
+  for (const snap of snapshots) {
+    for (const id of extractItemIdsInDomOrder(snap.html)) {
+      if (!items[id]) {
+        items[id] = { name: '', type: '', description: '', note: '' };
+      }
+    }
+  }
+  return items;
+}
+
+function buildInteractions(
+  screen: LoadedScreen,
+  registeredScreenIds: Set<string>,
+): ViewerInteraction[] {
+  if (!screen.source) {
+    return [];
+  }
+  return (screen.source.interactions || []).map((interaction) => {
+    const next: ViewerInteraction = {
+      itemId: interaction.itemId,
+      type: interaction.type,
+      category: interaction.category,
+      targetStateId: interaction.targetStateId,
+      targetScreenId: interaction.targetScreenId,
+      url: interaction.url,
+      label: interaction.label,
+    };
+
+    if (
+      interaction.type === 'screen-transition' &&
+      interaction.targetScreenId &&
+      !registeredScreenIds.has(interaction.targetScreenId)
+    ) {
+      next.unregisteredTarget = true;
+    }
+
+    return next;
+  });
+}
+
+type BuiltStates = {
+  viewerStates: ViewerState[];
+  snapshotFiles: CreatedViewerPayload['snapshotFiles'];
+  itemOrder: string[];
+};
+
+/**
+ * Source が存在する画面（IMPLEMENTATION_ONLY / LINKED）向けに
+ * state / snapshot / itemOrder を組み立てる。design-only では呼ばない。
+ */
+function buildStatesAndOrder(
+  screen: LoadedScreen,
+  base: string,
+  knownIds: Set<string>,
+): BuiltStates {
+  const source = screen.source;
+  if (!source) {
+    return { viewerStates: [], snapshotFiles: [], itemOrder: [] };
+  }
+
+  const snapshotByState = new Map(
+    screen.snapshots.map((snap) => [snap.stateId, snap]),
+  );
+
+  const statesForOrder = source.states.map((state) => {
+    const snap = snapshotByState.get(state.id);
+    return {
+      id: state.id,
+      viewer: state.viewer,
+      html: snap?.html ?? '',
+    };
+  });
+
+  const itemOrder = computeItemOrder(statesForOrder);
+
+  const viewerStates: ViewerState[] = [];
+  const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
+
+  for (const state of source.states) {
+    const snap = snapshotByState.get(state.id);
+    if (!snap) {
+      continue;
+    }
+    const relativePath = `snapshots/${screen.screenId}/${state.id}.html`;
+    const sanitized = sanitizeSnapshot(snap.html);
+    const html = rewriteResourceTokens(sanitized, base, knownIds);
+    assertNoTokens(html, relativePath);
+    snapshotFiles.push({
+      screenId: screen.screenId,
+      stateId: state.id,
+      html,
+      relativePath,
+    });
+    viewerStates.push({
+      id: state.id,
+      name: state.name,
+      viewer: {
+        visible: state.viewer?.visible !== false,
+        order: state.viewer?.order ?? 0,
+      },
+      snapshotFile: relativePath,
+      styles: resolveStyles(
+        screen.stateStyles[state.id] || [],
+        base,
+        knownIds,
+      ),
+      ...(screen.stateDocumentContexts[state.id]
+        ? { documentContext: screen.stateDocumentContexts[state.id] }
+        : {}),
+    });
+  }
+
+  for (const snap of screen.snapshots) {
+    if (viewerStates.some((s) => s.id === snap.stateId)) {
+      continue;
+    }
+    const relativePath = `snapshots/${screen.screenId}/${snap.stateId}.html`;
+    const sanitized = sanitizeSnapshot(snap.html);
+    const html = rewriteResourceTokens(sanitized, base, knownIds);
+    assertNoTokens(html, relativePath);
+    snapshotFiles.push({
+      screenId: screen.screenId,
+      stateId: snap.stateId,
+      html,
+      relativePath,
+    });
+    viewerStates.push({
+      id: snap.stateId,
+      name: snap.stateId,
+      viewer: { visible: true, order: 1000 },
+      snapshotFile: relativePath,
+      styles: resolveStyles(
+        screen.stateStyles[snap.stateId] || [],
+        base,
+        knownIds,
+      ),
+      ...(screen.stateDocumentContexts[snap.stateId]
+        ? { documentContext: screen.stateDocumentContexts[snap.stateId] }
+        : {}),
+    });
+  }
+
+  viewerStates.sort((a, b) => a.viewer.order - b.viewer.order);
+
+  return { viewerStates, snapshotFiles, itemOrder };
+}
+
+/**
+ * 登録済み画面集合（Description∪Source）を基準に viewer 用 manifest / screen JSON を組み立てる。
  * 未登録の screen-transition 先は unregisteredTarget: true にする（build は続行）。
  * resource token は base 付き viewer URL に置換する。
+ *
+ * status ごとの扱い:
+ * - design-only: path/states/interactions は空。items は Description からそのまま。
+ * - implementation-only: path/states は Source/snapshot から。items は snapshot から
+ *   集めた ID の空欄 placeholder（Description が無いため）。
+ * - linked: 従来通り Source + Description を組み合わせる。
  */
 export function createViewerManifest(options: {
   projectName: string;
@@ -117,131 +318,49 @@ export function createViewerManifest(options: {
   const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
 
   for (const screen of screens) {
-    const snapshotByState = new Map(
-      screen.snapshots.map((snap) => [snap.stateId, snap]),
-    );
+    const name = displayScreenName(screen);
 
-    const statesForOrder = screen.source.states.map((state) => {
-      const snap = snapshotByState.get(state.id);
-      return {
-        id: state.id,
-        viewer: state.viewer,
-        html: snap?.html ?? '',
-      };
-    });
+    let screenPath = '';
+    let items: ViewerScreenData['items'] = {};
+    let itemOrder: string[] = [];
+    let viewerStates: ViewerState[] = [];
+    let interactions: ViewerInteraction[] = [];
+    let description = '';
 
-    const itemOrder = computeItemOrder(statesForOrder);
+    if (screen.status === 'design-only') {
+      items = itemsFromDescriptionSpec(screen.description);
+      itemOrder = Object.keys(items);
+      description = screen.description?.screen.description ?? '';
+    } else {
+      screenPath = screen.source?.screen.path ?? '';
+      const built = buildStatesAndOrder(screen, base, knownIds);
+      viewerStates = built.viewerStates;
+      snapshotFiles.push(...built.snapshotFiles);
+      itemOrder = built.itemOrder;
+      interactions = buildInteractions(screen, registeredScreenIds);
 
-    const viewerStates: ViewerState[] = [];
-    for (const state of screen.source.states) {
-      const snap = snapshotByState.get(state.id);
-      if (!snap) {
-        continue;
+      if (screen.status === 'implementation-only') {
+        items = placeholderItemsFromSnapshots(screen.snapshots);
+        description = '';
+      } else {
+        items = itemsFromDescriptionSpec(screen.description);
+        description = screen.description?.screen.description ?? '';
       }
-      const relativePath = `snapshots/${screen.screenId}/${state.id}.html`;
-      const sanitized = sanitizeSnapshot(snap.html);
-      const html = rewriteResourceTokens(sanitized, base, knownIds);
-      assertNoTokens(html, relativePath);
-      snapshotFiles.push({
-        screenId: screen.screenId,
-        stateId: state.id,
-        html,
-        relativePath,
-      });
-      viewerStates.push({
-        id: state.id,
-        name: state.name,
-        viewer: {
-          visible: state.viewer?.visible !== false,
-          order: state.viewer?.order ?? 0,
-        },
-        snapshotFile: relativePath,
-        styles: resolveStyles(
-          screen.stateStyles[state.id] || [],
-          base,
-          knownIds,
-        ),
-        ...(screen.stateDocumentContexts[state.id]
-          ? { documentContext: screen.stateDocumentContexts[state.id] }
-          : {}),
-      });
-    }
-
-    for (const snap of screen.snapshots) {
-      if (viewerStates.some((s) => s.id === snap.stateId)) {
-        continue;
-      }
-      const relativePath = `snapshots/${screen.screenId}/${snap.stateId}.html`;
-      const sanitized = sanitizeSnapshot(snap.html);
-      const html = rewriteResourceTokens(sanitized, base, knownIds);
-      assertNoTokens(html, relativePath);
-      snapshotFiles.push({
-        screenId: screen.screenId,
-        stateId: snap.stateId,
-        html,
-        relativePath,
-      });
-      viewerStates.push({
-        id: snap.stateId,
-        name: snap.stateId,
-        viewer: { visible: true, order: 1000 },
-        snapshotFile: relativePath,
-        styles: resolveStyles(
-          screen.stateStyles[snap.stateId] || [],
-          base,
-          knownIds,
-        ),
-        ...(screen.stateDocumentContexts[snap.stateId]
-          ? { documentContext: screen.stateDocumentContexts[snap.stateId] }
-          : {}),
-      });
-    }
-
-    viewerStates.sort((a, b) => a.viewer.order - b.viewer.order);
-
-    const interactions: ViewerInteraction[] = (screen.source.interactions || []).map(
-      (interaction) => {
-        const next: ViewerInteraction = {
-          itemId: interaction.itemId,
-          type: interaction.type,
-          category: interaction.category,
-          targetStateId: interaction.targetStateId,
-          targetScreenId: interaction.targetScreenId,
-          url: interaction.url,
-          label: interaction.label,
-        };
-
-        if (
-          interaction.type === 'screen-transition' &&
-          interaction.targetScreenId &&
-          !registeredScreenIds.has(interaction.targetScreenId)
-        ) {
-          next.unregisteredTarget = true;
-        }
-
-        return next;
-      },
-    );
-
-    const items: ViewerScreenData['items'] = {};
-    for (const [itemId, item] of Object.entries(screen.description.items || {})) {
-      items[itemId] = {
-        name: item.name ?? '',
-        type: item.type ?? '',
-        description: item.description ?? '',
-        note: item.note ?? '',
-      };
     }
 
     viewerScreens.push({
       id: screen.screenId,
-      name: screen.description.screen.name,
-      description: screen.description.screen.description ?? '',
-      path: screen.source.screen.path,
+      name,
+      description,
+      path: screenPath,
       itemOrder,
       items,
       states: viewerStates,
       interactions,
+      status: screen.status,
+      hasDescription: screen.hasDescription,
+      hasImplementation: screen.hasImplementation,
+      hasPreview: screen.hasPreview,
     });
   }
 
@@ -282,6 +401,10 @@ export function createViewerManifest(options: {
       name: screen.name,
       path: screen.path,
       dataFile: `screens/${screen.id}.json`,
+      status: screen.status,
+      hasDescription: screen.hasDescription,
+      hasImplementation: screen.hasImplementation,
+      hasPreview: screen.hasPreview,
     })),
   };
 

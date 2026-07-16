@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, provide } from 'vue';
+import { computed, provide, ref } from 'vue';
 import { RouterView } from 'vue-router';
 import SpecHeader from './components/SpecHeader.vue';
 import SpecSidebar from './components/SpecSidebar.vue';
+import CreateScreenDialog from './components/CreateScreenDialog.vue';
+import { getSpecEditBootstrap } from './editing/types';
 import type { ViewerManifest } from './types';
 
 const props = defineProps<{
@@ -10,6 +12,23 @@ const props = defineProps<{
 }>();
 
 provide('manifest', computed(() => props.manifest));
+
+const editingEnabled = Boolean(getSpecEditBootstrap());
+const createDialogOpen = ref(false);
+
+function openCreateScreen(): void {
+  if (!editingEnabled) {
+    return;
+  }
+  createDialogOpen.value = true;
+}
+
+function closeCreateScreen(): void {
+  createDialogOpen.value = false;
+}
+
+provide('editingEnabled', editingEnabled);
+provide('openCreateScreen', openCreateScreen);
 </script>
 
 <template>
@@ -21,5 +40,6 @@ provide('manifest', computed(() => props.manifest));
         <RouterView />
       </main>
     </div>
+    <CreateScreenDialog v-if="createDialogOpen" @close="closeCreateScreen" />
   </div>
 </template>
