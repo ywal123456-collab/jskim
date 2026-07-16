@@ -12,10 +12,11 @@ export type WriteFileAtomicFs = {
   writeFileSync: (p: string, data: Buffer) => void;
   renameSync: (from: string, to: string) => void;
   unlinkSync: (p: string) => void;
-  /** createFileAtomic 用（未指定時は node:fs を使う） */
-  copyFileSync?: (src: string, dest: string, mode?: number) => void;
-  /** createFileAtomic 用（未指定時は node:fs.constants を使う） */
-  constants?: { COPYFILE_EXCL: number };
+  /**
+   * createFileAtomic 用: 完成済み TEMP を destination 名で no-replace 公開する。
+   * 未指定時は node:fs.linkSync を使う。
+   */
+  linkSync?: (existingPath: string, newPath: string) => void;
 };
 
 export type WriteFileAtomicOptions = {
@@ -241,12 +242,17 @@ export type CreateFileAtomicResult =
   | { status: 'exists' };
 
 /**
- * 新規ファイルのみを作成する（create-if-absent）。
+ * 新規ファイルのみを作成する（create-if-absent / no-replace）。
  *
- * - 同一 dir の TEMP に全文を書き込む
- * - `fs.copyFileSync(TEMP, dest, COPYFILE_EXCL)`（相当）で排他的に作成する
- * - destination が既に存在する場合（EEXIST）は上書きせず `{ status: 'exists' }` を返す
- * - 成否に関わらず TEMP は cleanup する
+ * アルゴリズム:
+ * 1. 同一 directory に unique TEMP を作る
+ * 2. TEMP に全文を書き込む（現行と同様 writeFileSync）
+ * 3. `fs.linkSync(TEMP, destination)` で完成済み inode を destination 名で公開
+ * 4. 成功後 TEMP 名だけを unlink（失敗しても destination は完成済み）
+ *
+ * - destination が既にある場合（EEXIST）は上書きせず `{ status: 'exists' }`
+ * - hard link 非対応 FS（ENOTSUP / EOPNOTSUPP / EXDEV 等）は copy fallback せず fail-closed
+ * - COPYFILE_EXCL による非原子的コピーは使わない
  */
 export function createFileAtomic(
   filePath: string,
@@ -261,7 +267,7 @@ export function createFileAtomic(
   const dir = path.dirname(filePath);
   io.mkdirSync(dir, { recursive: true });
 
-  const stamp = `${process.pid}.${Date.now()}`;
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
   const tempPath =
     options.tempPath ||
     path.join(dir, `.${path.basename(filePath)}.${stamp}.tmp`);
@@ -273,22 +279,41 @@ export function createFileAtomic(
     throw err;
   }
 
-  const copyFileSync = io.copyFileSync || fs.copyFileSync;
-  const constants = io.constants || fs.constants;
+  const linkSync = io.linkSync || fs.linkSync;
 
   try {
-    copyFileSync(tempPath, filePath, constants.COPYFILE_EXCL);
+    linkSync(tempPath, filePath);
   } catch (err) {
     cleanupPath(io, tempPath);
     const code = (err as NodeJS.ErrnoException | undefined)?.code;
     if (code === 'EEXIST') {
       return { status: 'exists' };
     }
+    if (isUnsupportedLinkError(code)) {
+      const unsupported = new Error(
+        'このファイルシステムでは安全な新規ファイル作成（hard link）を利用できません。',
+      ) as Error & { code: string; statusCode: number; cause?: unknown };
+      unsupported.code = 'CREATE_FILE_ATOMIC_UNSUPPORTED';
+      unsupported.statusCode = 500;
+      unsupported.cause = err;
+      throw unsupported;
+    }
     throw err;
   }
 
+  // destination 公開は成功済み。TEMP 名の削除失敗は主エラーにしない。
   cleanupPath(io, tempPath);
   return { status: 'created' };
+}
+
+function isUnsupportedLinkError(code: string | undefined): boolean {
+  return (
+    code === 'ENOTSUP' ||
+    code === 'EOPNOTSUPP' ||
+    code === 'EXDEV' ||
+    code === 'EINVAL' ||
+    code === 'ENOSYS'
+  );
 }
 
 export function computeContentRevision(content: string | Buffer): string {

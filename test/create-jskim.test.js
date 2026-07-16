@@ -9,6 +9,9 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const fse = require('fs-extra');
 const { REPO_ROOT } = require('./helpers/create-test-workspace');
+const {
+  assertTextEqual,
+} = require('./helpers/assert-text-equal');
 
 const CREATE_ROOT = path.join(REPO_ROOT, 'create-jskim');
 const CREATE_BIN = path.join(CREATE_ROOT, 'bin/create-jskim.js');
@@ -268,7 +271,8 @@ describe('create-jskim', () => {
     for (const rel of rootFiles) {
       const a = await fsp.readFile(path.join(rootSample, rel), 'utf8');
       const b = await fsp.readFile(path.join(templateSample, rel), 'utf8');
-      assert.equal(a, b, `内容が一致すべき: ${rel}`);
+      // 内容一致契約（Windows autocrlf による改行差は無視）
+      assertTextEqual(a, b, `内容が一致すべき: ${rel}`);
     }
   });
 
@@ -282,7 +286,8 @@ describe('create-jskim', () => {
     for (const rel of rootFiles) {
       const a = await fsp.readFile(path.join(rootSpec, rel), 'utf8');
       const b = await fsp.readFile(path.join(templateSpec, rel), 'utf8');
-      assert.equal(a, b, `内容が一致すべき: ${rel}`);
+      // 内容一致契約（Windows autocrlf による改行差は無視）
+      assertTextEqual(a, b, `内容が一致すべき: ${rel}`);
     }
   });
 

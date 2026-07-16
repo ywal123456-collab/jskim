@@ -9,8 +9,6 @@ import {
   type WriteFileAtomicFs,
 } from '../../src/util/write-file-atomic.js';
 
-const MEMORY_COPYFILE_EXCL = 1;
-
 function createMemoryFs(initial: Record<string, Buffer> = {}) {
   const files = new Map<string, Buffer>(
     Object.entries(initial).map(([k, v]) => [k, Buffer.from(v)]),
@@ -19,6 +17,7 @@ function createMemoryFs(initial: Record<string, Buffer> = {}) {
     writeFileSync: null as null | Error,
     renameSync: [] as Array<{ fromIncludes?: string; toIncludes?: string; error: Error }>,
     unlinkSync: null as null | Error,
+    linkSync: null as null | Error,
   };
 
   const io: WriteFileAtomicFs = {
@@ -59,19 +58,22 @@ function createMemoryFs(initial: Record<string, Buffer> = {}) {
       }
       files.delete(p);
     },
-    copyFileSync: (src, dest, mode) => {
-      const buf = files.get(src);
-      if (!buf) {
-        throw new Error(`ENOENT copyFileSync from ${src}`);
+    linkSync: (existingPath, newPath) => {
+      if (failOn.linkSync) {
+        throw failOn.linkSync;
       }
-      const exclusive =
-        typeof mode === 'number' && (mode & MEMORY_COPYFILE_EXCL) !== 0;
-      if (exclusive && files.has(dest)) {
+      const buf = files.get(existingPath);
+      if (!buf) {
+        throw Object.assign(new Error(`ENOENT link from ${existingPath}`), {
+          code: 'ENOENT',
+        });
+      }
+      if (files.has(newPath)) {
         throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
       }
-      files.set(dest, Buffer.from(buf));
+      // hard link 相当: 同じ内容の別エントリを追加（unlink で TEMP 名だけ消せる）
+      files.set(newPath, Buffer.from(buf));
     },
-    constants: { COPYFILE_EXCL: MEMORY_COPYFILE_EXCL },
   };
 
   return { io, files, failOn };
@@ -248,6 +250,56 @@ describe('writeFileAtomic', () => {
     expect(files.has('/data/.demo.json.tmp')).toBe(false);
   });
 
+  it('createFileAtomic: TEMP write 失敗時は destination を作らない', () => {
+    const { io, files, failOn } = createMemoryFs();
+    failOn.writeFileSync = Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' });
+    expect(() =>
+      createFileAtomic('/data/demo.json', '{"x":1}\n', {
+        fs: io,
+        tempPath: '/data/.demo.json.tmp',
+      }),
+    ).toThrow(/ENOSPC/);
+    expect(files.has('/data/demo.json')).toBe(false);
+    expect(files.has('/data/.demo.json.tmp')).toBe(false);
+  });
+
+  it('createFileAtomic: link が EEXIST なら exists（既存内容を保持）', () => {
+    const dest = '/data/demo.json';
+    const original = '{"keep":true}\n';
+    const { io, files } = createMemoryFs({ [dest]: Buffer.from(original) });
+    const result = createFileAtomic(dest, '{"overwrite":true}\n', {
+      fs: io,
+      tempPath: '/data/.demo.json.tmp',
+    });
+    expect(result.status).toBe('exists');
+    expect(files.get(dest)?.toString('utf8')).toBe(original);
+  });
+
+  it('createFileAtomic: hard link 非対応は fail-closed（copy へ落とさない）', () => {
+    const { io, files, failOn } = createMemoryFs();
+    failOn.linkSync = Object.assign(new Error('ENOTSUP'), { code: 'ENOTSUP' });
+    expect(() =>
+      createFileAtomic('/data/demo.json', '{"x":1}\n', {
+        fs: io,
+        tempPath: '/data/.demo.json.tmp',
+      }),
+    ).toThrow(/hard link/);
+    expect(files.has('/data/demo.json')).toBe(false);
+    expect(files.has('/data/.demo.json.tmp')).toBe(false);
+  });
+
+  it('createFileAtomic: TEMP unlink 失敗でも destination 作成は成功扱い', () => {
+    const { io, files, failOn } = createMemoryFs();
+    failOn.unlinkSync = Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    const result = createFileAtomic('/data/demo.json', '{"ok":1}\n', {
+      fs: io,
+      tempPath: '/data/.demo.json.tmp',
+    });
+    expect(result.status).toBe('created');
+    expect(files.get('/data/demo.json')?.toString('utf8')).toBe('{"ok":1}\n');
+    // cleanup 失敗で TEMP 名が残ってもよい（主エラーではない）
+  });
+
   it('createFileAtomic: 実ファイルでも create-if-absent が成立する', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-create-atomic-'));
     try {
@@ -258,9 +310,34 @@ describe('writeFileAtomic', () => {
 
       const second = createFileAtomic(dest, '{"b":2}\n');
       expect(second.status).toBe('exists');
-      // 上書きされていないこと
       expect(JSON.parse(fs.readFileSync(dest, 'utf8'))).toEqual({ a: 1 });
 
+      const leftovers = fs
+        .readdirSync(root)
+        .filter((n) => n.includes('.tmp') || n.includes('.bak'));
+      expect(leftovers).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('createFileAtomic: 並列 8 生成は成功 1 / exists 7、完全 JSON、TEMP なし', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-create-race-'));
+    try {
+      const dest = path.join(root, 'race.json');
+      const results = await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          Promise.resolve(
+            createFileAtomic(dest, `{"n":${i}}\n`),
+          ),
+        ),
+      );
+      const created = results.filter((r) => r.status === 'created');
+      const exists = results.filter((r) => r.status === 'exists');
+      expect(created).toHaveLength(1);
+      expect(exists).toHaveLength(7);
+      const parsed = JSON.parse(fs.readFileSync(dest, 'utf8'));
+      expect(typeof parsed.n).toBe('number');
       const leftovers = fs
         .readdirSync(root)
         .filter((n) => n.includes('.tmp') || n.includes('.bak'));

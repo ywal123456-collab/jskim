@@ -117,11 +117,12 @@ status = 'implementation-only'  … Source(+snapshot) のみ
 Vue Viewer（「＋ 画面を作成」）
   → same-origin POST /_jskim/spec/descriptions（screenId 無し）
   → FileDescriptionStore.create()
-  → createFileAtomic（同時作成の重複 / path traversal を検証し、原子的に新規ファイルを書く）
+  → createFileAtomic（同一 dir の TEMP に全文を書いてから hard link で no-replace 公開。同時作成は 1 件だけ成功し、既存は上書きしない）
   → spec/{project}/src/data/{screenId}.json（新規）
   → 既存 Description build-only watcher → viewer build + reload(target=spec)
 ```
 
+- `createFileAtomic` は `COPYFILE_EXCL` による非原子的コピーを使わない。hard link 非対応のファイルシステムでは copy fallback せずエラーにする
 - 新規作成は `POST`（`GET/PUT` は既存 `screenId` に対する読み書き専用のまま）
 - 同じ `screenId` で 2 回目の `POST` は `409 SPEC_DESCRIPTION_ALREADY_EXISTS`
 - 作成直後の画面は `design-only` かつ `hasPreview: false`。Viewer は Preview 領域に No Preview を表示し、`states` が無いため State selector も表示しない

@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fse = require('fs-extra');
 const { REPO_ROOT } = require('./helpers/create-test-workspace');
+const { assertTextEqual } = require('./helpers/assert-text-equal');
 const { buildProject } = require('../scripts/lib/build-project');
 const {
   stripScreenSpecAttributes,
@@ -263,6 +264,7 @@ async function assertDirectoryMirror(aRoot, bRoot) {
   for (const rel of aFiles) {
     const a = await fsp.readFile(path.join(aRoot, rel), 'utf8');
     const b = await fsp.readFile(path.join(bRoot, rel), 'utf8');
-    assert.equal(a, b, `内容が一致すべき: ${rel}`);
+    // 内容一致契約（Windows autocrlf による改行差は無視）
+    assertTextEqual(a, b, `内容が一致すべき: ${rel}`);
   }
 }
