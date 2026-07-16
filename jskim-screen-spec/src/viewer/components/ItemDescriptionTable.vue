@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import type { ScreenData, ScreenInteraction } from '../types';
 
@@ -10,6 +11,8 @@ const props = defineProps<{
     string,
     { name: string; type: string; description: string; note: string }
   > | null;
+  /** 編集中は draft の itemOrder を渡す。未指定時は screen.itemOrder を使う */
+  itemOrder?: string[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -20,9 +23,13 @@ const emit = defineEmits<{
     field: 'name' | 'type' | 'description' | 'note',
     value: string,
   ];
+  'move-up': [itemId: string];
+  'move-down': [itemId: string];
 }>();
 
 const router = useRouter();
+
+const displayItemOrder = computed(() => props.itemOrder ?? props.screen.itemOrder);
 
 const UNREGISTERED_LABEL = '画面設計書未登録';
 
@@ -81,7 +88,7 @@ function itemField(
       </thead>
       <tbody>
         <tr
-          v-for="(itemId, index) in screen.itemOrder"
+          v-for="(itemId, index) in displayItemOrder"
           :id="`item-row-${itemId}`"
           :key="itemId"
           :class="{ 'is-selected': selectedItemId === itemId }"
@@ -161,6 +168,28 @@ function itemField(
           </td>
           <td>
             <div class="item-table__actions">
+              <template v-if="editable">
+                <button
+                  type="button"
+                  class="item-table__reorder-btn"
+                  aria-label="上へ"
+                  title="上へ"
+                  :disabled="index === 0"
+                  @click.stop="emit('move-up', itemId)"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="item-table__reorder-btn"
+                  aria-label="下へ"
+                  title="下へ"
+                  :disabled="index === displayItemOrder.length - 1"
+                  @click.stop="emit('move-down', itemId)"
+                >
+                  ↓
+                </button>
+              </template>
               <button
                 v-for="(interaction, iIndex) in interactionsFor(itemId)"
                 :key="`${itemId}-${iIndex}`"

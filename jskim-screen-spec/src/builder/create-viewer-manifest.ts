@@ -5,7 +5,11 @@ import type {
   LoadedStyleRef,
   ScreenSpecStatus,
 } from './load-screen-spec-project.js';
-import { computeItemOrder, extractItemIdsInDomOrder } from './item-order.js';
+import {
+  computeItemOrder,
+  computeEffectiveItemOrder,
+  extractItemIdsInDomOrder,
+} from './item-order.js';
 import { sanitizeSnapshot } from './sanitize-snapshot.js';
 import {
   rewriteResourceTokens,
@@ -329,21 +333,34 @@ export function createViewerManifest(options: {
 
     if (screen.status === 'design-only') {
       items = itemsFromDescriptionSpec(screen.description);
-      itemOrder = Object.keys(items);
+      itemOrder = computeEffectiveItemOrder({
+        items,
+        itemOrder: screen.description?.itemOrder,
+        collectedOrder: null,
+      });
       description = screen.description?.screen.description ?? '';
     } else {
       screenPath = screen.source?.screen.path ?? '';
       const built = buildStatesAndOrder(screen, base, knownIds);
       viewerStates = built.viewerStates;
       snapshotFiles.push(...built.snapshotFiles);
-      itemOrder = built.itemOrder;
       interactions = buildInteractions(screen, registeredScreenIds);
 
       if (screen.status === 'implementation-only') {
         items = placeholderItemsFromSnapshots(screen.snapshots);
+        itemOrder = computeEffectiveItemOrder({
+          items,
+          itemOrder: null,
+          collectedOrder: built.itemOrder,
+        });
         description = '';
       } else {
         items = itemsFromDescriptionSpec(screen.description);
+        itemOrder = computeEffectiveItemOrder({
+          items,
+          itemOrder: screen.description?.itemOrder,
+          collectedOrder: built.itemOrder,
+        });
         description = screen.description?.screen.description ?? '';
       }
     }

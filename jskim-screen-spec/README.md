@@ -88,7 +88,7 @@ Vue Viewer
 - 画面: `name` / `description`
 - 項目: `name` / `type` / `description` / `note`
 
-読み取り専用: `screenId` / `itemId`
+読み取り専用: `screenId`。`itemId` は既存の変更・削除は拒否されるが、新規追加は許可される（phase 7B-2A、後述）
 
 境界:
 
@@ -127,7 +127,24 @@ Vue Viewer（「＋ 画面を作成」）
 - 同じ `screenId` で 2 回目の `POST` は `409 SPEC_DESCRIPTION_ALREADY_EXISTS`
 - 作成直後の画面は `design-only` かつ `hasPreview: false`。Viewer は Preview 領域に No Preview を表示し、`states` が無いため State selector も表示しない
 - 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
-- item（項目）の新規作成、画面の rename / archive は本 phase の対象外（未実装）
+- 画面の rename / archive は本 phase の対象外（未実装）
+
+### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）
+
+Description Schema に `itemOrder: string[]` を追加した `1.1` を導入しました（`docs/screen-spec/schema/description-spec.v1.1.schema.json`）。`1.0` schema は変更していません。
+
+```text
+Vue Viewer（「＋ 項目を追加」→ 項目 ID / 項目名 / 種類 / 説明 / 備考）
+  → draft の items / itemOrder を更新（ローカルのみ・未保存）
+  → 保存時に same-origin PUT /_jskim/spec/descriptions/:screenId
+  → FileDescriptionStore.write()（schemaVersion "1.1" + itemOrder で書き出し）
+```
+
+- 読込は `1.0` / `1.1` の両方に対応（lazy migration。保存操作が起きるまで既存 `1.0` ファイルを書き換えない）
+- 新規作成（POST）は `schemaVersion "1.1"` + `itemOrder: []`
+- PUT の item ID 集合検証: 既存 item ID の**変更・削除は拒否**、**新規追加のみ許可**（`oldIds ⊆ newIds`）。`itemOrder` は `items` のキー集合と完全一致（bijection）が必須
+- Viewer では `ItemDescriptionTable` の上下ボタンで並び替え。**削除・複製・drag-drop 並び替えは未実装**
+- `jskim spec collect` は人が並べた `itemOrder` を維持し、新規に見つかった ID を DOM 出現順で末尾に追加する（item の追加・削除が無い場合は `1.0` のまま維持）
 
 ### `jskim spec dev` の監視
 

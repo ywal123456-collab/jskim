@@ -73,7 +73,10 @@ const screen: ScreenData = {
   ],
 };
 
-async function mountTable(selectedItemId: string | null = null) {
+async function mountTable(
+  selectedItemId: string | null = null,
+  extraProps: Record<string, unknown> = {},
+) {
   const router = createRouter({
     history: createMemoryHistory('/spec/'),
     routes: [
@@ -89,7 +92,7 @@ async function mountTable(selectedItemId: string | null = null) {
   await router.isReady();
 
   const wrapper = mount(ItemDescriptionTable, {
-    props: { screen, selectedItemId },
+    props: { screen, selectedItemId, ...extraProps },
     global: { plugins: [router] },
   });
   return { wrapper, router };
@@ -138,5 +141,44 @@ describe('ItemDescriptionTable', () => {
     await navBtn!.trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/screens/crud-index');
+  });
+
+  it('editable=false のときは上下ボタンを表示しない', async () => {
+    const { wrapper } = await mountTable();
+    expect(wrapper.find('.item-table__reorder-btn').exists()).toBe(false);
+  });
+
+  it('editable=true のとき先頭行は上ボタンが disabled、末尾行は下ボタンが disabled', async () => {
+    const { wrapper } = await mountTable(null, { editable: true });
+    const rows = wrapper.findAll('tbody tr');
+    const firstUpBtn = rows[0].find('[aria-label="上へ"]');
+    const firstDownBtn = rows[0].find('[aria-label="下へ"]');
+    expect(firstUpBtn.attributes('disabled')).toBeDefined();
+    expect(firstDownBtn.attributes('disabled')).toBeUndefined();
+
+    const lastRow = rows[rows.length - 1];
+    const lastUpBtn = lastRow.find('[aria-label="上へ"]');
+    const lastDownBtn = lastRow.find('[aria-label="下へ"]');
+    expect(lastUpBtn.attributes('disabled')).toBeUndefined();
+    expect(lastDownBtn.attributes('disabled')).toBeDefined();
+  });
+
+  it('上/下ボタンのクリックで move-up / move-down を emit する', async () => {
+    const { wrapper } = await mountTable(null, { editable: true });
+    const rows = wrapper.findAll('tbody tr');
+    await rows[1].find('[aria-label="上へ"]').trigger('click');
+    expect(wrapper.emitted('move-up')![0]).toEqual(['save']);
+
+    await rows[1].find('[aria-label="下へ"]').trigger('click');
+    expect(wrapper.emitted('move-down')![0]).toEqual(['save']);
+  });
+
+  it('itemOrder prop を渡すと screen.itemOrder より優先して表示する', async () => {
+    const { wrapper } = await mountTable(null, {
+      itemOrder: ['save', 'title', 'goto-list', 'open-help'],
+    });
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows[0].findAll('td')[1].text()).toContain('save');
+    expect(rows[1].findAll('td')[1].text()).toContain('title');
   });
 });

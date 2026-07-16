@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  computeEffectiveItemOrder,
   computeItemOrder,
   extractItemIdsInDomOrder,
+  mergeItemOrder,
 } from '../src/builder/item-order.js';
 
 const fixtureRoot = path.join(
@@ -65,5 +67,72 @@ describe('item 順序', () => {
       },
     ]);
     expect(order).toEqual(['visible-item']);
+  });
+});
+
+describe('computeEffectiveItemOrder（1.0 互換 / 1.1 表示用の実効順序）', () => {
+  it('itemOrder が items と完全一致する場合はそのまま使う', () => {
+    const order = computeEffectiveItemOrder({
+      items: { a: {}, b: {} },
+      itemOrder: ['b', 'a'],
+      collectedOrder: null,
+    });
+    expect(order).toEqual(['b', 'a']);
+  });
+
+  it('itemOrder が無い場合（1.0）は collectedOrder（DOM 順）→ 残りを items 挿入順で補う', () => {
+    const order = computeEffectiveItemOrder({
+      items: { a: {}, b: {}, c: {} },
+      itemOrder: null,
+      collectedOrder: ['b', 'z'],
+    });
+    expect(order).toEqual(['b', 'a', 'c']);
+  });
+
+  it('itemOrder も collectedOrder も無い場合は items の挿入順を使う', () => {
+    const order = computeEffectiveItemOrder({
+      items: { a: {}, b: {} },
+      itemOrder: null,
+      collectedOrder: null,
+    });
+    expect(order).toEqual(['a', 'b']);
+  });
+
+  it('itemOrder が壊れている（不足・余剰）場合は有効な ID のみ残し残りを items 順で補う', () => {
+    const order = computeEffectiveItemOrder({
+      items: { a: {}, b: {}, c: {} },
+      itemOrder: ['c', 'ghost'],
+      collectedOrder: null,
+    });
+    expect(order).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('mergeItemOrder（Collector: 人の並びを維持し新規は末尾に追加）', () => {
+  it('既存 itemOrder を維持し、新規 found ID を末尾に追加する', () => {
+    const order = mergeItemOrder({
+      existingOrder: ['b', 'a'],
+      existingItemIds: ['a', 'b'],
+      foundItemIds: ['a', 'b', 'c'],
+    });
+    expect(order).toEqual(['b', 'a', 'c']);
+  });
+
+  it('orphan（found に無い既存 ID）も削除せず順序を維持する', () => {
+    const order = mergeItemOrder({
+      existingOrder: ['a', 'orphan', 'b'],
+      existingItemIds: ['a', 'orphan', 'b'],
+      foundItemIds: ['a', 'b'],
+    });
+    expect(order).toEqual(['a', 'orphan', 'b']);
+  });
+
+  it('existingOrder が無い場合は existingItemIds の順序を基準にする', () => {
+    const order = mergeItemOrder({
+      existingOrder: null,
+      existingItemIds: ['a', 'b'],
+      foundItemIds: ['a', 'b', 'c'],
+    });
+    expect(order).toEqual(['a', 'b', 'c']);
   });
 });

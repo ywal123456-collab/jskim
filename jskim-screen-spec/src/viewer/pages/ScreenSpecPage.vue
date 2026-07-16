@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch, type ComputedRef } from 'vue';
+import { computed, inject, nextTick, ref, watch, type ComputedRef } from 'vue';
 import DomPreview, {
   type PreviewStylesheet,
 } from '../components/DomPreview.vue';
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
+import CreateItemDialog from '../components/CreateItemDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import {
   SCREEN_SPEC_STATUS_LABEL,
@@ -29,6 +30,7 @@ const snapshotHtml = ref('');
 const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
+const createItemDialogOpen = ref(false);
 
 const editor = useDescriptionEditor(() => props.screenId);
 
@@ -56,6 +58,13 @@ const displayName = computed(() => {
     return editor.draftDocument.value.screen.name || screen.value?.name || '';
   }
   return screen.value?.name || '';
+});
+
+const displayItemOrder = computed(() => {
+  if (editor.editingEnabled && editor.draftDocument.value) {
+    return editor.draftDocument.value.itemOrder;
+  }
+  return screen.value?.itemOrder ?? [];
 });
 
 const statusLabel = computed(() => {
@@ -195,6 +204,30 @@ function onSelectItem(itemId: string): void {
   }
 }
 
+function openCreateItem(): void {
+  createItemDialogOpen.value = true;
+}
+
+function closeCreateItem(): void {
+  createItemDialogOpen.value = false;
+}
+
+function onCreateItem(payload: {
+  itemId: string;
+  name: string;
+  type: string;
+  description: string;
+  note: string;
+}): void {
+  const added = editor.addItem(payload);
+  if (!added) {
+    return;
+  }
+  void nextTick(() => {
+    onSelectItem(payload.itemId);
+  });
+}
+
 function copyDraftJson(): void {
   if (!editor.draftDocument.value) {
     return;
@@ -314,7 +347,7 @@ watch(
         <DomPreview
           v-if="showPreview"
           :html="snapshotHtml"
-          :item-order="screen.itemOrder"
+          :item-order="displayItemOrder"
           :selected-item-id="selectedItemId"
           :stylesheets="stylesheets"
           :preview-css="previewCss"
@@ -366,20 +399,44 @@ watch(
         </section>
 
         <section id="section-items" class="spec-page__table" aria-label="項目定義">
-          <h2 class="spec-page__section-title">項目定義</h2>
+          <div class="spec-page__section-header">
+            <h2 class="spec-page__section-title">項目定義</h2>
+            <button
+              v-if="editor.editingEnabled"
+              type="button"
+              class="spec-page__btn spec-page__btn--secondary"
+              @click="openCreateItem"
+            >
+              ＋ 項目を追加
+            </button>
+          </div>
           <ItemDescriptionTable
             :screen="screen"
             :selected-item-id="selectedItemId"
             :editable="editor.editingEnabled"
             :draft-items="editor.draftDocument.value?.items || null"
+            :item-order="editor.editingEnabled ? displayItemOrder : null"
             @select="onSelectItem"
             @change-state="onSelectState"
             @update-item="
               (itemId, field, value) => editor.updateItemField(itemId, field, value)
             "
+            @move-up="editor.moveItemUp"
+            @move-down="editor.moveItemDown"
           />
         </section>
       </div>
     </div>
+
+    <CreateItemDialog
+      v-if="createItemDialogOpen"
+      :existing-item-ids="
+        editor.draftDocument.value
+          ? Object.keys(editor.draftDocument.value.items)
+          : []
+      "
+      @close="closeCreateItem"
+      @create="onCreateItem"
+    />
   </div>
 </template>

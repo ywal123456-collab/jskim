@@ -285,6 +285,24 @@ body,
   background: #e5e7eb;
 }
 
+.item-table__reorder-btn {
+  width: 1.75rem;
+  padding: 0.2rem 0;
+  border: 1px solid var(--spec-border);
+  border-radius: 0.25rem;
+  background: var(--spec-surface);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.item-table__reorder-btn:disabled {
+  cursor: not-allowed;
+  color: #6b7280;
+  background: #e5e7eb;
+}
+
 .spec-page--error {
   color: #b91c1c;
 }
@@ -517,6 +535,17 @@ body,
 .spec-page__section-title {
   margin: 0 0 0.75rem;
   font-size: 1.05rem;
+}
+
+.spec-page__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.spec-page__section-header .spec-page__section-title {
+  margin: 0;
 }
 
 .spec-page__basic {

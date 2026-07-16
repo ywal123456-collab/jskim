@@ -26,6 +26,7 @@ describe('Description editing store', () => {
         note: '',
       },
     };
+    doc.itemOrder = ['product-name'];
     expect(
       validateEditableDescriptionDocument({
         screenId: 'crud-create',
@@ -46,7 +47,7 @@ describe('Description editing store', () => {
     expect(err?.code).toBe('SPEC_DESCRIPTION_INVALID');
   });
 
-  it('既存 item ID の変更を拒否する', () => {
+  it('既存 item ID の変更・削除を拒否する', () => {
     const existing = {
       schemaVersion: '1.0',
       screen: { id: 'crud-create', name: 'A', description: '' },
@@ -58,12 +59,61 @@ describe('Description editing store', () => {
     doc.items = {
       b: { name: 'B', type: '', description: '', note: '' },
     };
+    doc.itemOrder = ['b'];
     const err = validateEditableDescriptionDocument({
       screenId: 'crud-create',
       document: doc,
       existing,
     });
-    expect(err?.message).toMatch(/item ID/);
+    expect(err?.message).toBe('既存の項目IDは変更または削除できません。');
+  });
+
+  it('既存 item ID を維持したまま新規 item ID の追加は許可する（PUT: oldIds ⊆ newIds）', () => {
+    const existing = {
+      schemaVersion: '1.1',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a'],
+      items: {
+        a: { name: 'A', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    doc.items.b = { name: '', type: '', description: '', note: '' };
+    doc.itemOrder = [...doc.itemOrder, 'b'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+    });
+    expect(err).toBeNull();
+  });
+
+  it('itemOrder が items のキー集合と一致しない場合は拒否する', () => {
+    const doc = createEmptyEditableDocument('crud-create');
+    doc.items = {
+      a: { name: '', type: '', description: '', note: '' },
+    };
+    doc.itemOrder = ['a', 'b'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing: null,
+    });
+    expect(err?.message).toMatch(/itemOrder/);
+  });
+
+  it('schemaVersion が 1.1 以外の場合は拒否する', () => {
+    const doc = createEmptyEditableDocument('crud-create') as Record<
+      string,
+      unknown
+    >;
+    doc.schemaVersion = '1.0';
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing: null,
+    });
+    expect(err?.message).toMatch(/schemaVersion/);
   });
 
   it('revision が内容に応じて変わる', () => {
@@ -101,12 +151,22 @@ describe('Description editing store', () => {
       const read1 = store.read('demo');
       expect(read1.exists).toBe(true);
 
+      // 元ファイルは 1.0（itemOrder 無し）。GET は 1.1 に正規化して返す（lazy migration）
+      expect(read1.document.schemaVersion).toBe('1.1');
+      expect(read1.document.itemOrder).toEqual(['title']);
+
       const next = structuredClone(read1.document);
       next.screen.description = '更新';
       const written = store.write('demo', next, read1.revision);
       expect(written.saved).toBe(true);
       expect(written.written).toBe(true);
       expect(written.revision).not.toBe(read1.revision);
+
+      // 保存時に実ファイルも 1.1 へ upgrade される
+      const savedRaw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      expect(savedRaw.schemaVersion).toBe('1.1');
+      expect(savedRaw.itemOrder).toEqual(['title']);
+      expect(savedRaw.$schema).toMatch(/v1\.1\.schema\.json$/);
 
       expect(() =>
         store.write('demo', next, read1.revision),
@@ -166,12 +226,16 @@ describe('Description editing store', () => {
         );
         const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         expect(saved.$schema).toMatch(/^https:\/\//);
-        expect(saved.schemaVersion).toBe('1.0');
+        expect(saved.$schema).toMatch(/v1\.1\.schema\.json$/);
+        expect(saved.schemaVersion).toBe('1.1');
+        expect(saved.itemOrder).toEqual([]);
         expect(saved.screen).toEqual({
           id: 'brand-new',
           name: '新規画面',
           description: '説明',
         });
+        expect(result.document.schemaVersion).toBe('1.1');
+        expect(result.document.itemOrder).toEqual([]);
         expect(result.revision).toBe(
           computeContentRevision(fs.readFileSync(filePath)),
         );
@@ -220,6 +284,7 @@ describe('Description editing store', () => {
         expect(result.document.items).toEqual({
           submit: { name: '', type: '', description: '', note: '' },
         });
+        expect(result.document.itemOrder).toEqual(['submit']);
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
@@ -299,6 +364,8 @@ describe('Description editing store', () => {
           title: { name: '', type: '', description: '', note: '' },
           submit: { name: '', type: '', description: '', note: '' },
         });
+        expect(result.document.itemOrder).toEqual(['title', 'submit']);
+        expect(result.document.schemaVersion).toBe('1.1');
         expect(result.revision).not.toBe(
           computeEmptyDescriptionRevision('impl-only'),
         );
@@ -341,7 +408,7 @@ describe('Description editing store', () => {
       }
     });
 
-    it('初回 PUT で item ID 集合が collected と不一致なら 400', () => {
+    it('初回 PUT で collected item ID に加えて手動追加した項目も許可する（追加は許可）', () => {
       const { root, store } = setupImplOnlyWorkspace(['title']);
       try {
         const before = store.read('impl-only');
@@ -352,6 +419,28 @@ describe('Description editing store', () => {
           description: '',
           note: '',
         };
+        next.itemOrder = [...next.itemOrder, 'extra-item'];
+
+        const written = store.write('impl-only', next, before.revision);
+        expect(written.saved).toBe(true);
+
+        const after = store.read('impl-only');
+        expect(after.document.items['extra-item']).toBeDefined();
+        expect(after.document.itemOrder).toEqual(['title', 'extra-item']);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('初回 PUT で collected item ID を削除すると 400（削除は拒否）', () => {
+      const { root, store } = setupImplOnlyWorkspace(['title', 'submit']);
+      try {
+        const before = store.read('impl-only');
+        const next = structuredClone(before.document);
+        delete next.items.submit;
+        next.itemOrder = next.itemOrder.filter(
+          (id: string) => id !== 'submit',
+        );
 
         expect(() => store.write('impl-only', next, before.revision)).toThrowError(
           /項目 ID/,

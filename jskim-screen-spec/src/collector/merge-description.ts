@@ -1,4 +1,5 @@
 import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
+import { mergeItemOrder } from '../builder/item-order.js';
 
 export type MergeDescriptionResult = {
   description: DescriptionSpec;
@@ -10,6 +11,11 @@ export type MergeDescriptionResult = {
 /**
  * 収集した item ID を Description JSON へ merge する。
  * 既存テキストは保持し、orphan は削除しない。
+ *
+ * schemaVersion の扱い（lazy migration）:
+ * - 新規作成時は 1.1（itemOrder は DOM 出現順）
+ * - 既存が 1.1、または今回 item が追加された場合のみ 1.1 へ upgrade（itemOrder を人の並びを維持して再計算）
+ * - 既存が 1.0 のままで内容変更が無い場合は 1.0 のまま維持する（不要な書き込みを避ける）
  */
 export function mergeDescription(options: {
   existing: DescriptionSpec | null;
@@ -28,14 +34,20 @@ export function mergeDescription(options: {
         note: '',
       };
     }
+    const itemOrder = mergeItemOrder({
+      existingOrder: null,
+      existingItemIds: [],
+      foundItemIds,
+    });
     return {
       description: {
-        schemaVersion: '1.0',
+        schemaVersion: '1.1',
         screen: {
           id: screenId,
           name: '',
           description: '',
         },
+        itemOrder,
         items,
       },
       addedItemIds: [...foundItemIds],
@@ -45,13 +57,14 @@ export function mergeDescription(options: {
   }
 
   const items: DescriptionSpec['items'] = { ...existing.items };
-  const existingIds = new Set(Object.keys(existing.items));
+  const existingIds = Object.keys(existing.items || {});
+  const existingIdSet = new Set(existingIds);
   const foundSet = new Set(foundItemIds);
   const addedItemIds: string[] = [];
   const orphanItemIds: string[] = [];
 
   for (const id of foundItemIds) {
-    if (!existingIds.has(id)) {
+    if (!existingIdSet.has(id)) {
       items[id] = {
         name: '',
         type: '',
@@ -68,16 +81,31 @@ export function mergeDescription(options: {
     }
   }
 
-  return {
-    description: {
-      ...existing,
-      schemaVersion: existing.schemaVersion || '1.0',
-      screen: {
-        ...existing.screen,
-        id: existing.screen?.id || screenId,
-      },
-      items,
+  const needsV11Upgrade =
+    existing.schemaVersion === '1.1' || addedItemIds.length > 0;
+
+  const description: DescriptionSpec = {
+    ...existing,
+    schemaVersion: needsV11Upgrade ? '1.1' : existing.schemaVersion || '1.0',
+    screen: {
+      ...existing.screen,
+      id: existing.screen?.id || screenId,
     },
+    items,
+  };
+
+  if (needsV11Upgrade) {
+    description.itemOrder = mergeItemOrder({
+      existingOrder: existing.itemOrder,
+      existingItemIds: existingIds,
+      foundItemIds,
+    });
+  } else {
+    delete description.itemOrder;
+  }
+
+  return {
+    description,
     addedItemIds,
     orphanItemIds,
     created: false,

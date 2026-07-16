@@ -302,7 +302,8 @@ describe('design-first: 0 画面プロジェクトの build と POST create', ()
         await fsp.readFile(path.join(dataDir, 'race-screen.json'), 'utf8')
       );
       assert.equal(saved.screen.id, 'race-screen');
-      assert.equal(saved.schemaVersion, '1.0');
+      assert.equal(saved.schemaVersion, '1.1');
+      assert.deepEqual(saved.itemOrder, []);
       assert.ok(!files.some((name) => name.includes('.tmp') || name.includes('.bak')));
 
       const loaded = companion.loadScreenSpecProject({

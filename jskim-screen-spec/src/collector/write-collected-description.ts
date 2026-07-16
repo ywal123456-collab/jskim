@@ -6,6 +6,10 @@ import {
   writeFileAtomic,
 } from '../util/write-file-atomic.js';
 import { mergeDescription } from './merge-description.js';
+import {
+  DESCRIPTION_SCHEMA_V1_1_URI,
+  upgradeSchemaUriToV11,
+} from '../util/description-schema-uri.js';
 
 export const DESCRIPTION_WRITE_MAX_RETRIES = 3;
 
@@ -131,16 +135,23 @@ function formatCollectedDescription(
   description: DescriptionSpec,
   schemaUri: string | undefined,
 ): string {
+  const isV11 = description.schemaVersion === '1.1';
   const ordered: Record<string, unknown> = {};
   const fromDoc = (description as DescriptionSpec & { $schema?: string })
     .$schema;
+
   if (schemaUri) {
-    ordered.$schema = schemaUri;
+    ordered.$schema = isV11 ? upgradeSchemaUriToV11(schemaUri) : schemaUri;
   } else if (typeof fromDoc === 'string') {
-    ordered.$schema = fromDoc;
+    ordered.$schema = isV11 ? upgradeSchemaUriToV11(fromDoc) : fromDoc;
+  } else if (isV11) {
+    ordered.$schema = DESCRIPTION_SCHEMA_V1_1_URI;
   }
   ordered.schemaVersion = description.schemaVersion || '1.0';
   ordered.screen = description.screen;
+  if (isV11) {
+    ordered.itemOrder = description.itemOrder || [];
+  }
   ordered.items = description.items;
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }

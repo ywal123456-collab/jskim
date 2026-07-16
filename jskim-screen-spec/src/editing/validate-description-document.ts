@@ -1,9 +1,11 @@
 import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
+import { computeEffectiveItemOrder } from '../builder/item-order.js';
 import {
   SCREEN_ID_RE,
   MAX_SCREEN_ID_LENGTH,
   isValidScreenId,
   isReservedScreenId,
+  isValidItemId,
 } from '../util/screen-id.js';
 
 export {
@@ -11,10 +13,12 @@ export {
   MAX_SCREEN_ID_LENGTH,
   isValidScreenId,
   isReservedScreenId,
+  isValidItemId,
 };
 
 export const MAX_NAME_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 10000;
+export const MAX_ITEM_ORDER_LENGTH = 500;
 
 export type EditableDescriptionDocument = {
   schemaVersion: string;
@@ -23,6 +27,7 @@ export type EditableDescriptionDocument = {
     name: string;
     description: string;
   };
+  itemOrder: string[];
   items: Record<
     string,
     {
@@ -40,16 +45,16 @@ export type DescriptionValidationError = {
 };
 
 /**
- * Viewer 編集用 document を検証する。
- * 既存ファイルがある場合は item ID 集合の変更を拒否する。
+ * Viewer 編集用 document を検証する（常に schemaVersion "1.1" として保存する）。
+ * 既存ファイルがある場合は既存 item ID の変更・削除を拒否する（追加は許可: oldIds ⊆ newIds）。
  * 既存ファイルが無い場合、`requiredItemIds` が指定されていれば
- * その集合と完全一致することを要求する（IMPLEMENTATION_ONLY 初回保存用）。
+ * その集合が新しい item ID 集合に含まれることを要求する（IMPLEMENTATION_ONLY 初回保存用、追加は許可）。
  */
 export function validateEditableDescriptionDocument(options: {
   screenId: string;
   document: unknown;
   existing: DescriptionSpec | null;
-  /** existing が null の場合のみ参照する item ID の必須集合 */
+  /** existing が null の場合のみ参照する item ID の必須部分集合 */
   requiredItemIds?: string[] | null;
 }): DescriptionValidationError | null {
   const { screenId, document, existing, requiredItemIds } = options;
@@ -62,7 +67,13 @@ export function validateEditableDescriptionDocument(options: {
   }
 
   const doc = document as Record<string, unknown>;
-  const allowedTop = new Set(['schemaVersion', 'screen', 'items', '$schema']);
+  const allowedTop = new Set([
+    'schemaVersion',
+    'screen',
+    'itemOrder',
+    'items',
+    '$schema',
+  ]);
   for (const key of Object.keys(doc)) {
     if (!allowedTop.has(key)) {
       return {
@@ -72,10 +83,10 @@ export function validateEditableDescriptionDocument(options: {
     }
   }
 
-  if (doc.schemaVersion !== '1.0') {
+  if (doc.schemaVersion !== '1.1') {
     return {
       code: 'SPEC_DESCRIPTION_INVALID',
-      message: 'schemaVersion は "1.0" である必要があります。',
+      message: 'schemaVersion は "1.1" である必要があります。',
     };
   }
 
@@ -147,8 +158,8 @@ export function validateEditableDescriptionDocument(options: {
 
   const items = doc.items as Record<string, unknown>;
   const itemIds = Object.keys(items);
-  const unique = new Set(itemIds);
-  if (unique.size !== itemIds.length) {
+  const uniqueItemIds = new Set(itemIds);
+  if (uniqueItemIds.size !== itemIds.length) {
     return {
       code: 'SPEC_DESCRIPTION_INVALID',
       message: 'item ID が重複しています。',
@@ -156,7 +167,7 @@ export function validateEditableDescriptionDocument(options: {
   }
 
   for (const itemId of itemIds) {
-    if (!SCREEN_ID_RE.test(itemId)) {
+    if (!isValidItemId(itemId)) {
       return {
         code: 'SPEC_DESCRIPTION_INVALID',
         message: `item ID の形式が不正です: ${itemId}`,
@@ -193,30 +204,67 @@ export function validateEditableDescriptionDocument(options: {
     }
   }
 
-  if (existing) {
-    const existingIds = Object.keys(existing.items || {}).sort();
-    const nextIds = [...itemIds].sort();
-    if (
-      existingIds.length !== nextIds.length ||
-      existingIds.some((id, i) => id !== nextIds[i])
-    ) {
+  if (!Array.isArray(doc.itemOrder)) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: 'itemOrder は配列である必要があります。',
+    };
+  }
+
+  const itemOrder = doc.itemOrder as unknown[];
+  if (itemOrder.length > MAX_ITEM_ORDER_LENGTH) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `itemOrder は${MAX_ITEM_ORDER_LENGTH}件以内である必要があります。`,
+    };
+  }
+
+  for (const entry of itemOrder) {
+    if (typeof entry !== 'string' || !isValidItemId(entry)) {
       return {
         code: 'SPEC_DESCRIPTION_INVALID',
-        message:
-          'item ID の追加・削除・変更はできません。既存の項目 ID を維持してください。',
+        message: 'itemOrder に不正な item ID が含まれています。',
+      };
+    }
+  }
+
+  const itemOrderStrings = itemOrder as string[];
+  const itemOrderSet = new Set(itemOrderStrings);
+  if (itemOrderSet.size !== itemOrderStrings.length) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: 'itemOrder に重複する item ID が含まれています。',
+    };
+  }
+
+  if (
+    itemOrderSet.size !== uniqueItemIds.size ||
+    itemIds.some((id) => !itemOrderSet.has(id))
+  ) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: 'itemOrder は items のキー集合と完全に一致する必要があります。',
+    };
+  }
+
+  if (existing) {
+    const existingIds = Object.keys(existing.items || {});
+    const nextIdSet = uniqueItemIds;
+    const removedOrRenamed = existingIds.some((id) => !nextIdSet.has(id));
+    if (removedOrRenamed) {
+      return {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: '既存の項目IDは変更または削除できません。',
       };
     }
   } else if (requiredItemIds != null) {
-    const requiredSorted = [...requiredItemIds].sort();
-    const nextSorted = [...itemIds].sort();
-    if (
-      requiredSorted.length !== nextSorted.length ||
-      requiredSorted.some((id, i) => id !== nextSorted[i])
-    ) {
+    const nextIdSet = uniqueItemIds;
+    const missing = requiredItemIds.some((id) => !nextIdSet.has(id));
+    if (missing) {
       return {
         code: 'SPEC_DESCRIPTION_INVALID',
         message:
-          '実装側から検出された項目 ID の集合と一致しません。項目 ID の追加・削除はできません。',
+          '実装側から検出された項目 ID を削除することはできません。',
       };
     }
   }
@@ -227,6 +275,7 @@ export function validateEditableDescriptionDocument(options: {
 export function toEditableDocument(
   description: DescriptionSpec,
   fallbackScreenId = '',
+  collectedOrder?: string[] | null,
 ): EditableDescriptionDocument {
   const items: EditableDescriptionDocument['items'] = {};
   for (const [id, item] of Object.entries(description.items || {})) {
@@ -242,13 +291,19 @@ export function toEditableDocument(
     name: '',
     description: '',
   };
+  const itemOrder = computeEffectiveItemOrder({
+    items,
+    itemOrder: description.itemOrder,
+    collectedOrder,
+  });
   return {
-    schemaVersion: description.schemaVersion || '1.0',
+    schemaVersion: '1.1',
     screen: {
       id: screen.id || fallbackScreenId,
       name: screen.name ?? '',
       description: screen.description ?? '',
     },
+    itemOrder,
     items,
   };
 }
@@ -257,19 +312,21 @@ export function createEmptyEditableDocument(
   screenId: string,
 ): EditableDescriptionDocument {
   return {
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     screen: {
       id: screenId,
       name: '',
       description: '',
     },
+    itemOrder: [],
     items: {},
   };
 }
 
 /**
  * IMPLEMENTATION_ONLY の初回 GET/PUT 用ドラフト document。
- * snapshot から集めた item ID を空欄 placeholder として seed する。
+ * snapshot から集めた item ID を空欄 placeholder として seed する
+ * （itemOrder は DOM 出現順のまま維持する）。
  */
 export function buildImplementationDraftDocument(
   screenId: string,
@@ -280,12 +337,13 @@ export function buildImplementationDraftDocument(
     items[id] = { name: '', type: '', description: '', note: '' };
   }
   return {
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     screen: {
       id: screenId,
       name: '',
       description: '',
     },
+    itemOrder: [...itemIds],
     items,
   };
 }

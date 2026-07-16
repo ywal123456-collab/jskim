@@ -81,11 +81,19 @@ function textResponse(body: string): Response {
 function mockFetchFor(
   screens: Record<string, ScreenData>,
   snapshots: Record<string, string> = {},
+  description?: Record<string, unknown>,
 ): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (
+        description &&
+        url.includes('/_jskim/spec/descriptions/') &&
+        (!init || init.method === 'GET' || !init.method)
+      ) {
+        return jsonResponse(description);
+      }
       for (const [dataFile, data] of Object.entries(screens)) {
         if (url.endsWith(`/data/screens/${dataFile}.json`)) {
           return jsonResponse(data);
@@ -144,6 +152,7 @@ async function mountPage(options: {
 describe('ScreenSpecPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete (window as { __JSKIM_SPEC_EDIT__?: unknown }).__JSKIM_SPEC_EDIT__;
   });
 
   it('design-only（hasPreview=false, states=[]）は No Preview を表示し StateSelector を隠す', async () => {
@@ -201,5 +210,64 @@ describe('ScreenSpecPage', () => {
 
     expect(wrapper.text()).toContain('表示できる画面がありません。');
     expect(wrapper.find('.spec-page--empty button').exists()).toBe(false);
+  });
+
+  it('編集モードで項目を追加し、上下ボタンで並び替えられる', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    mockFetchFor(
+      { 'design-screen': designOnlyScreen },
+      {},
+      {
+        screenId: 'design-screen',
+        revision: 'sha256:r1',
+        exists: true,
+        document: {
+          schemaVersion: '1.1',
+          screen: {
+            id: 'design-screen',
+            name: '設計のみ画面',
+            description: '設計だけの画面です。',
+          },
+          itemOrder: ['title'],
+          items: {
+            title: { name: 'タイトル', type: 'text', description: '', note: '' },
+          },
+        },
+      },
+    );
+    const wrapper = await mountPage({
+      screenId: 'design-screen',
+      manifestScreens: [designOnlyManifestScreen],
+      editingEnabled: true,
+    });
+
+    expect(wrapper.find('.spec-page__section-header button').exists()).toBe(
+      true,
+    );
+    await wrapper.find('.spec-page__section-header button').trigger('click');
+    await flushPromises();
+
+    await wrapper.find('[data-field="item-id"]').setValue('submit-button');
+    await wrapper.find('[data-field="item-name"]').setValue('送信ボタン');
+    await wrapper.find('[data-field="item-type"]').setValue('button');
+    await wrapper.find('.create-screen-dialog form').trigger('submit');
+    await flushPromises();
+
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[1].findAll('td')[1].text()).toContain('submit-button');
+    const nameInput = rows[1].find('td:nth-child(3) input')
+      .element as HTMLInputElement;
+    expect(nameInput.value).toBe('送信ボタン');
+
+    await rows[1].find('[aria-label="上へ"]').trigger('click');
+    await flushPromises();
+
+    const reordered = wrapper.findAll('tbody tr');
+    expect(reordered[0].findAll('td')[1].text()).toContain('submit-button');
+    expect(reordered[1].findAll('td')[1].text()).toContain('title');
   });
 });

@@ -58,6 +58,20 @@ export function isValidScreenId(screenId: unknown): screenId is string {
   return true;
 }
 
+/**
+ * itemId の形式・長さを検証する（screenId と同じ pattern / 最大長）。
+ * itemId はファイル名として使わないため Windows 予約語チェックは適用しない。
+ */
+export function isValidItemId(itemId: unknown): itemId is string {
+  if (typeof itemId !== 'string') {
+    return false;
+  }
+  if (itemId.length === 0 || itemId.length > MAX_SCREEN_ID_LENGTH) {
+    return false;
+  }
+  return SCREEN_ID_RE.test(itemId);
+}
+
 export function containsPathTraversal(value: string): boolean {
   return (
     value.includes('..') ||

@@ -18,6 +18,7 @@ export type EditableDocument = {
     name: string;
     description: string;
   };
+  itemOrder: string[];
   items: Record<
     string,
     {

@@ -7,8 +7,9 @@ import ItemDescriptionTable from '../../src/viewer/components/ItemDescriptionTab
 import type { ScreenData } from '../../src/viewer/types';
 
 const baseDocument = {
-  schemaVersion: '1.0',
+  schemaVersion: '1.1',
   screen: { id: 'demo', name: 'Demo', description: '説明' },
+  itemOrder: ['title'],
   items: {
     title: {
       name: 'タイトル',
@@ -279,5 +280,116 @@ describe('Description Viewer editing', () => {
       'beforeunload',
       expect.any(Function),
     );
+  });
+
+  it('addItem で itemOrder 末尾に新規項目を追加する（重複は無視）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            revision: 'sha256:r1',
+            exists: true,
+            document: baseDocument,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    const added = wrapper.vm.editor.addItem({
+      itemId: 'new-field',
+      name: '新規項目',
+      type: 'text',
+      description: '説明',
+      note: '備考',
+    });
+    expect(added).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'title',
+      'new-field',
+    ]);
+    expect(wrapper.vm.editor.draftDocument.value?.items['new-field']).toEqual({
+      name: '新規項目',
+      type: 'text',
+      description: '説明',
+      note: '備考',
+    });
+    expect(wrapper.vm.editor.dirty.value).toBe(true);
+
+    const dup = wrapper.vm.editor.addItem({
+      itemId: 'title',
+      name: '重複',
+      type: 'text',
+      description: '',
+      note: '',
+    });
+    expect(dup).toBe(false);
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'title',
+      'new-field',
+    ]);
+  });
+
+  it('moveItemUp / moveItemDown で itemOrder を並び替える（境界では何もしない）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            revision: 'sha256:r1',
+            exists: true,
+            document: {
+              ...baseDocument,
+              itemOrder: ['a', 'b', 'c'],
+              items: {
+                a: { name: '', type: '', description: '', note: '' },
+                b: { name: '', type: '', description: '', note: '' },
+                c: { name: '', type: '', description: '', note: '' },
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.moveItemUp('a');
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+
+    wrapper.vm.editor.moveItemDown('a');
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'b',
+      'a',
+      'c',
+    ]);
+
+    wrapper.vm.editor.moveItemUp('a');
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+
+    wrapper.vm.editor.moveItemDown('c');
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
   });
 });

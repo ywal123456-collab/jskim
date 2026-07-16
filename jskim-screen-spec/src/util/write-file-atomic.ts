@@ -325,8 +325,9 @@ export function computeContentRevision(content: string | Buffer): string {
 
 export function computeEmptyDescriptionRevision(screenId: string): string {
   const empty = {
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     screen: { id: screenId, name: '', description: '' },
+    itemOrder: [],
     items: {},
   };
   return computeContentRevision(`${JSON.stringify(empty, null, 2)}\n`);

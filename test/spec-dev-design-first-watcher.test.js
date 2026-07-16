@@ -349,6 +349,105 @@ describe('design-first Description create: watcher 回数', () => {
   );
 
   it(
+    'DESIGN_ONLY 項目追加 PUT: collect:0 build:1 reload(spec):1',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createEmptyDesignWorkspace();
+      const { port, counters } = await startRuntime(workspaceRoot);
+      const sse = await openSse({ port });
+      await sleep(120);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const post = await httpRequest({
+        port,
+        method: 'POST',
+        path: DESCRIPTION_API_PREFIX,
+        headers,
+        body: JSON.stringify({
+          screenId: 'item-order-watch',
+          name: '項目順',
+          description: '',
+        }),
+      });
+      assert.equal(post.status, 201);
+      await waitFor(() => counters.build === 1, {
+        timeoutMs: 10000,
+        label: 'create build',
+      });
+      await sleep(350);
+
+      const beforeBuild = counters.build;
+      const beforeCollect = counters.collect;
+      const beforeSpec = countReloadTarget(sse, 'spec');
+
+      const getRes = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/item-order-watch`,
+      });
+      assert.equal(getRes.status, 200);
+      const getJson = JSON.parse(getRes.body.toString('utf8'));
+      const nextDoc = structuredClone(getJson.document);
+      nextDoc.items['manual-first'] = {
+        name: '手動1',
+        type: 'text',
+        description: '',
+        note: '',
+      };
+      nextDoc.items['manual-second'] = {
+        name: '手動2',
+        type: 'button',
+        description: '',
+        note: '',
+      };
+      nextDoc.itemOrder = ['manual-first', 'manual-second'];
+
+      const putRes = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/item-order-watch`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: getJson.revision,
+          document: nextDoc,
+        }),
+      });
+      assert.equal(putRes.status, 200);
+
+      await waitFor(() => counters.build === beforeBuild + 1, {
+        timeoutMs: 10000,
+        label: 'viewer build once after item add PUT',
+      });
+      await sleep(350);
+
+      assert.equal(counters.collect, beforeCollect);
+      assert.equal(counters.build, beforeBuild + 1);
+      assert.equal(countReloadTarget(sse, 'spec'), beforeSpec + 1);
+
+      const saved = JSON.parse(
+        await fsp.readFile(
+          path.join(
+            workspaceRoot,
+            'spec',
+            'sample',
+            'src',
+            'data',
+            'item-order-watch.json'
+          ),
+          'utf8'
+        )
+      );
+      assert.equal(saved.schemaVersion, '1.1');
+      assert.deepEqual(saved.itemOrder, ['manual-first', 'manual-second']);
+      sse.close();
+    }
+  );
+
+  it(
     '重複 POST 409: collect:0 build:0 reload:0',
     { timeout: 30000 },
     async () => {

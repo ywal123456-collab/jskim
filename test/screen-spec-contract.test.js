@@ -71,6 +71,18 @@ describe('スクリーン仕様 screen-spec 契約', () => {
     assert.equal(descriptionSchema.properties.schemaVersion.const, '1.0');
   });
 
+  it('description-spec.v1.1 schema JSON がパースでき、itemOrder が必須である（サンプルは 1.0 のまま維持）', () => {
+    const descriptionSchemaV11 = loadJson(
+      path.join(SCHEMA_DIR, 'description-spec.v1.1.schema.json')
+    );
+    assert.equal(typeof descriptionSchemaV11, 'object');
+    assert.equal(descriptionSchemaV11.properties.schemaVersion.const, '1.1');
+    assert.ok(descriptionSchemaV11.required.includes('itemOrder'));
+    assert.equal(descriptionSchemaV11.properties.itemOrder.type, 'array');
+    assert.equal(descriptionSchemaV11.properties.itemOrder.uniqueItems, true);
+    assert.equal(descriptionSchemaV11.additionalProperties, false);
+  });
+
   it('interactionCategory の enum がドキュメント一覧と一致する', () => {
     const sourceSchema = loadJson(path.join(SCHEMA_DIR, 'source-spec.v1.schema.json'));
     assert.deepEqual(sourceSchema.$defs.interactionCategory.enum, EXPECTED_INTERACTION_CATEGORIES);

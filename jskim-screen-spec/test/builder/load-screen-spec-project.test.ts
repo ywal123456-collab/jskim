@@ -174,13 +174,33 @@ describe('loadScreenSpecProject（Description∪Source union）', () => {
     }
   });
 
-  it('schemaVersion が "1.0" 以外なら throw する', () => {
+  it('schemaVersion が "1.0" / "1.1" 以外なら throw する', () => {
     const { rootDir, dataDir } = createTempProject();
     try {
       writeDescription(dataDir, 'bad-version-screen', { schemaVersion: '2.0' });
       expect(() => loadScreenSpecProject({ rootDir, projectName: 'demo' })).toThrow(
         /schemaVersion/,
       );
+    } finally {
+      fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('schemaVersion "1.1"（itemOrder あり）を読み込める', () => {
+    const { rootDir, dataDir } = createTempProject();
+    try {
+      writeDescription(dataDir, 'v11-screen', {
+        schemaVersion: '1.1',
+        itemOrder: ['b', 'a'],
+        items: {
+          a: { name: 'A', type: '', description: '', note: '' },
+          b: { name: 'B', type: '', description: '', note: '' },
+        },
+      });
+      const project = loadScreenSpecProject({ rootDir, projectName: 'demo' });
+      const screen = project.screens.find((s) => s.screenId === 'v11-screen');
+      expect(screen?.description?.schemaVersion).toBe('1.1');
+      expect(screen?.description?.itemOrder).toEqual(['b', 'a']);
     } finally {
       fs.rmSync(rootDir, { recursive: true, force: true });
     }

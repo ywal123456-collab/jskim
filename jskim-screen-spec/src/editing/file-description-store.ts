@@ -10,6 +10,7 @@ import {
   writeFileAtomic,
 } from '../util/write-file-atomic.js';
 import { containsPathTraversal, isValidScreenId } from '../util/screen-id.js';
+import { DESCRIPTION_SCHEMA_V1_1_URI } from '../util/description-schema-uri.js';
 import {
   buildImplementationDraftDocument,
   MAX_DESCRIPTION_LENGTH,
@@ -19,8 +20,7 @@ import {
   type EditableDescriptionDocument,
 } from './validate-description-document.js';
 
-const DEFAULT_SCHEMA_URI =
-  'https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/description-spec.v1.schema.json';
+const DEFAULT_SCHEMA_URI = DESCRIPTION_SCHEMA_V1_1_URI;
 
 export type FileDescriptionStoreOptions = {
   rootDir: string;
@@ -199,11 +199,12 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
       };
     }
 
+    const collectedOrder = collectImplementationItemIds(screenId);
     return {
       screenId,
       revision: computeContentRevision(raw.buffer),
       exists: true,
-      document: toEditableDocument(raw.parsed, screenId),
+      document: toEditableDocument(raw.parsed, screenId, collectedOrder),
     };
   }
 
@@ -258,12 +259,13 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
 
     const editable = document as EditableDescriptionDocument;
     const nextSpec: DescriptionSpec & { $schema?: string } = {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       screen: {
         id: screenId,
         name: editable.screen.name,
         description: editable.screen.description,
       },
+      itemOrder: [...editable.itemOrder],
       items: {},
     };
 
@@ -276,19 +278,15 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
       };
     }
 
-    if (raw.schemaUri) {
-      nextSpec.$schema = raw.schemaUri;
-    } else if (!raw.exists) {
-      nextSpec.$schema = DEFAULT_SCHEMA_URI;
-    }
+    // 保存時は常に 1.1 として書き出す（lazy migration）ため $schema も v1.1 に揃える
+    nextSpec.$schema = DEFAULT_SCHEMA_URI;
 
     // $schema を先頭に近い順序で出す
     const ordered: Record<string, unknown> = {};
-    if (nextSpec.$schema) {
-      ordered.$schema = nextSpec.$schema;
-    }
+    ordered.$schema = nextSpec.$schema;
     ordered.schemaVersion = nextSpec.schemaVersion;
     ordered.screen = nextSpec.screen;
+    ordered.itemOrder = nextSpec.itemOrder;
     ordered.items = nextSpec.items;
 
     const json = `${JSON.stringify(ordered, null, 2)}\n`;
@@ -396,12 +394,14 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     for (const id of collectedItemIds) {
       items[id] = { name: '', type: '', description: '', note: '' };
     }
+    const itemOrder = [...collectedItemIds];
 
     const screen = { id: screenId, name, description };
     const ordered: Record<string, unknown> = {
       $schema: DEFAULT_SCHEMA_URI,
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       screen,
+      itemOrder,
       items,
     };
 
@@ -418,8 +418,9 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
 
     const revision = computeContentRevision(json);
     const document: EditableDescriptionDocument = {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       screen,
+      itemOrder,
       items,
     };
 

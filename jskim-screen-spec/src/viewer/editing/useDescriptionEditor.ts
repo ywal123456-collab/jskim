@@ -187,6 +187,69 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     };
   }
 
+  /**
+   * 手動で新しい項目を追加する（itemOrder の末尾に追加）。
+   * 重複 ID の場合は何もせず false を返す。
+   */
+  function addItem(item: {
+    itemId: string;
+    name: string;
+    type: string;
+    description: string;
+    note: string;
+  }): boolean {
+    if (!draftDocument.value) {
+      return false;
+    }
+    const id = item.itemId.trim();
+    if (!id || draftDocument.value.items[id]) {
+      return false;
+    }
+    draftDocument.value = {
+      ...draftDocument.value,
+      itemOrder: [...draftDocument.value.itemOrder, id],
+      items: {
+        ...draftDocument.value.items,
+        [id]: {
+          name: item.name,
+          type: item.type,
+          description: item.description,
+          note: item.note,
+        },
+      },
+    };
+    return true;
+  }
+
+  function swapItemOrder(itemId: string, direction: -1 | 1): void {
+    if (!draftDocument.value) {
+      return;
+    }
+    const order = draftDocument.value.itemOrder;
+    const index = order.indexOf(itemId);
+    const targetIndex = index + direction;
+    if (index === -1 || targetIndex < 0 || targetIndex >= order.length) {
+      return;
+    }
+    const nextOrder = [...order];
+    [nextOrder[index], nextOrder[targetIndex]] = [
+      nextOrder[targetIndex],
+      nextOrder[index],
+    ];
+    draftDocument.value = {
+      ...draftDocument.value,
+      itemOrder: nextOrder,
+    };
+  }
+
+  function moveItemUp(itemId: string): void {
+    swapItemOrder(itemId, -1);
+  }
+
+  function moveItemDown(itemId: string): void {
+    swapItemOrder(itemId, 1);
+  }
+
   function onBeforeUnload(event: BeforeUnloadEvent): void {
     if (!dirty.value) {
       return;
@@ -232,5 +295,8 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     reloadLatest,
     updateScreenField,
     updateItemField,
+    addItem,
+    moveItemUp,
+    moveItemDown,
   };
 }
