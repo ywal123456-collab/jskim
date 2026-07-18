@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { collectScreenSpecProject } from '../../src/collector/collect-screen-spec-project.js';
 import { isSpecCollectError } from '../../src/collector/collector-errors.js';
+import { loadScreenSpecProject } from '../../src/builder/load-screen-spec-project.js';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,8 @@ type TempLayout = {
 
 function createTempProjectLayout(options?: {
   badTarget?: boolean;
+  /** false のとき Description JSON を置かない（IMPLEMENTATION_ONLY） */
+  withDescription?: boolean;
 }): TempLayout {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-collect-'));
   const pagesDir = path.join(rootDir, 'src/demo/pages');
@@ -70,14 +73,17 @@ function createTempProjectLayout(options?: {
     path.join(pagesDir, 'demo.spec.json'),
     `${JSON.stringify(source, null, 2)}\n`,
   );
-  fs.copyFileSync(
-    path.join(fixtureRoot, 'description.json'),
-    path.join(dataDir, 'collector-actions-demo.json'),
-  );
+  const descriptionPath = path.join(dataDir, 'collector-actions-demo.json');
+  if (options?.withDescription !== false) {
+    fs.copyFileSync(
+      path.join(fixtureRoot, 'description.json'),
+      descriptionPath,
+    );
+  }
 
   return {
     rootDir,
-    descriptionPath: path.join(dataDir, 'collector-actions-demo.json'),
+    descriptionPath,
     snapshotsDir: path.join(
       rootDir,
       'spec/demo/src/snapshots/collector-actions-demo',
@@ -212,5 +218,98 @@ describe('collectScreenSpecProject integration', () => {
     expect(fs.existsSync(path.join(layout.snapshotsDir, 'filled.html'))).toBe(
       false,
     );
+  }, 60000);
+
+  it('Description が無い画面は snapshot だけ更新し JSON を自動生成しない', async () => {
+    const layout = createTempProjectLayout({ withDescription: false });
+    const port = await getFreePort();
+    const server = createStaticServer({
+      rootDir: path.join(fixtureRoot, 'public'),
+      host: '127.0.0.1',
+      port,
+      projectName: 'collector-fixture',
+    });
+    await server.start();
+    cleanups.push(async () => {
+      await server.stop();
+      fs.rmSync(layout.rootDir, { recursive: true, force: true });
+    });
+
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const first = await collectScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+      baseUrl,
+    });
+
+    expect(first.screens).toBe(1);
+    expect(first.states).toBe(4);
+    expect(first.updated).toBe(4);
+    expect(fs.existsSync(layout.descriptionPath)).toBe(false);
+    expect(
+      fs.existsSync(path.join(layout.snapshotsDir, 'default.html')),
+    ).toBe(true);
+
+    const loaded = loadScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+    });
+    expect(
+      loaded.screens.find((s) => s.screenId === 'collector-actions-demo')
+        ?.status,
+    ).toBe('implementation-only');
+
+    const second = await collectScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+      baseUrl,
+    });
+    expect(second.updated).toBe(0);
+    expect(second.unchanged).toBe(4);
+    expect(fs.existsSync(layout.descriptionPath)).toBe(false);
+  }, 60000);
+
+  it('LINKED Description を削除したあと collect しても再作成しない', async () => {
+    const layout = createTempProjectLayout();
+    const port = await getFreePort();
+    const server = createStaticServer({
+      rootDir: path.join(fixtureRoot, 'public'),
+      host: '127.0.0.1',
+      port,
+      projectName: 'collector-fixture',
+    });
+    await server.start();
+    cleanups.push(async () => {
+      await server.stop();
+      fs.rmSync(layout.rootDir, { recursive: true, force: true });
+    });
+
+    const baseUrl = `http://127.0.0.1:${port}`;
+    await collectScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+      baseUrl,
+    });
+    expect(fs.existsSync(layout.descriptionPath)).toBe(true);
+
+    fs.unlinkSync(layout.descriptionPath);
+    expect(fs.existsSync(layout.descriptionPath)).toBe(false);
+
+    const afterDelete = await collectScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+      baseUrl,
+    });
+    expect(afterDelete.screens).toBe(1);
+    expect(fs.existsSync(layout.descriptionPath)).toBe(false);
+
+    const loaded = loadScreenSpecProject({
+      rootDir: layout.rootDir,
+      projectName: 'demo',
+    });
+    expect(
+      loaded.screens.find((s) => s.screenId === 'collector-actions-demo')
+        ?.status,
+    ).toBe('implementation-only');
   }, 60000);
 });

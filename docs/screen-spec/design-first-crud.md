@@ -61,8 +61,8 @@ B. 実装先行: 実装側から collect して画面設計書側へ反映する
 ### 2.2 実装先行フロー（既存フロー）
 
 1. Source / HTML を実装する
-2. collect で Description draft・snapshot を生成する
-3. Viewer で確認する
+2. `jskim spec collect` で snapshot / Preview 用データを収集する（**Description JSON は自動生成しない**。画面は IMPLEMENTATION_ONLY）
+3. Viewer で確認し、説明を書いて初回保存（PUT）すると Description が作成され LINKED になる
 
 ### 2.3 混在
 
@@ -250,7 +250,7 @@ spec/{project}/src/data/{screenId}.json
 | 状態 | 影響 |
 |--------|------|
 | 設計のみ（Description のみ、Source/snapshot 無し） | Description ファイルの削除だけで完結（`expectedRevision` 必須） |
-| 設計＋実装（LINKED） | Description を削除しても **実装側は消さない**。次の collect で IMPLEMENTATION_ONLY に戻り、その旨を UI へ表示する |
+| 設計＋実装（LINKED） | Description を削除しても **実装側は消さない**。IMPLEMENTATION_ONLY へ遷移し、**以降の collect でも Description を再作成しない**（Phase 7B-3B-1）。削除 API / Viewer UI は未実装（詳細は [screen-description-deletion.md](./screen-description-deletion.md)） |
 | 実装側の削除 | Description は残す（実装側の削除は Screen Spec の範囲外） |
 
 注意:

@@ -1,9 +1,10 @@
-# 画面設計書の削除方針（Phase 7B-3B-0）
+# 画面設計書の削除方針（Phase 7B-3B-0 / 7B-3B-1）
 
 このドキュメントは、Screen Spec Viewer における **画面設計書（Description JSON）削除** と、それと衝突する **Collector の Description 自動生成** についての調査結果と詳細設計です。
 
-**Phase 7B-3B-0（本ドキュメント）:** 調査・設計のみ。API / Viewer / Collector の実装は含みません。
-**Phase 7B-3B-1 以降:** Collector 方針変更 → Store/DELETE API → Viewer UI を順に実装する想定です。
+**Phase 7B-3B-0:** 調査・設計（削除 API / Viewer UI は含まない）。
+**Phase 7B-3B-1（実装済み）:** Collector は missing Description を自動生成しない。IMPLEMENTATION_ONLY を安定維持する。
+**Phase 7B-3B-2 以降（未実装）:** `FileDescriptionStore.delete` / DELETE API → Viewer 削除 UI。
 
 関連:
 
@@ -11,7 +12,7 @@
 - 収集項目の除外: [collected-item-exclusion.md](./collected-item-exclusion.md)
 - companion 概要: [README.md](./README.md)
 
-調査時点のリポジトリ HEAD: `97df80a`（`feat: Screen Specで画面設計の複製を追加`）。
+7B-3B-0 調査時点のリポジトリ HEAD: `97df80a`。
 
 ---
 
@@ -80,7 +81,10 @@ IMPLEMENTATION_ONLY
 
 ---
 
-## 4. 現行 Collector 動作
+## 4. Collector 動作（7B-3B-0 調査時 → 7B-3B-1 後）
+
+> **注:** §4.2〜4.4 は 7B-3B-0 時点の実測（自動生成あり）です。
+> **7B-3B-1 以降**は候補 A を実装済みで、missing Description ではファイルを作りません（§9）。
 
 ### 4.1 入口
 
@@ -570,15 +574,15 @@ source 削除
 
 ## 21. 実装 Phase
 
-### Phase 7B-3B-1 — Collector 方針（候補 A）
+### Phase 7B-3B-1 — Collector 方針（候補 A）【実装済み】
 
 ```text
 missing Description では write しない
 IMPLEMENTATION_ONLY 安定化
-README / sample 文言 / 回帰テスト更新
+README / design-first / companion 文言 / 回帰テスト更新
 ```
 
-削除 UI より先に入れる（削除が意味を持つ前提条件）。
+削除 API / Viewer 削除 UI は **まだ未実装**（本 Phase の範囲外）。
 
 ### Phase 7B-3B-2 — Store / DELETE API
 

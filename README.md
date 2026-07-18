@@ -50,7 +50,9 @@ jskim dev sample
 
 `jskim spec dev` では Viewer から画面名 / 画面説明 / 項目の名称・種別・説明・備考を編集し、`spec/{project}/src/data/{screenId}.json` へローカル保存できます。書き込み API は `spec dev` 専用です。`--host 0.0.0.0` で待受けると LAN 上の他端末からも到達し得るため、信頼できるネットワークでのみ使用してください。
 
-`jskim spec dev` の Viewer からは、実装より先に画面を作る「設計先行」で新しい画面設計書を作成できます（Sidebar の「＋ 画面を作成」）。作成直後の画面はまだ実装（Source JSON / snapshot）と連携していないため、Preview 領域には「No Preview」表示が出ます。実装と連携して `jskim spec collect` を実行すると Preview が表示されます。この画面作成 UI は `jskim spec dev`（same-origin 編集 API）専用で、`jskim serve` / 通常の `jskim dev` の静的 mount は読み取り専用のままです。
+`jskim spec collect` は実装画面の snapshot / Preview 用データを収集します。**Description JSON（画面設計書）は自動生成しません。** Description が無い実装画面は Viewer で「実装のみ」として表示され、項目・Preview は収集結果から合成されます。画面設計書 JSON は Viewer で初めて保存したとき、または「画面を作成」「画面を複製」で作ります。
+
+`jskim spec dev` の Viewer からは、実装より先に画面を作る「設計先行」で新しい画面設計書を作成できます（Sidebar の「＋ 画面を作成」）。作成直後の画面はまだ実装（Source JSON / snapshot）と連携していないため、Preview 領域には「No Preview」表示が出ます。実装側で `screenId` を付与して `jskim spec collect` を実行すると Preview が表示されます。この画面作成 UI は `jskim spec dev`（same-origin 編集 API）専用で、`jskim serve` / 通常の `jskim dev` の静的 mount は読み取り専用のままです。
 
 同じ Viewer では「＋ 項目を追加」で手動項目を追加でき、項目の複製・上下ボタンでの並び替えができます。現在の実装（collected）と結びついていない手動項目は削除できます。実装画面と連携している項目は削除できませんが、「設計対象から除外」で画面設計書の通常項目から外せます（実装 element 自体は消えません。入力済みの説明は保持されます）。除外した項目は「除外した項目」から「設計対象に戻す」で復元できます。また「画面を複製」で既存の画面設計書（通常項目と並び順）を元に新しい設計のみ画面を作れます（実装画面・Preview・除外項目は複製しません。`jskim spec dev` 専用）。`screenId` / `itemId` は作成後に変更できません。保存時の Description JSON は `schemaVersion: "1.2"`（`itemOrder` / `excludedItems` 付き）として書き出されます。
 

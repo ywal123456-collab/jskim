@@ -32,6 +32,9 @@ export type WriteCollectedDescriptionError = Error & {
  * Collector 用: 最新 Description を読み、item placeholder を merge し、
  * revision 条件付きで安全に書き込む。衝突時は再読込して最大 3 回まで再試行する。
  *
+ * Description ファイルが存在しない場合は **新規作成しない**（IMPLEMENTATION_ONLY を維持）。
+ * 初回の Description 永続化は Viewer PUT / POST（画面作成・複製）が行う。
+ *
  * 手動 field（screen.name/description、item の name/type/description/note）は
  * mergeDescription が保持する。excludedItems も維持する。
  */
@@ -48,8 +51,30 @@ export function writeCollectedDescription(options: {
   const writeFn = options.writeFileAtomicFn || writeFileAtomic;
   const emptyRevision = computeEmptyDescriptionRevision(screenId);
 
+  // ファイル不在はメモリ draft 合成の対象外。ディスクへ materialize しない。
+  if (!fs.existsSync(filePath)) {
+    return {
+      written: false,
+      revision: emptyRevision,
+      attempts: 0,
+      orphanItemIds: [],
+      addedItemIds: [],
+    };
+  }
+
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     const current = readDescriptionForCollect(filePath, screenId, emptyRevision);
+    if (!current.exists || current.parsed === null) {
+      // ループ中に外部削除された場合も再作成しない
+      return {
+        written: false,
+        revision: emptyRevision,
+        attempts: attempt,
+        orphanItemIds: [],
+        addedItemIds: [],
+      };
+    }
+
     const merged = mergeDescription({
       existing: current.parsed,
       screenId,

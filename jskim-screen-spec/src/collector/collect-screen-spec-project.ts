@@ -308,7 +308,10 @@ export async function collectScreenSpecProject(
       }
 
       for (const desc of pendingDescriptions) {
-        fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
+        // missing Description は writeCollectedDescription が skip（再作成しない）
+        if (fs.existsSync(desc.filePath)) {
+          fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
+        }
         writeCollectedDescription({
           filePath: desc.filePath,
           screenId: desc.screenId,

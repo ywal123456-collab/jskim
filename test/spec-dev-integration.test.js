@@ -2,6 +2,7 @@
 
 const { describe, it, after, before } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -329,6 +330,41 @@ describe('spec dev orchestration', () => {
 
     const spec = await httpRequest({ port, path: '/spec/' });
     assert.match(spec.body.toString('utf8'), /SPEC_V2/);
+    sse.close();
+  });
+
+  it('Description 削除は collect:0 build:1 reload(spec):1', async () => {
+    const { workspaceRoot, port, counters } = await startSpecDev();
+    const sse = await openSse({ port });
+    await sleep(120);
+
+    const beforeSpec = countReloadTarget(sse, 'spec');
+    const beforeApp = countReloadTarget(sse, 'app');
+    const descPath = path.join(
+      workspaceRoot,
+      'spec',
+      'sample',
+      'src',
+      'data',
+      'demo.json'
+    );
+    assert.equal(fs.existsSync(descPath), true);
+
+    await fsp.unlink(descPath);
+
+    await waitFor(() => counters.build === 1, {
+      timeoutMs: 10000,
+      label: 'description unlink build once',
+    });
+
+    await assertStableCounts(
+      counters,
+      { collect: 0, build: 1 },
+      sse,
+      beforeSpec + 1
+    );
+    assert.equal(countReloadTarget(sse, 'app'), beforeApp);
+    assert.equal(fs.existsSync(descPath), false);
     sse.close();
   });
 

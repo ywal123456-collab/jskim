@@ -74,6 +74,7 @@
     "test:design-first": "vitest run test/builder test/editing test/viewer test/screen-page-router.test.ts",
     "test:item-exclusion-ui": "vitest run test/editing/exclude-description-item.test.ts test/viewer/exclude-item-dialog.test.ts test/viewer/excluded-items-panel.test.ts test/item-description-table.test.ts test/dom-preview.test.ts test/viewer/screen-spec-page.test.ts test/editing/viewer-editing.test.ts",
     "test:screen-duplicate": "vitest run test/editing/suggest-copy-screen-id.test.ts test/viewer/duplicate-screen-dialog.test.ts test/editing/file-description-store.test.ts test/viewer/screen-spec-page.test.ts",
+    "test:implementation-only": "vitest run test/collector/write-collected-description.test.ts test/builder/load-screen-spec-project.test.ts test/editing/file-description-store.test.ts",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit",
     "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"

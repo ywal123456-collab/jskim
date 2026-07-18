@@ -271,7 +271,9 @@ const result = await collectScreenSpecProject({
 - `wait` action は最大 30000ms（超過は検証エラー）
 - **コマンド単位の原子性**: 全 state をメモリに集めてから書き込む。失敗時は snapshot / description を一切書かない
 - Description の orphan item / orphan snapshot は警告のみ（削除しない）
-- Description が無い場合は draft（空の name/description + 見つかった item）を作成する
+- **Description ファイルが無い画面では Description を新規作成しない**（IMPLEMENTATION_ONLY を維持）。observation / snapshot / resources / Viewer manifest は更新する
+- 既存 Description がある画面だけ merge / write する（手動 field・itemOrder・excludedItems・revision retry は従来どおり）
+- Description JSON の初回作成は Viewer の初回保存（PUT）または画面作成 / 複製（POST）が行う
 
 ## Collect action
 
