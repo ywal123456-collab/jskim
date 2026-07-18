@@ -634,14 +634,17 @@ Viewer / build は「未知 state」として無視または警告
 
 ## 29. Reference Image
 
+詳細設計（保存・Upload/Delete・manifest・Viewer）: [reference-image.md](./reference-image.md)
+
 | | Device Capture | Reference Image |
 |--|----------------|-----------------|
 | 目的 | 実装結果 | デザイン基準 |
 | 生成 | Playwright | upload / Figma |
-| stale | inputRevision | なし（または手動差替） |
+| stale | inputRevision | なし（派生成果物ではない） |
+| 単位 | screen + state + viewport | screen + viewport（初期） |
 | パス | `captures/` | `references/` |
 
-将来比較（PC Capture vs PC Reference）を塞がないよう、viewport キーを揃える。比較 UI は後続。
+将来比較（PC Capture vs PC Reference）を塞がないよう、viewport キーを揃える。比較 UI は後続（7C-2B）。
 
 ---
 

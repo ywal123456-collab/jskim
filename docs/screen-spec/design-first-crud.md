@@ -234,10 +234,12 @@ spec/{project}/src/data/{screenId}.json
 | `screen.description`（POST の新値） / 新 `screenId` / 新 `name` | Source / snapshot / resources |
 | active `items` + `itemOrder`（deep copy） | `excludedItems`（常に `{}`） |
 | | collected metadata / Preview / Figma binding |
+| | Device Capture / **Reference Image**（[reference-image.md](./reference-image.md)） |
 
 - 結果は常に `DESIGN_ONLY` / No Preview。複製先の項目は manual-only
 - dirty な未保存 draft は複製しない（Viewer で保存を促す）
 - 画面設計書削除（Description DELETE + Viewer UI）は実装済み（5.6）。source 削除・archive は未実装
+- Reference Image は複製しない（新 screenId は missing から開始）
 
 ### 5.5 画面のアーカイブ（archive）
 
@@ -259,6 +261,7 @@ spec/{project}/src/data/{screenId}.json
 
 - HTML / Nunjucks / `.spec.json` は削除しない
 - snapshot / resources は既存の再収集ルールに従う（削除対象外）
+- Reference Image は Description 削除と同時に自動削除しない（詳細: [reference-image.md](./reference-image.md)）。「参照画像を削除」は別操作
 
 Description 削除後は watcher が BUILD_ONLY で reload します（collect は呼ばない）。
 

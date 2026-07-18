@@ -6,12 +6,14 @@
 
 後続詳細（Device Capture）: [device-preview-capture.md](./device-preview-capture.md)
 
+後続詳細（Reference Image・Phase 7C-2A-0）: [reference-image.md](./reference-image.md)
+
 後続 Phase:
 
 | Phase | 内容 |
 |-------|------|
 | **7C-1** | Live / PC / SP タブと Playwright Device Capture（詳細は device-preview-capture.md） |
-| **7C-2** | Reference Image 登録・表示 |
+| **7C-2** | Reference Image 登録・表示（詳細は reference-image.md） |
 | **7D** | Figma Frame Import（local Reference Image 生成） |
 
 関連:
@@ -295,13 +297,15 @@ Live 用の任意 zoom / パネル収まりは PC/SP 定義と混同しない。
 
 役割: **デザイン基準**の補助 Preview（実装結果ではない）。
 
-推奨ディレクトリ:
+保存・API・Viewer の確定方針は [reference-image.md](./reference-image.md)（Phase 7C-2A-0）を正とする。
+
+推奨ディレクトリ（初期: screen + viewport）:
 
 ```text
-spec/{project}/src/references/{screenId}/
+spec/{project}/src/references/{screenId}/{viewport}/
 ```
 
-Device Capture（`captures/`）とは分離する。詳細は 7C-2 と [device-preview-capture.md](./device-preview-capture.md) §28。
+Device Capture（`captures/`）とは分離する。役割分担は [device-preview-capture.md](./device-preview-capture.md) §29 も参照。
 
 初期: Badge / annotation なし。Figma token は repo / Description に保存しない。
 
@@ -351,14 +355,15 @@ No Preview ≡
   Live DOM も Device Capture も Reference Image も利用できない
 ```
 
-推奨フラグ:
+推奨フラグ（命名の確定は [reference-image.md](./reference-image.md) §7）:
 
 | フィールド | 意味 |
 |------------|------|
-| `hasLivePreview` | snapshot HTML あり（現行 `hasPreview` 相当） |
-| `hasDeviceCapture` | PC または SP 画像が 1 枚以上 |
-| `hasReferencePreview` | 参照画像が 1 枚以上 |
-| `hasPreview` | 互換: 上記のいずれかの OR（段階的拡張） |
+| `hasLivePreview` | snapshot HTML あり（現行 `hasPreview` と同義を維持） |
+| `hasDeviceCapture` | PC または SP Capture が 1 枚以上 |
+| `hasReferenceImage` | PC または SP Reference が current |
+| `hasAnyPreview` | Live または Reference がある（DESIGN_ONLY + 参照の表示分岐用） |
+| `hasPreview` | **互換維持**: Live snapshot 有無のみ（意味を広げない） |
 
 ---
 
