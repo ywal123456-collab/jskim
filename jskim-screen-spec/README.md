@@ -133,7 +133,12 @@ Vue Viewer（「＋ 画面を作成」）
   - DESIGN_ONLY → 一覧から除去。LINKED → IMPLEMENTATION_ONLY（Collector は再作成しない）
   - `withDescriptionScreenLock` で PUT / create / DELETE / Collector merge-write を screenId 単位直列化
   - API は build を呼ばない。unlink を watcher が検知して build-only + `reload(target=spec)`
-  - 外部 editor との TOCTOU は保証外。Viewer 削除 UI / route fallback は未実装（7B-3B-3）
+  - 外部 editor との TOCTOU は保証外
+- Viewer 画面設計削除（phase 7B-3B-3）: 「画面設計を削除」→ 確認 Dialog → `DELETE` + `expectedRevision`
+  - DESIGN_ONLY: Dialog 後に一覧から消え、次 / 前 / empty へ pending navigation
+  - LINKED: 同じ route のまま「実装のみ」。source / Preview は残る。stale draft / excludedItems / 手動説明は GET 正規化でリセット
+  - dirty / 保存中 / 削除中は操作不可。読み取り専用 Viewer では削除 UI なし
+  - watcher build のみ（UI から build endpoint を呼ばない）。409 / 404 は route を変えず再読込を促す
 - 画面複製（phase 7B-3A）: Viewer「画面を複製」→ `POST` + `copyFromScreenId`
   - 複製元は **保存済み** Description（または IMPLEMENTATION_ONLY の normalized GET draft）。dirty draft は使わない
   - active `items` / `itemOrder` を deep copy。`excludedItems` は常に `{}`

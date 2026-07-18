@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  PENDING_DELETE_FALLBACK_KEY,
   PENDING_SCREEN_KEY,
+  clearPendingDeleteFallback,
   clearPendingScreen,
+  peekPendingDeleteFallback,
   peekPendingScreen,
+  setPendingDeleteFallback,
   setPendingScreen,
+  waitForScreenAbsentFromManifest,
   waitForScreenInManifest,
+  waitForScreenStatusInManifest,
 } from '../../src/viewer/editing/pending-screen';
 
 describe('pending-screen', () => {
@@ -75,5 +81,57 @@ describe('pending-screen', () => {
 
     expect(found).toBe(false);
     expect(fetchFn.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('pending delete fallback を sessionStorage に保存する', () => {
+    setPendingDeleteFallback({
+      removedScreenId: 'gone',
+      fallbackScreenId: 'next',
+    });
+    expect(peekPendingDeleteFallback()).toEqual({
+      removedScreenId: 'gone',
+      fallbackScreenId: 'next',
+    });
+    expect(sessionStorage.getItem(PENDING_DELETE_FALLBACK_KEY)).toBeTruthy();
+    clearPendingDeleteFallback();
+    expect(peekPendingDeleteFallback()).toBeNull();
+  });
+
+  it('waitForScreenAbsentFromManifest は消えたら true', async () => {
+    let calls = 0;
+    const fetchFn = vi.fn(async () => {
+      calls += 1;
+      const screens = calls >= 2 ? [] : [{ id: 'gone' }];
+      return new Response(JSON.stringify({ screens }), { status: 200 });
+    });
+
+    const absent = await waitForScreenAbsentFromManifest('gone', {
+      manifestUrl: '/spec/data/manifest.json',
+      intervalMs: 5,
+      timeoutMs: 1000,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(absent).toBe(true);
+  });
+
+  it('waitForScreenStatusInManifest は status 一致で true', async () => {
+    let calls = 0;
+    const fetchFn = vi.fn(async () => {
+      calls += 1;
+      const status = calls >= 2 ? 'implementation-only' : 'linked';
+      return new Response(
+        JSON.stringify({ screens: [{ id: 'x', status }] }),
+        { status: 200 },
+      );
+    });
+
+    const ready = await waitForScreenStatusInManifest('x', {
+      manifestUrl: '/spec/data/manifest.json',
+      status: 'implementation-only',
+      intervalMs: 5,
+      timeoutMs: 1000,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(ready).toBe(true);
   });
 });

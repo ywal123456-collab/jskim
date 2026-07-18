@@ -10,7 +10,7 @@
 
 **Phase 7B-2B で追加実装済みなのは** 項目の複製、現在 collected されていない manual-only 項目の削除、削除確認ダイアログ、PUT 時の最新 collected 再検証です。
 
-接続解除、drag-drop 並び替え、画面の削除・アーカイブ、Figma 連携は未実装です。画面複製（Phase 7B-3A）と収集項目の設計対象除外（7B-2C）は実装済みです。
+接続解除、drag-drop 並び替え、画面のアーカイブ、Figma 連携は未実装です。画面複製（Phase 7B-3A）、画面設計書削除（7B-3B）、収集項目の設計対象除外（7B-2C）は実装済みです。
 
 ## 関連
 
@@ -237,28 +237,30 @@ spec/{project}/src/data/{screenId}.json
 
 - 結果は常に `DESIGN_ONLY` / No Preview。複製先の項目は manual-only
 - dirty な未保存 draft は複製しない（Viewer で保存を促す）
-- 画面削除は未実装（5.6）
+- 画面設計書削除（Description DELETE + Viewer UI）は実装済み（5.6）。source 削除・archive は未実装
 
 ### 5.5 画面のアーカイブ（archive）
 
 **Phase 7B の範囲では実装しません**（将来検討・別枠）。
 
-### 5.6 画面の削除（Phase 7B-3・将来）
+### 5.6 画面設計書の削除（Phase 7B-3B・実装済み）
+
+詳細: [screen-description-deletion.md](./screen-description-deletion.md)
 
 削除の影響範囲は、状態によって異なります。
 
 | 状態 | 影響 |
 |--------|------|
-| 設計のみ（Description のみ、Source/snapshot 無し） | Description ファイルの削除だけで完結（`expectedRevision` 必須） |
-| 設計＋実装（LINKED） | Description を削除しても **実装側は消さない**。IMPLEMENTATION_ONLY へ遷移し、**以降の collect でも Description を再作成しない**（Phase 7B-3B-1）。`DELETE` API は Phase 7B-3B-2 で実装済み。Viewer 削除 UI は未実装（詳細は [screen-description-deletion.md](./screen-description-deletion.md)） |
-| 実装側の削除 | Description は残す（実装側の削除は Screen Spec の範囲外） |
+| 設計のみ（Description のみ、Source/snapshot 無し） | Description ファイルの削除だけで完結（`expectedRevision` 必須）。一覧から消え、次 / 前 / empty へ遷移 |
+| 設計＋実装（LINKED） | Description のみ削除し **実装側は消さない**。同じ screenId の IMPLEMENTATION_ONLY へ。collect でも再作成しない（7B-3B-1）。`DELETE` API（7B-3B-2）と Viewer UI（7B-3B-3）実装済み |
+| 実装側の削除 | Description は残す（実装側の削除は Screen Spec の範囲外。未実装） |
 
 注意:
 
 - HTML / Nunjucks / `.spec.json` は削除しない
-- snapshot / resources は既存の再収集ルールに従う（本 Phase では変更しない）
+- snapshot / resources は既存の再収集ルールに従う（削除対象外）
 
-削除された画面は BUILD_ONLY で reload しますが、collect（Playwright）は呼ばない前提です（Phase 7B-1 時点で build は影響を受けません）。
+Description 削除後は watcher が BUILD_ONLY で reload します（collect は呼ばない）。
 
 ---
 
@@ -856,9 +858,10 @@ drag-drop 並び替え
 ### Phase 7B-3（実装先行と設計先行を統合する検討）
 
 - 画面複製（POST + `copyFromScreenId`）… **7B-3A 実装済み**
-- 画面削除（DELETE + revision）と LINKED 画面への影響
-- アーカイブ（archive）等の将来検討事項の切り出し
-- 削除時の snapshot 扱いの検討
+- Collector が missing Description を作らない… **7B-3B-1 実装済み**
+- Description DELETE API + lock… **7B-3B-2 実装済み**
+- Viewer 削除 UI / fallback / LINKED→実装のみ… **7B-3B-3 実装済み**
+- アーカイブ（archive）・source 削除・ORPHAN は未実装（別枠）
 
 ### Phase 7C
 

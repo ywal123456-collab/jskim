@@ -1,11 +1,11 @@
-# 画面設計書の削除方針（Phase 7B-3B-0 / 7B-3B-1 / 7B-3B-2）
+# 画面設計書の削除方針（Phase 7B-3B-0 / 7B-3B-1 / 7B-3B-2 / 7B-3B-3）
 
 このドキュメントは、Screen Spec Viewer における **画面設計書（Description JSON）削除** と、それと衝突する **Collector の Description 自動生成** についての調査結果と詳細設計です。
 
 **Phase 7B-3B-0:** 調査・設計。
 **Phase 7B-3B-1（実装済み）:** Collector は missing Description を自動生成しない。IMPLEMENTATION_ONLY を安定維持する。
 **Phase 7B-3B-2（実装済み）:** `FileDescriptionStore.delete` / `DELETE /_jskim/spec/descriptions/{screenId}` / screenId 単位ロック / watcher build-only。
-**Phase 7B-3B-3（未実装）:** Viewer 削除ボタン・確認 Dialog・route fallback。
+**Phase 7B-3B-3（実装済み）:** Viewer「画面設計を削除」・確認 Dialog・DESIGN_ONLY route fallback・LINKED → IMPLEMENTATION_ONLY UX。
 
 関連:
 
@@ -469,7 +469,7 @@ Viewer が fallback 判断に `deleted` / `screenId` を使える。`204` でも
 
 ---
 
-## 15. Viewer UI（実装は 7B-3B-3）
+## 15. Viewer UI（7B-3B-3・実装済み）
 
 `jskim spec dev` の編集モードのみ。
 
@@ -480,6 +480,7 @@ Viewer が fallback 判断に `deleted` / `screenId` を使える。`204` でも
 | IMPLEMENTATION_ONLY | action 無し |
 
 Dialog は削除結果を文言で説明する（色だけに依存しない）。「削除」は Description に限定し、実装削除と混同しない。
+実装箇所: `DeleteScreenDialog.vue` / `ScreenSpecPage.vue` / `resolve-delete-screen-fallback.ts` / pending delete fallback。
 
 ---
 
@@ -597,15 +598,17 @@ watcher: Description unlink → collect 0 / build 1 / reload spec 1
 
 Viewer 削除 UI と route fallback は **まだ未実装**。
 
-### Phase 7B-3B-3 — Viewer UI【未実装】
+### Phase 7B-3B-3 — Viewer UI【実装済み】
 
 ```text
 削除ボタン / 確認 Dialog
 dirty 抑制
-DESIGN_ONLY fallback
-LINKED → IMPLEMENTATION_ONLY 表示
-same-port Viewer UI integration
+DESIGN_ONLY fallback（次 → 前 → empty）
+LINKED → IMPLEMENTATION_ONLY 表示（同一 route）
+same-port Viewer UI integration（Playwright）
 ```
+
+archive / trash / source 削除 / ORPHAN / 削除復元は引き続き未実装。
 
 ---
 

@@ -76,6 +76,7 @@
     "test:screen-duplicate": "vitest run test/editing/suggest-copy-screen-id.test.ts test/viewer/duplicate-screen-dialog.test.ts test/editing/file-description-store.test.ts test/viewer/screen-spec-page.test.ts",
     "test:implementation-only": "vitest run test/collector/write-collected-description.test.ts test/builder/load-screen-spec-project.test.ts test/editing/file-description-store.test.ts",
     "test:screen-delete-api": "vitest run test/editing/file-description-delete.test.ts test/editing/description-concurrency.test.ts",
+    "test:screen-delete-ui": "vitest run test/viewer/resolve-delete-screen-fallback.test.ts test/viewer/delete-screen-dialog.test.ts test/editing/pending-screen.test.ts test/viewer/screen-spec-page.test.ts",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit",
     "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"

@@ -431,6 +431,10 @@ describe('ScreenSpecPage', () => {
     expect(dupBtn.exists()).toBe(true);
     expect(dupBtn.attributes('disabled')).toBeUndefined();
 
+    const deleteBtn = wrapper.find('[data-action="delete-screen"]');
+    expect(deleteBtn.exists()).toBe(true);
+    expect(deleteBtn.attributes('disabled')).toBeUndefined();
+
     await wrapper
       .find('#section-basic input')
       .setValue('変更名');
@@ -438,6 +442,104 @@ describe('ScreenSpecPage', () => {
     expect(
       wrapper.find('[data-action="duplicate-screen"]').attributes('disabled'),
     ).toBeDefined();
+    expect(
+      wrapper.find('[data-action="delete-screen"]').attributes('disabled'),
+    ).toBeDefined();
+  });
+
+  it('IMPLEMENTATION_ONLY では削除 action を出さない', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    mockFetchFor(
+      { 'impl-screen': implOnlyScreen },
+      { 'impl-screen/default.html': '<div>x</div>' },
+      {
+        screenId: 'impl-screen',
+        revision: 'sha256:missing',
+        exists: false,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'impl-screen', name: '実装のみ画面', description: '' },
+          itemOrder: [],
+          items: {},
+          excludedItems: {},
+        },
+        collectedItemIds: [],
+      },
+    );
+    const wrapper = await mountPage({
+      screenId: 'impl-screen',
+      manifestScreens: [implOnlyManifestScreen],
+      editingEnabled: true,
+    });
+    expect(wrapper.find('[data-action="delete-screen"]').exists()).toBe(false);
+  });
+
+  it('LINKED 編集モードでは削除 action を出す', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    const linkedManifest: ManifestScreen = {
+      id: 'linked-del',
+      name: '連携',
+      path: '/x.html',
+      dataFile: 'screens/linked-del.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    const linkedScreen: ScreenData = {
+      id: 'linked-del',
+      name: '連携',
+      description: '',
+      path: '/x.html',
+      itemOrder: ['title'],
+      items: {
+        title: { name: 'T', type: 'text', description: '', note: '' },
+      },
+      states: [
+        {
+          id: 'default',
+          name: '初期',
+          viewer: { visible: true, order: 1 },
+          snapshotFile: 'snapshots/linked-del/default.html',
+        },
+      ],
+      interactions: [],
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    mockFetchFor(
+      { 'linked-del': linkedScreen },
+      { 'linked-del/default.html': '<div data-jskim-spec-item="title">t</div>' },
+      {
+        screenId: 'linked-del',
+        revision: 'sha256:linked',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'linked-del', name: '連携', description: '手動' },
+          itemOrder: ['title'],
+          items: {
+            title: { name: 'T', type: 'text', description: '', note: '' },
+          },
+          excludedItems: {},
+        },
+        collectedItemIds: ['title'],
+      },
+    );
+    const wrapper = await mountPage({
+      screenId: 'linked-del',
+      manifestScreens: [linkedManifest],
+      editingEnabled: true,
+    });
+    expect(wrapper.find('[data-action="delete-screen"]').exists()).toBe(true);
   });
 
   it('読み取り専用では除外 UI / 除外領域を出さない', async () => {
@@ -488,5 +590,20 @@ describe('ScreenSpecPage', () => {
     expect(wrapper.find('[data-action="duplicate-screen"]').exists()).toBe(
       false,
     );
+    expect(wrapper.find('[data-action="delete-screen"]').exists()).toBe(false);
+  });
+
+  it('empty state では削除 action を出さない', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    const wrapper = await mountPage({
+      screenId: '_empty',
+      manifestScreens: [],
+      editingEnabled: true,
+    });
+    expect(wrapper.text()).toContain('画面がまだありません');
+    expect(wrapper.find('[data-action="delete-screen"]').exists()).toBe(false);
   });
 });

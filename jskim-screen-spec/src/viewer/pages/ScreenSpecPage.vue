@@ -11,6 +11,7 @@ import DeleteItemDialog from '../components/DeleteItemDialog.vue';
 import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
+import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import {
   SCREEN_SPEC_STATUS_LABEL,
@@ -40,8 +41,46 @@ const duplicateSourceItemId = ref<string | null>(null);
 const deleteTargetItemId = ref<string | null>(null);
 const excludeTargetItemId = ref<string | null>(null);
 const duplicateScreenDialogOpen = ref(false);
+const deleteScreenDialogOpen = ref(false);
+const deleteSuccessMessage = ref('');
 
 const editor = useDescriptionEditor(() => props.screenId);
+
+/** Description ファイルがある DESIGN_ONLY / LINKED のみ削除 action を出す */
+const canDeleteScreenDescription = computed(() => {
+  if (!editor.editingEnabled || !screen.value) {
+    return false;
+  }
+  if (!screen.value.hasDescription) {
+    return false;
+  }
+  return (
+    screen.value.status === 'design-only' || screen.value.status === 'linked'
+  );
+});
+
+const deleteScreenBlockedReason = computed(() => {
+  if (editor.dirty.value) {
+    return '画面設計を削除する前に、編集中の変更を保存またはキャンセルしてください。';
+  }
+  if (editor.saving.value) {
+    return '保存が完了するまで画面設計を削除できません。';
+  }
+  if (duplicateScreenDialogOpen.value) {
+    return '画面の複製が完了するまで画面設計を削除できません。';
+  }
+  if (deleteScreenDialogOpen.value) {
+    return '画面設計の削除処理中です。';
+  }
+  if (!editor.revision.value) {
+    return '画面設計書の revision を取得できていません。再読み込みしてください。';
+  }
+  return '';
+});
+
+const deleteScreenDisabled = computed(
+  () => Boolean(deleteScreenBlockedReason.value),
+);
 
 /** 新規 ID 重複チェック用（active + excluded） */
 const existingItemIdsForCreate = computed(() => {
@@ -422,7 +461,7 @@ function copyDraftJson(): void {
 }
 
 function openDuplicateScreen(): void {
-  if (editor.dirty.value || editor.saving.value) {
+  if (editor.dirty.value || editor.saving.value || deleteScreenDialogOpen.value) {
     return;
   }
   duplicateScreenDialogOpen.value = true;
@@ -430,6 +469,36 @@ function openDuplicateScreen(): void {
 
 function closeDuplicateScreen(): void {
   duplicateScreenDialogOpen.value = false;
+}
+
+function openDeleteScreen(): void {
+  if (deleteScreenDisabled.value || !canDeleteScreenDescription.value) {
+    return;
+  }
+  deleteSuccessMessage.value = '';
+  deleteScreenDialogOpen.value = true;
+}
+
+function closeDeleteScreen(): void {
+  deleteScreenDialogOpen.value = false;
+}
+
+async function onDeleteScreenCompleted(payload: {
+  kind: 'design-only' | 'linked';
+}): Promise<void> {
+  deleteScreenDialogOpen.value = false;
+  if (payload.kind === 'linked') {
+    deleteSuccessMessage.value =
+      '画面設計書を削除しました。この画面は「実装のみ」として残ります。';
+    await loadScreen(props.screenId);
+    return;
+  }
+  deleteSuccessMessage.value = '画面設計を削除しました。';
+}
+
+function onDeleteReloadLatest(): void {
+  deleteScreenDialogOpen.value = false;
+  void editor.reloadLatest();
 }
 
 /** 複製元は保存済み（loaded）内容。dirty draft は使わない */
@@ -447,9 +516,25 @@ const duplicateSourceMeta = computed(() => {
   };
 });
 
+const deleteDialogScreenName = computed(() => {
+  const loaded = editor.loadedDocument.value;
+  if (loaded?.screen.name) {
+    return loaded.screen.name;
+  }
+  return screen.value?.name || props.screenId;
+});
+
+const deleteDialogStatus = computed((): 'design-only' | 'linked' => {
+  if (screen.value?.status === 'linked') {
+    return 'linked';
+  }
+  return 'design-only';
+});
+
 watch(
   () => props.screenId,
   (id) => {
+    deleteSuccessMessage.value = '';
     void loadScreen(id);
   },
   { immediate: true },
@@ -504,7 +589,11 @@ watch(
           type="button"
           class="spec-page__btn spec-page__btn--secondary"
           data-action="duplicate-screen"
-          :disabled="editor.dirty.value || editor.saving.value"
+          :disabled="
+            editor.dirty.value ||
+            editor.saving.value ||
+            deleteScreenDialogOpen
+          "
           :title="
             editor.dirty.value
               ? '画面を複製する前に、編集中の変更を保存してください。'
@@ -515,9 +604,25 @@ watch(
           画面を複製
         </button>
         <button
+          v-if="canDeleteScreenDescription"
+          type="button"
+          class="spec-page__btn spec-page__btn--danger"
+          data-action="delete-screen"
+          :disabled="deleteScreenDisabled"
+          :title="deleteScreenBlockedReason || '画面設計を削除'"
+          :aria-label="deleteScreenBlockedReason || '画面設計を削除'"
+          @click="openDeleteScreen"
+        >
+          画面設計を削除
+        </button>
+        <button
           type="button"
           class="spec-page__btn"
-          :disabled="!editor.dirty.value || editor.saving.value"
+          :disabled="
+            !editor.dirty.value ||
+            editor.saving.value ||
+            deleteScreenDialogOpen
+          "
           @click="editor.save()"
         >
           保存
@@ -525,13 +630,26 @@ watch(
         <button
           type="button"
           class="spec-page__btn spec-page__btn--secondary"
-          :disabled="!editor.dirty.value || editor.saving.value"
+          :disabled="
+            !editor.dirty.value ||
+            editor.saving.value ||
+            deleteScreenDialogOpen
+          "
           @click="onCancelEdits"
         >
           キャンセル
         </button>
       </div>
     </header>
+
+    <div
+      v-if="deleteSuccessMessage"
+      class="spec-page__banner"
+      data-status="saved"
+      role="status"
+    >
+      <p>{{ deleteSuccessMessage }}</p>
+    </div>
 
     <div
       v-if="editor.statusMessage.value"
@@ -713,6 +831,19 @@ watch(
       :source-description="duplicateSourceMeta.description"
       :source-dirty="editor.dirty.value"
       @close="closeDuplicateScreen"
+    />
+
+    <DeleteScreenDialog
+      v-if="deleteScreenDialogOpen && canDeleteScreenDescription"
+      :screen-id="props.screenId"
+      :screen-name="deleteDialogScreenName"
+      :status="deleteDialogStatus"
+      :source-dirty="editor.dirty.value"
+      :source-saving="editor.saving.value"
+      :expected-revision="editor.revision.value"
+      @close="closeDeleteScreen"
+      @completed="onDeleteScreenCompleted"
+      @reload-latest="onDeleteReloadLatest"
     />
   </div>
 </template>
