@@ -94,6 +94,13 @@ export async function buildScreenSpecViewer(
     fs.writeFileSync(target, file.bytes);
   }
 
+  // Reference Image: current generation PNG のみ
+  for (const file of payload.referenceImageFiles) {
+    const target = path.join(dataDir, file.relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.bytes);
+  }
+
   if (project.previewCssPath) {
     fs.copyFileSync(
       project.previewCssPath,

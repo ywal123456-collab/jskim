@@ -1,5 +1,19 @@
 export type ScreenSpecStatus = 'design-only' | 'implementation-only' | 'linked';
 
+export type ReferenceImageManifestEntry =
+  | { status: 'missing' }
+  | { status: 'invalid'; diagnosticCode?: string }
+  | {
+      status: 'current';
+      imagePath: string;
+      imageRevision: string;
+      imageWidth: number;
+      imageHeight: number;
+      viewportWidth: number;
+      viewportHeight: number;
+      uploadedAt: string;
+    };
+
 export type ManifestScreen = {
   id: string;
   name: string;
@@ -9,6 +23,8 @@ export type ManifestScreen = {
   hasDescription: boolean;
   hasImplementation: boolean;
   hasPreview: boolean;
+  hasReferenceImage?: boolean;
+  hasAnyPreview?: boolean;
 };
 
 export type ViewerManifest = {
@@ -98,6 +114,13 @@ export type ScreenData = {
   hasDescription: boolean;
   hasImplementation: boolean;
   hasPreview: boolean;
+  hasReferenceImage?: boolean;
+  hasAnyPreview?: boolean;
+  /** screen 単位の Reference Image（PC/SP）。runtime は含めない */
+  referenceImages?: {
+    pc: ReferenceImageManifestEntry;
+    sp: ReferenceImageManifestEntry;
+  };
 };
 
 /** status ごとの日本語表示ラベル（badge 用） */

@@ -49,7 +49,7 @@ describe('classifyScreenSpecWatchPath', () => {
     expect(classify('spec/sample/src/theme/preview.css')).toBe('BUILD_ONLY');
   });
 
-  it('snapshots / resources / dist は IGNORE、captures meta.json は BUILD_ONLY', () => {
+  it('snapshots / resources / dist は IGNORE、captures/references meta.json は BUILD_ONLY', () => {
     expect(classify('spec/sample/src/snapshots/crud-create/default.html')).toBe(
       'IGNORE',
     );
@@ -64,6 +64,19 @@ describe('classifyScreenSpecWatchPath', () => {
     ).toBe('IGNORE');
     expect(
       classify('spec/sample/src/captures/demo/default/pc/.capture-temp.1.png.tmp'),
+    ).toBe('IGNORE');
+    expect(
+      classify('spec/sample/src/references/inquiry-input/pc/meta.json'),
+    ).toBe('BUILD_ONLY');
+    expect(
+      classify(
+        `spec/sample/src/references/inquiry-input/pc/reference-${'a'.repeat(64)}.png`,
+      ),
+    ).toBe('IGNORE');
+    expect(
+      classify(
+        'spec/sample/src/references/inquiry-input/pc/.reference-temp.1.png.tmp',
+      ),
     ).toBe('IGNORE');
     expect(classify('spec/sample/dist/index.html')).toBe('IGNORE');
   });

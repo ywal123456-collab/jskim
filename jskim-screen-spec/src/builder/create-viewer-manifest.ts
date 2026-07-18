@@ -21,6 +21,11 @@ import {
   type DeviceCaptureOutputFile,
   type ViewerDeviceCaptures,
 } from '../device-capture/manifest-captures.js';
+import {
+  resolveViewerReferenceImages,
+  type ReferenceImageOutputFile,
+  type ViewerReferenceImages,
+} from '../reference-image/manifest-references.js';
 
 export type ViewerInteraction = {
   itemId: string;
@@ -79,6 +84,12 @@ export type ViewerScreenData = {
   hasDescription: boolean;
   hasImplementation: boolean;
   hasPreview: boolean;
+  /** PC または SP に current Reference Image がある */
+  hasReferenceImage: boolean;
+  /** hasPreview または hasReferenceImage */
+  hasAnyPreview: boolean;
+  /** screen 単位の Reference Image（PC/SP）。runtime は含めない */
+  referenceImages?: ViewerReferenceImages;
 };
 
 export type ViewerManifest = {
@@ -94,6 +105,8 @@ export type ViewerManifest = {
     hasDescription: boolean;
     hasImplementation: boolean;
     hasPreview: boolean;
+    hasReferenceImage: boolean;
+    hasAnyPreview: boolean;
   }>;
 };
 
@@ -113,6 +126,8 @@ export type CreatedViewerPayload = {
   }>;
   /** data/ 配下に書く Device Capture PNG（参照されているもののみ） */
   deviceCaptureFiles: DeviceCaptureOutputFile[];
+  /** data/ 配下に書く Reference Image PNG（current のみ） */
+  referenceImageFiles: ReferenceImageOutputFile[];
 };
 
 /**
@@ -359,6 +374,7 @@ export function createViewerManifest(options: {
   const viewerScreens: ViewerScreenData[] = [];
   const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
   const deviceCaptureFiles: DeviceCaptureOutputFile[] = [];
+  const referenceImageFiles: ReferenceImageOutputFile[] = [];
   const captureContext =
     typeof rootDir === 'string' && rootDir
       ? { rootDir, projectName }
@@ -382,7 +398,7 @@ export function createViewerManifest(options: {
         collectedOrder: null,
       });
       description = screen.description?.screen.description ?? '';
-      // DESIGN_ONLY は Capture を manifest に載せない
+      // DESIGN_ONLY は Capture を manifest に載せない（Reference は載せる）
     } else {
       screenPath = screen.source?.screen.path ?? '';
       const built = buildStatesAndOrder(
@@ -415,6 +431,19 @@ export function createViewerManifest(options: {
       }
     }
 
+    let referenceImages: ViewerReferenceImages | undefined;
+    let hasReferenceImage = false;
+    if (captureContext) {
+      const resolved = resolveViewerReferenceImages({
+        ...captureContext,
+        screenId: screen.screenId,
+      });
+      referenceImages = resolved.referenceImages;
+      hasReferenceImage = resolved.hasReferenceImage;
+      referenceImageFiles.push(...resolved.outputFiles);
+    }
+    const hasAnyPreview = screen.hasPreview || hasReferenceImage;
+
     viewerScreens.push({
       id: screen.screenId,
       name,
@@ -428,6 +457,9 @@ export function createViewerManifest(options: {
       hasDescription: screen.hasDescription,
       hasImplementation: screen.hasImplementation,
       hasPreview: screen.hasPreview,
+      hasReferenceImage,
+      hasAnyPreview,
+      ...(referenceImages ? { referenceImages } : {}),
     });
   }
 
@@ -472,6 +504,8 @@ export function createViewerManifest(options: {
       hasDescription: screen.hasDescription,
       hasImplementation: screen.hasImplementation,
       hasPreview: screen.hasPreview,
+      hasReferenceImage: screen.hasReferenceImage,
+      hasAnyPreview: screen.hasAnyPreview,
     })),
   };
 
@@ -481,6 +515,7 @@ export function createViewerManifest(options: {
     snapshotFiles,
     resourceFiles: outResourceFiles,
     deviceCaptureFiles,
+    referenceImageFiles,
   };
 }
 

@@ -19,6 +19,7 @@
     "src/builder/**/*.ts",
     "src/collector/**/*.ts",
     "src/device-capture/**/*.ts",
+    "src/reference-image/**/*.ts",
     "src/editing/**/*.ts",
     "src/util/**/*.ts",
     "src/watch/**/*.ts"

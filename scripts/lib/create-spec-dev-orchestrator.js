@@ -239,8 +239,15 @@ function createSpecDevOrchestrator(options) {
       'src',
       'captures'
     );
+    const referencesDir = path.join(
+      workspaceRoot,
+      'spec',
+      projectName,
+      'src',
+      'references'
+    );
 
-    const watchRoots = [dataDir, themeDir, capturesDir];
+    const watchRoots = [dataDir, themeDir, capturesDir, referencesDir];
 
     metadataWatcher = chokidar.watch(watchRoots, {
       ignoreInitial: true,
@@ -259,6 +266,11 @@ function createSpecDevOrchestrator(options) {
         /[/\\]captures[/\\].*\.tmp$/i,
         /[/\\]captures[/\\].*\.bak(?:-|$)/i,
         /[/\\]captures[/\\].*[/\\]\./,
+        // references: generation PNG / TEMP / backup のみ無視（meta.json は監視）
+        /[/\\]references[/\\].*[/\\]reference-[0-9a-f]{64}\.png$/i,
+        /[/\\]references[/\\].*\.tmp$/i,
+        /[/\\]references[/\\].*\.bak(?:-|$)/i,
+        /[/\\]references[/\\].*[/\\]\./,
       ],
     });
 

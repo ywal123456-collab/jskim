@@ -19,8 +19,8 @@ export type ClassifyScreenSpecWatchPathOptions = {
  * - COLLECT_AND_BUILD: 実装画面 / Source sidecar
  * - BUILD_ONLY: Description JSON / theme
  * - IGNORE: collector 生成物（snapshots / resources / dist）と
- *   captures の generation PNG / TEMP（meta.json 以外）
- * - BUILD_ONLY: Description/theme、および captures 配下の meta.json
+ *   captures / references の generation PNG / TEMP（meta.json 以外）
+ * - BUILD_ONLY: Description/theme、および captures / references 配下の meta.json
  */
 export function classifyScreenSpecWatchPath(
   options: ClassifyScreenSpecWatchPathOptions,
@@ -56,11 +56,14 @@ export function classifyScreenSpecWatchPath(
     }
     if (
       underSpec === 'src/captures' ||
-      underSpec.startsWith('src/captures/')
+      underSpec.startsWith('src/captures/') ||
+      underSpec === 'src/references' ||
+      underSpec.startsWith('src/references/')
     ) {
       // meta.json のみ BUILD_ONLY（commit point）。PNG / TEMP は IGNORE。
       if (
         underSpec === 'src/captures/meta.json' ||
+        underSpec === 'src/references/meta.json' ||
         underSpec.endsWith('/meta.json')
       ) {
         return 'BUILD_ONLY';

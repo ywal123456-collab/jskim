@@ -369,6 +369,46 @@ spec/{project}/dist/data/device-captures/.../capture-<sha256hex>.png
 （参照中の current/stale のみ。invalid/orphan/TEMP はコピーしない）
 ```
 
+## Reference Image（Phase 7C-2A-1）
+
+デザイン基準画像（実装結果ではない）を保存する **内部 core** です。multipart HTTP API と Viewer 参照タブは未実装です。
+
+```ts
+import {
+  putReferenceImage,
+  deleteReferenceImage,
+  getReferenceImageStatus,
+} from '@ywal123456/jskim-screen-spec';
+
+await putReferenceImage({
+  rootDir: process.cwd(),
+  projectName: 'sample',
+  screenId: 'inquiry-input',
+  viewport: 'pc', // or 'sp'
+  imageBytes: pngBuffer,
+  // 初回: expectedImageRevision 省略 / null
+  // 置換: expectedImageRevision: 'sha256:...'
+});
+```
+
+- 単位: `screenId` + `viewport`（PC/SP 各 0..1）。state 非依存
+- format: PNG のみ。最大 20 MiB / 16384×65536
+- generation `reference-<sha256>.png` + `meta.json`（commit point）
+- persisted: `missing` / `current` / `invalid`（stale なし）
+- 同一 key（project+screen+viewport）は lock で直列。optimistic `expectedImageRevision`
+- 同一画像再 upload は `unchanged`（meta 非更新）
+- watcher: `references/**/meta.json` のみ BUILD_ONLY。generation / TEMP は IGNORE
+- manifest: screen の `referenceImages` / `hasReferenceImage` / `hasAnyPreview`（`hasPreview` 意味は維持）
+- output: `data/reference-images/{screenId}/{viewport}/reference-<sha>.png`（current のみ）
+- Description 削除・画面複製では Reference を自動削除/複製しない
+
+保存先:
+
+```text
+spec/{project}/src/references/{screenId}/{viewport}/
+├─ reference-<sha256hex>.png
+└─ meta.json
+```
 
 ## CSS / アセット自動収集（Phase 5B）
 

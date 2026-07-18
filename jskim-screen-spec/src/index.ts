@@ -91,6 +91,26 @@ export type {
   ViewerDeviceCaptures,
 } from './device-capture/index.js';
 export {
+  putReferenceImage,
+  deleteReferenceImage,
+  getReferenceImageStatus,
+  getReferenceImagePublicInfo,
+  resolveViewerReferenceImages,
+  MAX_REFERENCE_IMAGE_BYTES,
+  MAX_REFERENCE_IMAGE_WIDTH,
+  MAX_REFERENCE_IMAGE_HEIGHT,
+} from './reference-image/index.js';
+export type {
+  PutReferenceImageOptions,
+  PutReferenceImageResult,
+  DeleteReferenceImageOptions,
+  DeleteReferenceImageResult,
+  ReferenceImageMetadata,
+  ReferenceImageStatus,
+  ReferenceImagePublicInfo,
+  ViewerReferenceImages,
+} from './reference-image/index.js';
+export {
   rewriteResourceTokens,
   toResourceToken,
   SpecResourceTokenError,

@@ -1,8 +1,11 @@
-# Reference Image 方針（Phase 7C-2A-0）
+# Reference Image 方針（Phase 7C-2A-0 / 7C-2A-1）
 
-このドキュメントは、Screen Spec Viewer の **Reference Image（デザイン基準画像）** について、保存モデル・画面/Viewport 関係・Upload/Replace/Delete API・Viewer 表示・Figma Import 受け入れ口を確定する **調査・設計** です。
+このドキュメントは、Screen Spec Viewer の **Reference Image（デザイン基準画像）** について、保存モデル・画面/Viewport 関係・Upload/Replace/Delete API・Viewer 表示・Figma Import 受け入れ口を確定する設計です。
 
-**Phase 7C-2A-0:** 調査・設計のみ（本ドキュメント）。production code / Viewer / API / Schema / 画像ファイルは変更しない。
+| Phase | 状態 |
+|-------|------|
+| **7C-2A-0** | 調査・設計（文書） |
+| **7C-2A-1** | **完了** — Reference Image **core**（put/delete/status、PNG 検証、atomic 保存、optimistic revision、watcher、manifest/output）。multipart HTTP API / Viewer 参照タブは未実装 |
 
 関連:
 
@@ -10,8 +13,6 @@
 - Device Capture 実装方針: [device-preview-capture.md](./device-preview-capture.md)
 - 設計先行 CRUD: [design-first-crud.md](./design-first-crud.md)
 - Screen Spec 概要: [README.md](./README.md)
-
-調査時点のリポジトリ HEAD: `5ca869d`（Phase 7C-1A-3S 完了後）。
 
 ---
 
@@ -906,21 +907,23 @@ dimension mismatch warning
 
 ## 38. 実装 Phase
 
-### Phase 7C-2A-1（core）
+### Phase 7C-2A-1（core・完了）
 
 ```text
 references/ 契約
-PNG validation
+PNG validation（最大 20 MiB / 16384×65536）
 generation + meta commit
 missing/current/invalid
-upload/replace/delete core（HTTP なし）
+putReferenceImage / deleteReferenceImage / getReferenceImageStatus（HTTP なし）
 expectedImageRevision
+per screen+viewport lock
 watcher BUILD_ONLY / IGNORE
-manifest / output copy
+manifest referenceImages + hasReferenceImage / hasAnyPreview
+output data/reference-images/...
 Viewer UI なし
 ```
 
-### Phase 7C-2A-2（API）
+### Phase 7C-2A-2（API・未実装）
 
 ```text
 spec dev multipart PUT / DELETE
@@ -972,14 +975,20 @@ Frame Import → 同一 Reference core
 
 ---
 
-## 40. 未決事項（実装 Phase で数値確定）
+## 40. 未決事項（API / Viewer Phase で確定）
 
 ```text
-最大 upload バイト数の最終値
-missing DELETE を 404 に統一するか冪等 204 にするか
+missing DELETE を HTTP 404 に統一するか冪等 204 にするか（core は NOT_FOUND）
 参照タブの preferred key 文字列（reference vs reference-image）
 hasAnyPreview に Device Capture のみの画面を含めるか
 JPEG/WebP をいつ解禁するか
+```
+
+7C-2A-1 で確定済み:
+
+```text
+最大入力 PNG: 20 MiB
+最大寸法: 16384 × 65536
 ```
 
 ---
@@ -1040,4 +1049,4 @@ JPEG/WebP をいつ解禁するか
 
 ---
 
-*Phase 7C-2A-0 は調査・設計のみ。version / production code は変更しない。*
+*Phase 7C-2A-1 で core / watcher / manifest / output まで実装。multipart API・Viewer 参照タブ・Figma・比較 UX は未実装。version は変更しない。*
