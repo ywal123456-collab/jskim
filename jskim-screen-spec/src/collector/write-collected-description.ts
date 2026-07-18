@@ -8,7 +8,9 @@ import {
 import { mergeDescription } from './merge-description.js';
 import {
   DESCRIPTION_SCHEMA_V1_1_URI,
+  DESCRIPTION_SCHEMA_V1_2_URI,
   upgradeSchemaUriToV11,
+  upgradeSchemaUriToV12,
 } from '../util/description-schema-uri.js';
 
 export const DESCRIPTION_WRITE_MAX_RETRIES = 3;
@@ -31,7 +33,7 @@ export type WriteCollectedDescriptionError = Error & {
  * revision 条件付きで安全に書き込む。衝突時は再読込して最大 3 回まで再試行する。
  *
  * 手動 field（screen.name/description、item の name/type/description/note）は
- * mergeDescription が保持する。
+ * mergeDescription が保持する。excludedItems も維持する。
  */
 export function writeCollectedDescription(options: {
   filePath: string;
@@ -135,22 +137,42 @@ function formatCollectedDescription(
   description: DescriptionSpec,
   schemaUri: string | undefined,
 ): string {
-  const isV11 = description.schemaVersion === '1.1';
+  const version = description.schemaVersion || '1.0';
+  const isV12 = version === '1.2';
+  const isV11 = version === '1.1';
   const ordered: Record<string, unknown> = {};
   const fromDoc = (description as DescriptionSpec & { $schema?: string })
     .$schema;
 
   if (schemaUri) {
-    ordered.$schema = isV11 ? upgradeSchemaUriToV11(schemaUri) : schemaUri;
+    if (isV12) {
+      ordered.$schema = upgradeSchemaUriToV12(schemaUri);
+    } else if (isV11) {
+      ordered.$schema = upgradeSchemaUriToV11(schemaUri);
+    } else {
+      ordered.$schema = schemaUri;
+    }
   } else if (typeof fromDoc === 'string') {
-    ordered.$schema = isV11 ? upgradeSchemaUriToV11(fromDoc) : fromDoc;
+    if (isV12) {
+      ordered.$schema = upgradeSchemaUriToV12(fromDoc);
+    } else if (isV11) {
+      ordered.$schema = upgradeSchemaUriToV11(fromDoc);
+    } else {
+      ordered.$schema = fromDoc;
+    }
+  } else if (isV12) {
+    ordered.$schema = DESCRIPTION_SCHEMA_V1_2_URI;
   } else if (isV11) {
     ordered.$schema = DESCRIPTION_SCHEMA_V1_1_URI;
   }
-  ordered.schemaVersion = description.schemaVersion || '1.0';
+
+  ordered.schemaVersion = version;
   ordered.screen = description.screen;
-  if (isV11) {
+  if (isV12 || isV11) {
     ordered.itemOrder = description.itemOrder || [];
+  }
+  if (isV12) {
+    ordered.excludedItems = description.excludedItems || {};
   }
   ordered.items = description.items;
   return `${JSON.stringify(ordered, null, 2)}\n`;

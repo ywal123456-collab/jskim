@@ -49,9 +49,10 @@ describe('Description editing store', () => {
 
   it('collected item ID の削除を拒否する', () => {
     const existing = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen: { id: 'crud-create', name: 'A', description: '' },
       itemOrder: ['a', 'manual'],
+      excludedItems: {},
       items: {
         a: { name: 'A', type: '', description: '', note: '' },
         manual: { name: 'M', type: '', description: '', note: '' },
@@ -72,11 +73,131 @@ describe('Description editing store', () => {
     expect(err?.message).toMatch(/実装画面と連携された項目は削除できません/);
   });
 
-  it('manual-only 項目の削除は許可する（collected に無い ID）', () => {
+  it('collected item を excludedItems へ移す除外は許可する', () => {
     const existing = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen: { id: 'crud-create', name: 'A', description: '' },
       itemOrder: ['a', 'manual'],
+      excludedItems: {},
+      items: {
+        a: { name: 'A', type: 'text', description: '説明', note: '' },
+        manual: { name: 'M', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    doc.excludedItems.a = doc.items.a;
+    delete doc.items.a;
+    doc.itemOrder = ['manual'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+      requiredItemIds: ['a'],
+    });
+    expect(err).toBeNull();
+  });
+
+  it('manual-only 項目の除外は拒否する', () => {
+    const existing = {
+      schemaVersion: '1.2',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a', 'manual'],
+      excludedItems: {},
+      items: {
+        a: { name: 'A', type: '', description: '', note: '' },
+        manual: { name: 'M', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    doc.excludedItems.manual = doc.items.manual;
+    delete doc.items.manual;
+    doc.itemOrder = ['a'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+      requiredItemIds: ['a'],
+    });
+    expect(err?.code).toBe(
+      'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
+    );
+    expect(err?.message).toMatch(/実装画面と連携していない項目は設計対象から除外できません/);
+  });
+
+  it('除外 entry の直接削除は拒否する（復元してから削除）', () => {
+    const existing = {
+      schemaVersion: '1.2',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a'],
+      excludedItems: {
+        layout: { name: '枠', type: '', description: '', note: '' },
+      },
+      items: {
+        a: { name: 'A', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    delete doc.excludedItems.layout;
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+      requiredItemIds: ['a'],
+    });
+    expect(err?.code).toBe(
+      'SPEC_DESCRIPTION_EXCLUDED_ITEM_REMOVE_NOT_ALLOWED',
+    );
+    expect(err?.message).toMatch(/除外した項目を直接削除できません/);
+  });
+
+  it('除外項目の復元（items へ戻す）は許可する', () => {
+    const existing = {
+      schemaVersion: '1.2',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a'],
+      excludedItems: {
+        layout: { name: '枠', type: 'container', description: 'd', note: '' },
+      },
+      items: {
+        a: { name: 'A', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    doc.items.layout = doc.excludedItems.layout;
+    delete doc.excludedItems.layout;
+    doc.itemOrder = ['a', 'layout'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+      requiredItemIds: ['a'],
+    });
+    expect(err).toBeNull();
+  });
+
+  it('items と excludedItems の重複は拒否する', () => {
+    const doc = createEmptyEditableDocument('crud-create');
+    doc.items = {
+      a: { name: '', type: '', description: '', note: '' },
+    };
+    doc.excludedItems = {
+      a: { name: '', type: '', description: '', note: '' },
+    };
+    doc.itemOrder = ['a'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing: null,
+    });
+    expect(err?.message).toMatch(/items と excludedItems/);
+  });
+
+  it('manual-only 項目の削除は許可する（collected に無い ID）', () => {
+    const existing = {
+      schemaVersion: '1.2',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a', 'manual'],
+      excludedItems: {},
       items: {
         a: { name: 'A', type: '', description: '', note: '' },
         manual: { name: 'M', type: '', description: '', note: '' },
@@ -96,9 +217,10 @@ describe('Description editing store', () => {
 
   it('既存 item ID を維持したまま新規 item ID の追加は許可する', () => {
     const existing = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen: { id: 'crud-create', name: 'A', description: '' },
       itemOrder: ['a'],
+      excludedItems: {},
       items: {
         a: { name: 'A', type: '', description: '', note: '' },
       },
@@ -128,18 +250,31 @@ describe('Description editing store', () => {
     expect(err?.message).toMatch(/itemOrder/);
   });
 
-  it('schemaVersion が 1.1 以外の場合は拒否する', () => {
+  it('schemaVersion が 1.2 以外の場合は拒否する', () => {
     const doc = createEmptyEditableDocument('crud-create') as Record<
       string,
       unknown
     >;
-    doc.schemaVersion = '1.0';
+    doc.schemaVersion = '1.1';
     const err = validateEditableDescriptionDocument({
       screenId: 'crud-create',
       document: doc,
       existing: null,
     });
     expect(err?.message).toMatch(/schemaVersion/);
+  });
+
+  it('toEditableDocument は 1.0/1.1 を 1.2 + excludedItems に正規化する（読込 rewrite ではない）', () => {
+    const editable = toEditableDocument({
+      schemaVersion: '1.0',
+      screen: { id: 'demo', name: 'D', description: '' },
+      items: {
+        title: { name: 'T', type: '', description: '', note: '' },
+      },
+    });
+    expect(editable.schemaVersion).toBe('1.2');
+    expect(editable.excludedItems).toEqual({});
+    expect(editable.itemOrder).toEqual(['title']);
   });
 
   it('revision が内容に応じて変わる', () => {
@@ -177,9 +312,10 @@ describe('Description editing store', () => {
       const read1 = store.read('demo');
       expect(read1.exists).toBe(true);
 
-      // 元ファイルは 1.0（itemOrder 無し）。GET は 1.1 に正規化して返す（lazy migration）
-      expect(read1.document.schemaVersion).toBe('1.1');
+      // 元ファイルは 1.0（itemOrder 無し）。GET は 1.2 に正規化して返す（lazy migration）
+      expect(read1.document.schemaVersion).toBe('1.2');
       expect(read1.document.itemOrder).toEqual(['title']);
+      expect(read1.document.excludedItems).toEqual({});
 
       const next = structuredClone(read1.document);
       next.screen.description = '更新';
@@ -188,11 +324,12 @@ describe('Description editing store', () => {
       expect(written.written).toBe(true);
       expect(written.revision).not.toBe(read1.revision);
 
-      // 保存時に実ファイルも 1.1 へ upgrade される
+      // 保存時に実ファイルも 1.2 へ upgrade される
       const savedRaw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      expect(savedRaw.schemaVersion).toBe('1.1');
+      expect(savedRaw.schemaVersion).toBe('1.2');
       expect(savedRaw.itemOrder).toEqual(['title']);
-      expect(savedRaw.$schema).toMatch(/v1\.1\.schema\.json$/);
+      expect(savedRaw.excludedItems).toEqual({});
+      expect(savedRaw.$schema).toMatch(/v1\.2\.schema\.json$/);
 
       expect(() =>
         store.write('demo', next, read1.revision),
@@ -252,16 +389,18 @@ describe('Description editing store', () => {
         );
         const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         expect(saved.$schema).toMatch(/^https:\/\//);
-        expect(saved.$schema).toMatch(/v1\.1\.schema\.json$/);
-        expect(saved.schemaVersion).toBe('1.1');
+        expect(saved.$schema).toMatch(/v1\.2\.schema\.json$/);
+        expect(saved.schemaVersion).toBe('1.2');
         expect(saved.itemOrder).toEqual([]);
+        expect(saved.excludedItems).toEqual({});
         expect(saved.screen).toEqual({
           id: 'brand-new',
           name: '新規画面',
           description: '説明',
         });
-        expect(result.document.schemaVersion).toBe('1.1');
+        expect(result.document.schemaVersion).toBe('1.2');
         expect(result.document.itemOrder).toEqual([]);
+        expect(result.document.excludedItems).toEqual({});
         expect(result.revision).toBe(
           computeContentRevision(fs.readFileSync(filePath)),
         );
@@ -391,7 +530,8 @@ describe('Description editing store', () => {
           submit: { name: '', type: '', description: '', note: '' },
         });
         expect(result.document.itemOrder).toEqual(['title', 'submit']);
-        expect(result.document.schemaVersion).toBe('1.1');
+        expect(result.document.schemaVersion).toBe('1.2');
+        expect(result.document.excludedItems).toEqual({});
         expect(result.revision).not.toBe(
           computeEmptyDescriptionRevision('impl-only'),
         );
@@ -558,6 +698,51 @@ describe('Description editing store', () => {
         expect(() =>
           store.write('impl-only', removed, before.revision),
         ).toThrowError(/実装画面と連携された項目は削除できません/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('GET 時 collected → PUT 直前に snapshot から消えた項目の新規除外は拒否する（race）', () => {
+      const { root, store } = setupImplOnlyWorkspace(['item-x']);
+      try {
+        const before = store.read('impl-only');
+        expect(before.collectedItemIds).toEqual(['item-x']);
+        const seeded = structuredClone(before.document);
+        seeded.screen.name = '除外 race';
+        const written = store.write('impl-only', seeded, before.revision);
+        expect(written.saved).toBe(true);
+
+        const snapPath = path.join(
+          root,
+          'spec',
+          'sample',
+          'src',
+          'snapshots',
+          'impl-only',
+          'default.html',
+        );
+        fs.writeFileSync(snapPath, '<!-- empty -->\n', 'utf8');
+
+        const mid = store.read('impl-only');
+        expect(mid.collectedItemIds).toEqual([]);
+        const excluded = structuredClone(mid.document);
+        excluded.excludedItems['item-x'] = excluded.items['item-x'];
+        delete excluded.items['item-x'];
+        excluded.itemOrder = [];
+
+        expect(() =>
+          store.write('impl-only', excluded, mid.revision),
+        ).toThrowError(/実装画面と連携していない項目は設計対象から除外できません/);
+
+        const saved = JSON.parse(
+          fs.readFileSync(
+            path.join(root, 'spec', 'sample', 'src', 'data', 'impl-only.json'),
+            'utf8',
+          ),
+        );
+        expect(saved.items['item-x']).toBeTruthy();
+        expect(saved.excludedItems || {}).toEqual({});
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }

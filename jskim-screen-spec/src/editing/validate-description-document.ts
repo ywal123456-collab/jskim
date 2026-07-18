@@ -20,6 +20,13 @@ export const MAX_NAME_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 10000;
 export const MAX_ITEM_ORDER_LENGTH = 500;
 
+export type EditableItemFields = {
+  name: string;
+  type: string;
+  description: string;
+  note: string;
+};
+
 export type EditableDescriptionDocument = {
   schemaVersion: string;
   screen: {
@@ -28,15 +35,9 @@ export type EditableDescriptionDocument = {
     description: string;
   };
   itemOrder: string[];
-  items: Record<
-    string,
-    {
-      name: string;
-      type: string;
-      description: string;
-      note: string;
-    }
-  >;
+  items: Record<string, EditableItemFields>;
+  /** 設計対象から除外した項目（キーが除外 ID 集合） */
+  excludedItems: Record<string, EditableItemFields>;
 };
 
 export type DescriptionValidationError = {
@@ -44,10 +45,97 @@ export type DescriptionValidationError = {
   message: string;
 };
 
+function normalizeItemFields(item: {
+  name?: string;
+  type?: string;
+  description?: string;
+  note?: string;
+}): EditableItemFields {
+  return {
+    name: item.name ?? '',
+    type: item.type ?? '',
+    description: item.description ?? '',
+    note: item.note ?? '',
+  };
+}
+
+function validateItemEntry(
+  mapLabel: string,
+  itemId: string,
+  item: unknown,
+): DescriptionValidationError | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${mapLabel}「${itemId}」は object である必要があります。`,
+    };
+  }
+  const row = item as Record<string, unknown>;
+  for (const key of Object.keys(row)) {
+    if (
+      key !== 'name' &&
+      key !== 'type' &&
+      key !== 'description' &&
+      key !== 'note'
+    ) {
+      return {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: `${mapLabel}「${itemId}」に許可されていないフィールドがあります: ${key}`,
+      };
+    }
+  }
+  for (const field of ['name', 'type', 'description', 'note'] as const) {
+    if (typeof row[field] !== 'string') {
+      return {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: `${mapLabel}「${itemId}」の ${field} は文字列である必要があります。`,
+      };
+    }
+  }
+  return null;
+}
+
+function validateItemMap(
+  mapLabel: string,
+  mapValue: unknown,
+): DescriptionValidationError | { ids: string[]; map: Record<string, unknown> } {
+  if (!mapValue || typeof mapValue !== 'object' || Array.isArray(mapValue)) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${mapLabel} は object である必要があります。`,
+    };
+  }
+  const map = mapValue as Record<string, unknown>;
+  const ids = Object.keys(map);
+  const uniqueIds = new Set(ids);
+  if (uniqueIds.size !== ids.length) {
+    return {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${mapLabel} の item ID が重複しています。`,
+    };
+  }
+  for (const itemId of ids) {
+    if (!isValidItemId(itemId)) {
+      return {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: `${mapLabel} の item ID の形式が不正です: ${itemId}`,
+      };
+    }
+    const entryError = validateItemEntry(mapLabel, itemId, map[itemId]);
+    if (entryError) {
+      return entryError;
+    }
+  }
+  return { ids, map };
+}
+
 /**
- * Viewer 編集用 document を検証する（常に schemaVersion "1.1" として保存する）。
- * `requiredItemIds`（最新の collected item ID 集合）は新しい item ID 集合に
- * 含まれていなければならない（`currentCollectedItemIds ⊆ newItemIds`）。
+ * Viewer 編集用 document を検証する（常に schemaVersion "1.2" として保存する）。
+ *
+ * collected 項目は `items` または `excludedItems` のどちらかに残す必要がある
+ * （`currentCollectedItemIds ⊆ keys(items) ∪ keys(excludedItems)`）。
+ * 新規の除外は現在 collected されている ID に限る。
+ * 既存の除外 entry は復元してからでないと除去できない。
  * collected に無い manual-only 項目の削除と、新規 ID の追加は許可する。
  */
 export function validateEditableDescriptionDocument(options: {
@@ -72,6 +160,7 @@ export function validateEditableDescriptionDocument(options: {
     'screen',
     'itemOrder',
     'items',
+    'excludedItems',
     '$schema',
   ]);
   for (const key of Object.keys(doc)) {
@@ -83,10 +172,10 @@ export function validateEditableDescriptionDocument(options: {
     }
   }
 
-  if (doc.schemaVersion !== '1.1') {
+  if (doc.schemaVersion !== '1.2') {
     return {
       code: 'SPEC_DESCRIPTION_INVALID',
-      message: 'schemaVersion は "1.1" である必要があります。',
+      message: 'schemaVersion は "1.2" である必要があります。',
     };
   }
 
@@ -149,58 +238,26 @@ export function validateEditableDescriptionDocument(options: {
     };
   }
 
-  if (!doc.items || typeof doc.items !== 'object' || Array.isArray(doc.items)) {
-    return {
-      code: 'SPEC_DESCRIPTION_INVALID',
-      message: 'items は object である必要があります。',
-    };
+  const itemsResult = validateItemMap('items', doc.items);
+  if ('code' in itemsResult) {
+    return itemsResult;
   }
-
-  const items = doc.items as Record<string, unknown>;
-  const itemIds = Object.keys(items);
+  const { ids: itemIds } = itemsResult;
   const uniqueItemIds = new Set(itemIds);
-  if (uniqueItemIds.size !== itemIds.length) {
-    return {
-      code: 'SPEC_DESCRIPTION_INVALID',
-      message: 'item ID が重複しています。',
-    };
-  }
 
-  for (const itemId of itemIds) {
-    if (!isValidItemId(itemId)) {
+  const excludedResult = validateItemMap('excludedItems', doc.excludedItems);
+  if ('code' in excludedResult) {
+    return excludedResult;
+  }
+  const { ids: excludedIds } = excludedResult;
+  const uniqueExcludedIds = new Set(excludedIds);
+
+  for (const id of itemIds) {
+    if (uniqueExcludedIds.has(id)) {
       return {
         code: 'SPEC_DESCRIPTION_INVALID',
-        message: `item ID の形式が不正です: ${itemId}`,
+        message: `items と excludedItems に同じ item ID があります: ${id}`,
       };
-    }
-    const item = items[itemId];
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      return {
-        code: 'SPEC_DESCRIPTION_INVALID',
-        message: `item「${itemId}」は object である必要があります。`,
-      };
-    }
-    const row = item as Record<string, unknown>;
-    for (const key of Object.keys(row)) {
-      if (
-        key !== 'name' &&
-        key !== 'type' &&
-        key !== 'description' &&
-        key !== 'note'
-      ) {
-        return {
-          code: 'SPEC_DESCRIPTION_INVALID',
-          message: `item「${itemId}」に許可されていないフィールドがあります: ${key}`,
-        };
-      }
-    }
-    for (const field of ['name', 'type', 'description', 'note'] as const) {
-      if (typeof row[field] !== 'string') {
-        return {
-          code: 'SPEC_DESCRIPTION_INVALID',
-          message: `item「${itemId}」の ${field} は文字列である必要があります。`,
-        };
-      }
     }
   }
 
@@ -247,15 +304,43 @@ export function validateEditableDescriptionDocument(options: {
     };
   }
 
+  const representedIds = new Set([...uniqueItemIds, ...uniqueExcludedIds]);
+  const oldExcludedIds = new Set(
+    Object.keys(existing?.excludedItems || {}),
+  );
+
+  // 除外 entry の直接削除を先に判定（collected 欠落と同時でも専用 code を返す）
+  for (const id of oldExcludedIds) {
+    if (!representedIds.has(id)) {
+      return {
+        code: 'SPEC_DESCRIPTION_EXCLUDED_ITEM_REMOVE_NOT_ALLOWED',
+        message:
+          '除外した項目を直接削除できません。設計対象に戻してから削除してください。',
+      };
+    }
+  }
+
   if (requiredItemIds != null) {
-    const nextIdSet = uniqueItemIds;
-    const missingCollected = requiredItemIds.some((id) => !nextIdSet.has(id));
+    const missingCollected = requiredItemIds.some(
+      (id) => !representedIds.has(id),
+    );
     if (missingCollected) {
       return {
         code: 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED',
         message:
-          '実装画面と連携された項目は削除できません。最新の画面設計書を再読み込みしてください。',
+          '実装画面と連携された項目は削除できません。設計対象に残すか、設計対象から除外してください。最新の画面設計書を再読み込みしてください。',
       };
+    }
+
+    const currentCollectedSet = new Set(requiredItemIds);
+    for (const id of uniqueExcludedIds) {
+      if (!oldExcludedIds.has(id) && !currentCollectedSet.has(id)) {
+        return {
+          code: 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
+          message:
+            '実装画面と連携していない項目は設計対象から除外できません。不要な場合は項目を削除してください。',
+        };
+      }
     }
   }
 
@@ -269,12 +354,11 @@ export function toEditableDocument(
 ): EditableDescriptionDocument {
   const items: EditableDescriptionDocument['items'] = {};
   for (const [id, item] of Object.entries(description.items || {})) {
-    items[id] = {
-      name: item.name ?? '',
-      type: item.type ?? '',
-      description: item.description ?? '',
-      note: item.note ?? '',
-    };
+    items[id] = normalizeItemFields(item);
+  }
+  const excludedItems: EditableDescriptionDocument['excludedItems'] = {};
+  for (const [id, item] of Object.entries(description.excludedItems || {})) {
+    excludedItems[id] = normalizeItemFields(item);
   }
   const screen = description.screen || {
     id: fallbackScreenId,
@@ -287,7 +371,7 @@ export function toEditableDocument(
     collectedOrder,
   });
   return {
-    schemaVersion: '1.1',
+    schemaVersion: '1.2',
     screen: {
       id: screen.id || fallbackScreenId,
       name: screen.name ?? '',
@@ -295,6 +379,7 @@ export function toEditableDocument(
     },
     itemOrder,
     items,
+    excludedItems,
   };
 }
 
@@ -302,7 +387,7 @@ export function createEmptyEditableDocument(
   screenId: string,
 ): EditableDescriptionDocument {
   return {
-    schemaVersion: '1.1',
+    schemaVersion: '1.2',
     screen: {
       id: screenId,
       name: '',
@@ -310,6 +395,7 @@ export function createEmptyEditableDocument(
     },
     itemOrder: [],
     items: {},
+    excludedItems: {},
   };
 }
 
@@ -327,7 +413,7 @@ export function buildImplementationDraftDocument(
     items[id] = { name: '', type: '', description: '', note: '' };
   }
   return {
-    schemaVersion: '1.1',
+    schemaVersion: '1.2',
     screen: {
       id: screenId,
       name: '',
@@ -335,5 +421,6 @@ export function buildImplementationDraftDocument(
     },
     itemOrder: [...itemIds],
     items,
+    excludedItems: {},
   };
 }

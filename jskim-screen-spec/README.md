@@ -129,24 +129,25 @@ Vue Viewer（「＋ 画面を作成」）
 - 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
 - 画面の rename / archive は本 phase の対象外（未実装）
 
-### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）
+### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）と除外（phase 7B-2C-1）
 
-Description Schema に `itemOrder: string[]` を追加した `1.1` を導入しました（`docs/screen-spec/schema/description-spec.v1.1.schema.json`）。`1.0` schema は変更していません。
+Description Schema は `1.1`（`itemOrder`）と `1.2`（`excludedItems`）を追加しました。`1.0` schema は変更していません。
 
 ```text
 Vue Viewer（「＋ 項目を追加」→ 項目 ID / 項目名 / 種類 / 説明 / 備考）
   → draft の items / itemOrder を更新（ローカルのみ・未保存）
   → 保存時に same-origin PUT /_jskim/spec/descriptions/:screenId
-  → FileDescriptionStore.write()（schemaVersion "1.1" + itemOrder で書き出し）
+  → FileDescriptionStore.write()（schemaVersion "1.2" + itemOrder + excludedItems で書き出し）
 ```
 
-- 読込は `1.0` / `1.1` の両方に対応（lazy migration。保存操作が起きるまで既存 `1.0` ファイルを書き換えない）
-- 新規作成（POST）は `schemaVersion "1.1"` + `itemOrder: []`
-- PUT の item ID 集合検証: **最新の collected item ID 集合 ⊆ 新 item ID 集合**（`SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED`）。manual-only の削除と新規追加は許可。`itemOrder` は `items` と bijection 必須
-- GET は `collectedItemIds` を返し、Viewer の削除可否表示に使う。PUT では snapshot を再読込して検証する（GET 時点の状態だけを信じない）
-- Viewer では上下ボタンで並び替え、複製（原項目の直後に挿入）、manual-only 削除（確認ダイアログ）が可能。collected / linked 項目は削除不可
-- drag-drop 並び替えと collected 項目の設計対象除外は未実装
-- `jskim spec collect` は人が並べた `itemOrder` を維持し、新規に見つかった ID を DOM 出現順で末尾に追加する（item の追加・削除が無い場合は `1.0` のまま維持）。削除済み manual ID が後から実装されると placeholder として再追加される
+- 読込は `1.0` / `1.1` / `1.2` に対応（lazy migration。保存操作が起きるまで既存 `1.0`/`1.1` ファイルを書き換えない）
+- GET 正規化は常に `schemaVersion "1.2"` + `excludedItems`（欠落時は `{}`）を返す
+- 新規作成（POST）は `schemaVersion "1.2"` + `itemOrder: []` + `excludedItems: {}`
+- PUT: **最新 collected ⊆ keys(items) ∪ keys(excludedItems)**。新規除外は collected のみ（manual-only 除外は拒否）。既存除外の直接削除は拒否（復元してから削除）。`itemOrder` ↔ `items` bijection、`items ∩ excludedItems = ∅`
+- GET は `collectedItemIds` を返し、Viewer の削除可否表示に使う。PUT では snapshot を再読込して検証する
+- Viewer では上下ボタンで並び替え、複製、manual-only 削除が可能。collected / linked 項目は削除不可
+- **除外 / 復元 UI は未実装**（API・Collector・保存契約のみ 7B-2C-1 で実装済み）
+- `jskim spec collect` は `keys(excludedItems)` を items / itemOrder へ再追加せず、人が並べた `itemOrder` を維持する。実際の Description 変更があるときだけ `1.2` へ upgrade。変更が無い `1.0`/`1.1` は rewrite しない
 
 ### `jskim spec dev` の監視
 

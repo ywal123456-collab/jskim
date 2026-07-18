@@ -2,15 +2,18 @@
 
 このドキュメントは、Screen Spec で **実装上は存在するが画面設計書の管理対象からは外したい項目** を扱うための調査結果と詳細設計です。
 
-**本 Phase（7B-2C-0）は調査・設計のみです。** Schema / Viewer / API / Collector / production code の実装は含みません。
+**Phase 7B-2C-0** は調査・設計でした。
+**Phase 7B-2C-1（実装済み）:** Schema 1.2 / 保存・GET 正規化 / Collector 再追加抑制 / PUT validation / local exclude·restore helper。
+**Phase 7B-2C-2（未実装）:** Viewer の除外 / 復元 UI・除外一覧表示。
 
-**保存モデル（実装前精緻化）:** 調査段階では ID 配列と説明 map の二重保管も検討したが、実装前に **keys(excludedItems) を除外 ID 集合とする単一 map** に統一する。
+**保存モデル:** **keys(excludedItems) を除外 ID 集合とする単一 map**（`excludedItemIds` 配列は持たない）。
 
 関連:
 
 - 設計先行 CRUD 全体: [design-first-crud.md](./design-first-crud.md)
 - companion 概要: [README.md](./README.md)
 - Description Schema 1.1: [schema/description-spec.v1.1.schema.json](./schema/description-spec.v1.1.schema.json)
+- Description Schema 1.2: [schema/description-spec.v1.2.schema.json](./schema/description-spec.v1.2.schema.json)
 
 ---
 
@@ -675,30 +678,29 @@ DOM 専用フラグ名（例: provider 別の除外 ID 配列）は避ける。
 
 ## 21. 実装 Phase
 
-### Phase 7B-2C-1（保存・Collector・PUT・local editing）
+### Phase 7B-2C-1（保存・Collector・PUT・local helper）— **実装済み**
 
 ```text
 Schema 1.2（excludedItems）
 読込互換（1.0/1.1/1.2）と lazy write
 mergeDescription の再追加抑制
-PUT validation 変更
-Viewer local: 除外 / 復元（Dialog・draft・dirty）
+PUT validation 変更（union / 新規除外制限 / 除外直接削除禁止）
+excludeDescriptionItem / restoreDescriptionItem（UI 未接続）
 単体 / store / collector / same-port API テスト
 ```
 
-### Phase 7B-2C-2（Viewer 表示仕上げ）
+### Phase 7B-2C-2（Viewer 表示仕上げ）— **未実装**
 
 ```text
 除外した項目の折りたたみ領域
+「設計対象から除外」/「設計対象に戻す」ボタンと確認 Dialog
 「実装: あり/なし」表示
 Preview との選択整合の確認
 read-only では除外領域非表示
-ドキュメント（README 等）更新
-sample smoke
+ドキュメント / sample smoke の仕上げ
 ```
 
-分割理由: 保存契約と Collector 安全性を先に固め、UI は続けて載せられる。  
-同一 checkpoint に押し込む場合でも、**テスト境界は 2C-1 → 2C-2 の順**を推奨する。
+分割理由: 保存契約と Collector 安全性を先に固め、UI は続けて載せられる。
 
 ### 後続（本機能と混ぜない）
 

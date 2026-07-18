@@ -169,7 +169,7 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
   }
 
   it(
-    'DESIGN_ONLY: 項目 2 件追加 → 保存 → schemaVersion 1.1 / itemOrder 維持',
+    'DESIGN_ONLY: 項目 2 件追加 → 保存 → schemaVersion 1.2 / itemOrder 維持',
     { timeout: 30000 },
     async () => {
       const workspaceRoot = await createEmptyWorkspace();
@@ -229,7 +229,8 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
             'utf8'
           )
         );
-        assert.equal(saved.schemaVersion, '1.1');
+        assert.equal(saved.schemaVersion, '1.2');
+        assert.deepEqual(saved.excludedItems, {});
         assert.deepEqual(saved.itemOrder, ['manual-first', 'manual-second']);
 
         const get2 = await request('GET', `${DESCRIPTION_API_PREFIX}/item-crud`);

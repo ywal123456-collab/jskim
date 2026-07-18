@@ -10,7 +10,7 @@ import {
   writeFileAtomic,
 } from '../util/write-file-atomic.js';
 import { containsPathTraversal, isValidScreenId } from '../util/screen-id.js';
-import { DESCRIPTION_SCHEMA_V1_1_URI } from '../util/description-schema-uri.js';
+import { DESCRIPTION_SCHEMA_V1_2_URI } from '../util/description-schema-uri.js';
 import {
   buildImplementationDraftDocument,
   MAX_DESCRIPTION_LENGTH,
@@ -20,7 +20,7 @@ import {
   type EditableDescriptionDocument,
 } from './validate-description-document.js';
 
-const DEFAULT_SCHEMA_URI = DESCRIPTION_SCHEMA_V1_1_URI;
+const DEFAULT_SCHEMA_URI = DESCRIPTION_SCHEMA_V1_2_URI;
 
 export type FileDescriptionStoreOptions = {
   rootDir: string;
@@ -264,13 +264,14 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
 
     const editable = document as EditableDescriptionDocument;
     const nextSpec: DescriptionSpec & { $schema?: string } = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen: {
         id: screenId,
         name: editable.screen.name,
         description: editable.screen.description,
       },
       itemOrder: [...editable.itemOrder],
+      excludedItems: {},
       items: {},
     };
 
@@ -282,8 +283,16 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
         note: item.note,
       };
     }
+    for (const [id, item] of Object.entries(editable.excludedItems || {})) {
+      nextSpec.excludedItems![id] = {
+        name: item.name,
+        type: item.type,
+        description: item.description,
+        note: item.note,
+      };
+    }
 
-    // 保存時は常に 1.1 として書き出す（lazy migration）ため $schema も v1.1 に揃える
+    // 保存時は常に 1.2 として書き出す（lazy migration）ため $schema も v1.2 に揃える
     nextSpec.$schema = DEFAULT_SCHEMA_URI;
 
     // $schema を先頭に近い順序で出す
@@ -292,6 +301,7 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     ordered.schemaVersion = nextSpec.schemaVersion;
     ordered.screen = nextSpec.screen;
     ordered.itemOrder = nextSpec.itemOrder;
+    ordered.excludedItems = nextSpec.excludedItems;
     ordered.items = nextSpec.items;
 
     const json = `${JSON.stringify(ordered, null, 2)}\n`;
@@ -401,12 +411,14 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     }
     const itemOrder = [...collectedItemIds];
 
+    const excludedItems: EditableDescriptionDocument['excludedItems'] = {};
     const screen = { id: screenId, name, description };
     const ordered: Record<string, unknown> = {
       $schema: DEFAULT_SCHEMA_URI,
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen,
       itemOrder,
+      excludedItems,
       items,
     };
 
@@ -423,10 +435,11 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
 
     const revision = computeContentRevision(json);
     const document: EditableDescriptionDocument = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       screen,
       itemOrder,
       items,
+      excludedItems,
     };
 
     return {

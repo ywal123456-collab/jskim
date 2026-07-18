@@ -28,6 +28,16 @@ export type EditableDocument = {
       note: string;
     }
   >;
+  /** 設計対象から除外した項目（キーが除外 ID 集合）。GET 正規化で常に付く */
+  excludedItems: Record<
+    string,
+    {
+      name: string;
+      type: string;
+      description: string;
+      note: string;
+    }
+  >;
 };
 
 export type DescriptionApiGetResponse = {

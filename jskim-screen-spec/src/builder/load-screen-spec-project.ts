@@ -30,14 +30,27 @@ export type SourceSpec = {
 };
 
 export type DescriptionSpec = {
-  schemaVersion: string; // '1.0' | '1.1'
+  schemaVersion: string; // '1.0' | '1.1' | '1.2'
   screen: {
     id: string;
     name: string;
     description?: string;
   };
-  /** schemaVersion "1.1" のみ必須。1.0 には存在しない */
+  /** schemaVersion "1.1" / "1.2" で必須。1.0 には存在しない */
   itemOrder?: string[];
+  /**
+   * schemaVersion "1.2" で必須（空 object 可）。
+   * 1.0 / 1.1 には存在しない。読込時は欠落を空とみなしてよい。
+   */
+  excludedItems?: Record<
+    string,
+    {
+      name: string;
+      type: string;
+      description?: string;
+      note?: string;
+    }
+  >;
   items: Record<
     string,
     {
@@ -224,9 +237,13 @@ function loadDescriptions(dataDir: string): Map<string, DescriptionEntry> {
       );
     }
 
-    if (data.schemaVersion !== '1.0' && data.schemaVersion !== '1.1') {
+    if (
+      data.schemaVersion !== '1.0' &&
+      data.schemaVersion !== '1.1' &&
+      data.schemaVersion !== '1.2'
+    ) {
       throw new Error(
-        `Description JSON の schemaVersion は "1.0" または "1.1" である必要があります: ${filePath}`,
+        `Description JSON の schemaVersion は "1.0" / "1.1" / "1.2" のいずれかである必要があります: ${filePath}`,
       );
     }
 

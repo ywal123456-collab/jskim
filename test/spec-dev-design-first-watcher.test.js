@@ -441,7 +441,8 @@ describe('design-first Description create: watcher 回数', () => {
           'utf8'
         )
       );
-      assert.equal(saved.schemaVersion, '1.1');
+      assert.equal(saved.schemaVersion, '1.2');
+      assert.deepEqual(saved.excludedItems, {});
       assert.deepEqual(saved.itemOrder, ['manual-first', 'manual-second']);
       sse.close();
     }
@@ -498,6 +499,306 @@ describe('design-first Description create: watcher 回数', () => {
       assert.equal(counters.collect, collectAfterFirst);
       assert.equal(counters.build, buildAfterFirst);
       assert.equal(countReloadTarget(sse, 'spec'), afterFirstSpec);
+      sse.close();
+    }
+  );
+
+  it(
+    'collected 除外 PUT: collect:0 build:1 reload(spec):1',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createImplOnlyWorkspace();
+      const { port, counters } = await startRuntime(workspaceRoot);
+      const sse = await openSse({ port });
+      await sleep(120);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const get1 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+      });
+      assert.equal(get1.status, 200);
+      const get1Json = JSON.parse(get1.body.toString('utf8'));
+      assert.ok(get1Json.collectedItemIds.includes('title'));
+
+      const seedDoc = structuredClone(get1Json.document);
+      seedDoc.screen.name = '除外 watcher';
+      const putSeed = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get1Json.revision,
+          document: seedDoc,
+        }),
+      });
+      assert.equal(putSeed.status, 200);
+      await waitFor(() => counters.build === 1, {
+        timeoutMs: 10000,
+        label: 'seed write build',
+      });
+      await sleep(350);
+
+      const beforeBuild = counters.build;
+      const beforeCollect = counters.collect;
+      const beforeSpec = countReloadTarget(sse, 'spec');
+
+      const get2 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+      });
+      assert.equal(get2.status, 200);
+      const get2Json = JSON.parse(get2.body.toString('utf8'));
+      const excluded = structuredClone(get2Json.document);
+      excluded.excludedItems.title = excluded.items.title;
+      delete excluded.items.title;
+      excluded.itemOrder = excluded.itemOrder.filter((id) => id !== 'title');
+
+      const putExcl = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get2Json.revision,
+          document: excluded,
+        }),
+      });
+      assert.equal(putExcl.status, 200);
+
+      await waitFor(() => counters.build === beforeBuild + 1, {
+        timeoutMs: 10000,
+        label: 'viewer build once after exclude PUT',
+      });
+      await sleep(350);
+
+      assert.equal(counters.collect, beforeCollect);
+      assert.equal(counters.build, beforeBuild + 1);
+      assert.equal(countReloadTarget(sse, 'spec'), beforeSpec + 1);
+
+      const saved = JSON.parse(
+        await fsp.readFile(
+          path.join(
+            workspaceRoot,
+            'spec',
+            'sample',
+            'src',
+            'data',
+            'impl-only.json'
+          ),
+          'utf8'
+        )
+      );
+      assert.equal(saved.schemaVersion, '1.2');
+      assert.deepEqual(Object.keys(saved.excludedItems), ['title']);
+      assert.ok(!saved.items.title);
+      assert.ok(!saved.itemOrder.includes('title'));
+      sse.close();
+    }
+  );
+
+  it(
+    '除外復元 PUT: collect:0 build:1 reload(spec):1',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createImplOnlyWorkspace();
+      const { port, counters } = await startRuntime(workspaceRoot);
+      const sse = await openSse({ port });
+      await sleep(120);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const get1 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+      });
+      const get1Json = JSON.parse(get1.body.toString('utf8'));
+      const excluded = structuredClone(get1Json.document);
+      excluded.screen.name = '復元 watcher';
+      excluded.excludedItems.title = excluded.items.title;
+      delete excluded.items.title;
+      excluded.itemOrder = [];
+
+      const putExcl = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get1Json.revision,
+          document: excluded,
+        }),
+      });
+      assert.equal(putExcl.status, 200);
+      await waitFor(() => counters.build === 1, {
+        timeoutMs: 10000,
+        label: 'exclude build',
+      });
+      await sleep(350);
+
+      const beforeBuild = counters.build;
+      const beforeCollect = counters.collect;
+      const beforeSpec = countReloadTarget(sse, 'spec');
+
+      const get2 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+      });
+      const get2Json = JSON.parse(get2.body.toString('utf8'));
+      const restored = structuredClone(get2Json.document);
+      restored.items.title = restored.excludedItems.title;
+      delete restored.excludedItems.title;
+      restored.itemOrder = [...restored.itemOrder, 'title'];
+
+      const putRest = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/impl-only`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get2Json.revision,
+          document: restored,
+        }),
+      });
+      assert.equal(putRest.status, 200);
+
+      await waitFor(() => counters.build === beforeBuild + 1, {
+        timeoutMs: 10000,
+        label: 'viewer build once after restore PUT',
+      });
+      await sleep(350);
+
+      assert.equal(counters.collect, beforeCollect);
+      assert.equal(counters.build, beforeBuild + 1);
+      assert.equal(countReloadTarget(sse, 'spec'), beforeSpec + 1);
+
+      const saved = JSON.parse(
+        await fsp.readFile(
+          path.join(
+            workspaceRoot,
+            'spec',
+            'sample',
+            'src',
+            'data',
+            'impl-only.json'
+          ),
+          'utf8'
+        )
+      );
+      assert.deepEqual(saved.excludedItems, {});
+      assert.deepEqual(saved.itemOrder.slice(-1), ['title']);
+      sse.close();
+    }
+  );
+
+  it(
+    'manual-only 除外拒否: collect:0 build:0 reload:0',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createEmptyDesignWorkspace();
+      const { port, counters } = await startRuntime(workspaceRoot);
+      const sse = await openSse({ port });
+      await sleep(120);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const post = await httpRequest({
+        port,
+        method: 'POST',
+        path: DESCRIPTION_API_PREFIX,
+        headers,
+        body: JSON.stringify({
+          screenId: 'manual-excl-watch',
+          name: '手動除外拒否',
+          description: '',
+        }),
+      });
+      assert.equal(post.status, 201);
+      await waitFor(() => counters.build === 1, {
+        timeoutMs: 10000,
+        label: 'create build',
+      });
+      await sleep(350);
+
+      const get1 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/manual-excl-watch`,
+      });
+      const get1Json = JSON.parse(get1.body.toString('utf8'));
+      const withManual = structuredClone(get1Json.document);
+      withManual.items.manual = {
+        name: '手動',
+        type: 'text',
+        description: '',
+        note: '',
+      };
+      withManual.itemOrder = ['manual'];
+      const putAdd = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/manual-excl-watch`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get1Json.revision,
+          document: withManual,
+        }),
+      });
+      assert.equal(putAdd.status, 200);
+      await waitFor(() => counters.build === 2, {
+        timeoutMs: 10000,
+        label: 'manual add build',
+      });
+      await sleep(350);
+
+      const beforeBuild = counters.build;
+      const beforeCollect = counters.collect;
+      const beforeSpec = countReloadTarget(sse, 'spec');
+
+      const get2 = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/manual-excl-watch`,
+      });
+      const get2Json = JSON.parse(get2.body.toString('utf8'));
+      const bad = structuredClone(get2Json.document);
+      bad.excludedItems.manual = bad.items.manual;
+      delete bad.items.manual;
+      bad.itemOrder = [];
+
+      const putBad = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/manual-excl-watch`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: get2Json.revision,
+          document: bad,
+        }),
+      });
+      assert.equal(putBad.status, 400);
+      const badJson = JSON.parse(putBad.body.toString('utf8'));
+      assert.equal(
+        badJson.code,
+        'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED'
+      );
+      await sleep(500);
+
+      assert.equal(counters.collect, beforeCollect);
+      assert.equal(counters.build, beforeBuild);
+      assert.equal(countReloadTarget(sse, 'spec'), beforeSpec);
       sse.close();
     }
   );

@@ -179,6 +179,97 @@ describe('Description 同時更新', () => {
     }
   });
 
+  it('Case5: Collector retry 時も excludedItems と手動 field を保全する', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-race5-excl-'));
+    try {
+      const dataDir = path.join(root, 'spec', 'x', 'src', 'data');
+      fs.mkdirSync(dataDir, { recursive: true });
+      const realPath = path.join(dataDir, 'demo.json');
+      const initial = {
+        schemaVersion: '1.2',
+        screen: {
+          id: 'demo',
+          name: 'Demo',
+          description: '初期',
+        },
+        itemOrder: ['title'],
+        items: {
+          title: {
+            name: 'Title',
+            type: 'text',
+            description: '手動説明',
+            note: '備考',
+          },
+        },
+        excludedItems: {
+          layout: {
+            name: '枠',
+            type: 'container',
+            description: '除外説明',
+            note: '除外備考',
+          },
+        },
+      };
+      fs.writeFileSync(realPath, `${JSON.stringify(initial, null, 2)}\n`, 'utf8');
+
+      let calls = 0;
+      const writeOnceConflict = (
+        ...args: Parameters<typeof writeFileAtomic>
+      ): WriteFileAtomicResult => {
+        calls += 1;
+        if (calls === 1) {
+          // 1 回目は conflict。その間に Viewer が除外説明を更新した想定でディスクを書き換える
+          const mid = structuredClone(initial);
+          mid.screen.description = 'Viewer更新';
+          mid.excludedItems.layout.description = '除外説明を更新';
+          fs.writeFileSync(
+            realPath,
+            `${JSON.stringify(mid, null, 2)}\n`,
+            'utf8',
+          );
+          return {
+            status: 'conflict',
+            expectedRevision: 'sha256:old',
+            currentRevision: 'sha256:viewer',
+          };
+        }
+        return writeFileAtomic(...args);
+      };
+
+      const result = writeCollectedDescription({
+        filePath: realPath,
+        screenId: 'demo',
+        foundItemIds: ['title', 'layout', 'new-item'],
+        writeFileAtomicFn: writeOnceConflict,
+      });
+      expect(result.written).toBe(true);
+      expect(result.attempts).toBe(2);
+      expect(result.addedItemIds).toContain('new-item');
+      expect(result.addedItemIds).not.toContain('layout');
+
+      const saved = JSON.parse(fs.readFileSync(realPath, 'utf8'));
+      expect(saved.schemaVersion).toBe('1.2');
+      expect(saved.screen.description).toBe('Viewer更新');
+      expect(saved.excludedItems.layout).toEqual({
+        name: '枠',
+        type: 'container',
+        description: '除外説明を更新',
+        note: '除外備考',
+      });
+      expect(saved.items.layout).toBeUndefined();
+      expect(saved.itemOrder).not.toContain('layout');
+      expect(saved.items['new-item']).toEqual({
+        name: '',
+        type: '',
+        description: '',
+        note: '',
+      });
+      expect(saved.items.title.description).toBe('手動説明');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('Case4: 異なる screen は互いに遮断しない', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-race4-'));
     try {

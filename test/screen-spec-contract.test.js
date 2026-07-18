@@ -83,6 +83,24 @@ describe('スクリーン仕様 screen-spec 契約', () => {
     assert.equal(descriptionSchemaV11.additionalProperties, false);
   });
 
+  it('description-spec.v1.2 schema JSON がパースでき、excludedItems が必須である（excludedItemIds は持たない）', () => {
+    const descriptionSchemaV12 = loadJson(
+      path.join(SCHEMA_DIR, 'description-spec.v1.2.schema.json')
+    );
+    assert.equal(typeof descriptionSchemaV12, 'object');
+    assert.equal(descriptionSchemaV12.properties.schemaVersion.const, '1.2');
+    assert.ok(descriptionSchemaV12.required.includes('itemOrder'));
+    assert.ok(descriptionSchemaV12.required.includes('excludedItems'));
+    assert.ok(descriptionSchemaV12.required.includes('items'));
+    assert.equal(descriptionSchemaV12.properties.excludedItems.type, 'object');
+    assert.equal(descriptionSchemaV12.additionalProperties, false);
+    assert.equal(
+      descriptionSchemaV12.properties.excludedItemIds,
+      undefined,
+      'excludedItemIds は採用しない（keys(excludedItems) が除外集合）'
+    );
+  });
+
   it('interactionCategory の enum がドキュメント一覧と一致する', () => {
     const sourceSchema = loadJson(path.join(SCHEMA_DIR, 'source-spec.v1.schema.json'));
     assert.deepEqual(sourceSchema.$defs.interactionCategory.enum, EXPECTED_INTERACTION_CATEGORIES);

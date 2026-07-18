@@ -325,10 +325,11 @@ export function computeContentRevision(content: string | Buffer): string {
 
 export function computeEmptyDescriptionRevision(screenId: string): string {
   const empty = {
-    schemaVersion: '1.1',
+    schemaVersion: '1.2',
     screen: { id: screenId, name: '', description: '' },
     itemOrder: [],
     items: {},
+    excludedItems: {},
   };
   return computeContentRevision(`${JSON.stringify(empty, null, 2)}\n`);
 }

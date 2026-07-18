@@ -7,9 +7,10 @@ import ItemDescriptionTable from '../../src/viewer/components/ItemDescriptionTab
 import type { ScreenData } from '../../src/viewer/types';
 
 const baseDocument = {
-  schemaVersion: '1.1',
+  schemaVersion: '1.2',
   screen: { id: 'demo', name: 'Demo', description: '説明' },
   itemOrder: ['title'],
+  excludedItems: {},
   items: {
     title: {
       name: 'タイトル',
