@@ -29,6 +29,8 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   const loadedDocument = ref<EditableDocument | null>(null);
   const draftDocument = ref<EditableDocument | null>(null);
   const revision = ref<string | null>(null);
+  /** GET 時点の collected item ID（UI の削除可否。PUT ではサーバーが再検証する） */
+  const collectedItemIds = ref<string[]>([]);
   const status = ref<SaveStatus>('idle');
   const statusMessage = ref('');
   const conflictError = ref<DescriptionApiError | null>(null);
@@ -73,7 +75,12 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     revision.value = data.revision;
     loadedDocument.value = cloneEditableDocument(data.document);
     draftDocument.value = cloneEditableDocument(data.document);
+    collectedItemIds.value = [...(data.collectedItemIds || [])];
     status.value = 'clean';
+  }
+
+  function isCollectedItem(itemId: string): boolean {
+    return collectedItemIds.value.includes(itemId);
   }
 
   async function save(): Promise<boolean> {
@@ -250,6 +257,77 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     swapItemOrder(itemId, 1);
   }
 
+  /**
+   * 項目を複製する。新 ID を原項目の直後に挿入する。
+   * 重複 ID / 原項目不在の場合は false。
+   */
+  function duplicateItem(
+    sourceItemId: string,
+    item: {
+      itemId: string;
+      name: string;
+      type: string;
+      description: string;
+      note: string;
+    },
+  ): boolean {
+    if (!draftDocument.value) {
+      return false;
+    }
+    const sourceId = sourceItemId.trim();
+    const newId = item.itemId.trim();
+    if (!sourceId || !newId || draftDocument.value.items[newId]) {
+      return false;
+    }
+    if (!draftDocument.value.items[sourceId]) {
+      return false;
+    }
+    const order = [...draftDocument.value.itemOrder];
+    const sourceIndex = order.indexOf(sourceId);
+    if (sourceIndex === -1) {
+      return false;
+    }
+    order.splice(sourceIndex + 1, 0, newId);
+    draftDocument.value = {
+      ...draftDocument.value,
+      itemOrder: order,
+      items: {
+        ...draftDocument.value.items,
+        [newId]: {
+          name: item.name,
+          type: item.type,
+          description: item.description,
+          note: item.note,
+        },
+      },
+    };
+    return true;
+  }
+
+  /**
+   * 手動項目を draft から削除する。
+   * collected 項目はクライアント側でも拒否する（サーバーでも再検証）。
+   */
+  function removeItem(itemId: string): boolean {
+    if (!draftDocument.value) {
+      return false;
+    }
+    const id = itemId.trim();
+    if (!id || !draftDocument.value.items[id]) {
+      return false;
+    }
+    if (isCollectedItem(id)) {
+      return false;
+    }
+    const { [id]: _removed, ...restItems } = draftDocument.value.items;
+    draftDocument.value = {
+      ...draftDocument.value,
+      itemOrder: draftDocument.value.itemOrder.filter((entry) => entry !== id),
+      items: restItems,
+    };
+    return true;
+  }
+
   function onBeforeUnload(event: BeforeUnloadEvent): void {
     if (!dirty.value) {
       return;
@@ -284,6 +362,7 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     loadedDocument,
     draftDocument,
     revision,
+    collectedItemIds,
     status,
     statusMessage,
     conflictError,
@@ -296,6 +375,9 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     updateScreenField,
     updateItemField,
     addItem,
+    duplicateItem,
+    removeItem,
+    isCollectedItem,
     moveItemUp,
     moveItemDown,
   };

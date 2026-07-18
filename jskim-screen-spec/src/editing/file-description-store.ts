@@ -34,6 +34,8 @@ export type DescriptionReadResult = {
   revision: string;
   exists: boolean;
   document: EditableDescriptionDocument;
+  /** 最新 snapshot から抽出した collected item ID（削除可否判定用） */
+  collectedItemIds: string[];
 };
 
 export type DescriptionWriteResult = {
@@ -196,6 +198,7 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
         revision: missing.revision,
         exists: false,
         document: missing.document,
+        collectedItemIds: [...missing.itemIds],
       };
     }
 
@@ -205,6 +208,7 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
       revision: computeContentRevision(raw.buffer),
       exists: true,
       document: toEditableDocument(raw.parsed, screenId, collectedOrder),
+      collectedItemIds: [...collectedOrder],
     };
   }
 
@@ -230,7 +234,8 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     const emptyRevision = missing
       ? missing.revision
       : computeEmptyDescriptionRevision(screenId);
-    const requiredItemIds = missing ? missing.itemIds : null;
+    // PUT 直前に最新 collected を再読込する（Viewer 取得時点の状態だけを信じない）
+    const currentCollectedItemIds = collectImplementationItemIds(screenId);
     const currentRevision = raw.buffer
       ? computeContentRevision(raw.buffer)
       : emptyRevision;
@@ -251,7 +256,7 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
       screenId,
       document,
       existing: raw.parsed,
-      requiredItemIds,
+      requiredItemIds: currentCollectedItemIds,
     });
     if (validationError) {
       throw storeError(400, validationError.code, validationError.message);

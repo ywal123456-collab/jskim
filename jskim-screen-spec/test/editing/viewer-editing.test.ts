@@ -392,4 +392,69 @@ describe('Description Viewer editing', () => {
       'c',
     ]);
   });
+
+  it('duplicateItem は原項目の直後に挿入し、removeItem は manual-only のみ削除する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            revision: 'sha256:r1',
+            exists: true,
+            document: {
+              ...baseDocument,
+              itemOrder: ['title', 'manual'],
+              items: {
+                title: {
+                  name: 'タイトル',
+                  type: 'text',
+                  description: '',
+                  note: '',
+                },
+                manual: {
+                  name: '手動',
+                  type: 'text',
+                  description: 'd',
+                  note: 'n',
+                },
+              },
+            },
+            collectedItemIds: ['title'],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.isCollectedItem('title')).toBe(true);
+    expect(wrapper.vm.editor.isCollectedItem('manual')).toBe(false);
+
+    const duplicated = wrapper.vm.editor.duplicateItem('title', {
+      itemId: 'title-copy',
+      name: 'タイトル',
+      type: 'text',
+      description: '',
+      note: '',
+    });
+    expect(duplicated).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'title',
+      'title-copy',
+      'manual',
+    ]);
+
+    expect(wrapper.vm.editor.removeItem('title')).toBe(false);
+    expect(wrapper.vm.editor.removeItem('manual')).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'title',
+      'title-copy',
+    ]);
+    expect(wrapper.vm.editor.draftDocument.value?.items.manual).toBeUndefined();
+    expect(wrapper.vm.editor.dirty.value).toBe(true);
+  });
 });

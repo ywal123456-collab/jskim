@@ -95,6 +95,7 @@ function createDescriptionEditApi(options) {
           revision: result.revision,
           exists: result.exists,
           document: result.document,
+          collectedItemIds: result.collectedItemIds || [],
         });
       } catch (err) {
         sendStoreError(res, err);

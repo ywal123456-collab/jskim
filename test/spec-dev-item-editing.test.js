@@ -269,7 +269,7 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
   );
 
   it(
-    'DESIGN_ONLY: 既存 item 削除 PUT は 400 で元ファイルを保つ',
+    'DESIGN_ONLY: manual-only 項目の削除 PUT は成功する',
     { timeout: 30000 },
     async () => {
       const workspaceRoot = await createEmptyWorkspace();
@@ -290,6 +290,7 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
         assert.equal(created.status, 201);
 
         const get1 = await request('GET', `${DESCRIPTION_API_PREFIX}/keep-items`);
+        assert.deepEqual(get1.json.collectedItemIds, []);
         const doc = structuredClone(get1.json.document);
         doc.items.a = { name: 'A', type: 'text', description: '', note: '' };
         doc.items.b = { name: 'B', type: 'text', description: '', note: '' };
@@ -314,8 +315,7 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
             document: removed,
           }),
         });
-        assert.equal(put2.status, 400);
-        assert.match(put2.json.message, /既存の項目IDは変更または削除できません/);
+        assert.equal(put2.status, 200);
 
         const saved = JSON.parse(
           await fsp.readFile(
@@ -330,8 +330,93 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
             'utf8'
           )
         );
-        assert.deepEqual(saved.itemOrder, ['a', 'b']);
-        assert.ok(saved.items.b);
+        assert.deepEqual(saved.itemOrder, ['a']);
+        assert.equal(saved.items.b, undefined);
+      });
+    }
+  );
+
+  it(
+    'DESIGN_ONLY: 項目複製 PUT で原項目の直後に挿入される',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createEmptyWorkspace();
+      await withRealDescriptionApi(workspaceRoot, async ({ port, request }) => {
+        const headers = {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        };
+        const created = await request('POST', DESCRIPTION_API_PREFIX, {
+          headers,
+          body: JSON.stringify({
+            screenId: 'dup-items',
+            name: '複製',
+            description: '',
+          }),
+        });
+        assert.equal(created.status, 201);
+
+        const get1 = await request('GET', `${DESCRIPTION_API_PREFIX}/dup-items`);
+        const doc = structuredClone(get1.json.document);
+        doc.items['manual-a'] = {
+          name: '手動A',
+          type: 'text',
+          description: 'd',
+          note: 'n',
+        };
+        doc.items['manual-b'] = {
+          name: '手動B',
+          type: 'button',
+          description: '',
+          note: '',
+        };
+        doc.itemOrder = ['manual-a', 'manual-b'];
+        const put1 = await request('PUT', `${DESCRIPTION_API_PREFIX}/dup-items`, {
+          headers,
+          body: JSON.stringify({
+            expectedRevision: get1.json.revision,
+            document: doc,
+          }),
+        });
+        assert.equal(put1.status, 200);
+
+        const get2 = await request('GET', `${DESCRIPTION_API_PREFIX}/dup-items`);
+        const withCopy = structuredClone(get2.json.document);
+        withCopy.items['manual-a-copy'] = {
+          name: '手動A',
+          type: 'text',
+          description: 'd',
+          note: 'n',
+        };
+        withCopy.itemOrder = ['manual-a', 'manual-a-copy', 'manual-b'];
+        const put2 = await request('PUT', `${DESCRIPTION_API_PREFIX}/dup-items`, {
+          headers,
+          body: JSON.stringify({
+            expectedRevision: get2.json.revision,
+            document: withCopy,
+          }),
+        });
+        assert.equal(put2.status, 200);
+
+        const saved = JSON.parse(
+          await fsp.readFile(
+            path.join(
+              workspaceRoot,
+              'spec',
+              'sample',
+              'src',
+              'data',
+              'dup-items.json'
+            ),
+            'utf8'
+          )
+        );
+        assert.deepEqual(saved.itemOrder, [
+          'manual-a',
+          'manual-a-copy',
+          'manual-b',
+        ]);
       });
     }
   );
@@ -355,6 +440,7 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
           );
           assert.equal(get1.status, 200);
           assert.equal(get1.json.exists, false);
+          assert.deepEqual(get1.json.collectedItemIds, ['title']);
 
           const doc = structuredClone(get1.json.document);
           doc.screen.name = '実装+手動';
@@ -393,6 +479,209 @@ describe('design-first: 項目追加と並び替え（Phase 7B-2A）', () => {
           ]);
         }
       );
+    }
+  );
+
+  it(
+    'LINKED: collected 項目の削除 PUT は拒否し、複製は許可する',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createImplOnlyWorkspace();
+      await withRealDescriptionApi(workspaceRoot, async ({ port, request }) => {
+        const headers = {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        };
+        const get1 = await request('GET', `${DESCRIPTION_API_PREFIX}/impl-only`);
+        const seeded = structuredClone(get1.json.document);
+        seeded.screen.name = '連携';
+        const putSeed = await request(
+          'PUT',
+          `${DESCRIPTION_API_PREFIX}/impl-only`,
+          {
+            headers,
+            body: JSON.stringify({
+              expectedRevision: get1.json.revision,
+              document: seeded,
+            }),
+          }
+        );
+        assert.equal(putSeed.status, 200);
+
+        const get2 = await request('GET', `${DESCRIPTION_API_PREFIX}/impl-only`);
+        assert.deepEqual(get2.json.collectedItemIds, ['title']);
+
+        const withCopy = structuredClone(get2.json.document);
+        withCopy.items['title-copy'] = {
+          name: 'タイトル',
+          type: 'text',
+          description: '',
+          note: '',
+        };
+        withCopy.itemOrder = ['title', 'title-copy'];
+        const putCopy = await request(
+          'PUT',
+          `${DESCRIPTION_API_PREFIX}/impl-only`,
+          {
+            headers,
+            body: JSON.stringify({
+              expectedRevision: get2.json.revision,
+              document: withCopy,
+            }),
+          }
+        );
+        assert.equal(putCopy.status, 200);
+
+        const get3 = await request('GET', `${DESCRIPTION_API_PREFIX}/impl-only`);
+        const deletedCollected = structuredClone(get3.json.document);
+        delete deletedCollected.items.title;
+        deletedCollected.itemOrder = ['title-copy'];
+        const putDelete = await request(
+          'PUT',
+          `${DESCRIPTION_API_PREFIX}/impl-only`,
+          {
+            headers,
+            body: JSON.stringify({
+              expectedRevision: get3.json.revision,
+              document: deletedCollected,
+            }),
+          }
+        );
+        assert.equal(putDelete.status, 400);
+        assert.equal(
+          putDelete.json.code,
+          'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED'
+        );
+
+        const saved = JSON.parse(
+          await fsp.readFile(
+            path.join(
+              workspaceRoot,
+              'spec',
+              'sample',
+              'src',
+              'data',
+              'impl-only.json'
+            ),
+            'utf8'
+          )
+        );
+        assert.ok(saved.items.title);
+        assert.deepEqual(saved.itemOrder, ['title', 'title-copy']);
+      });
+    }
+  );
+
+  it(
+    'race: PUT 直前に collected へ昇格した項目の削除は拒否する',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createEmptyWorkspace();
+      await withRealDescriptionApi(workspaceRoot, async ({ port, request }) => {
+        const headers = {
+          'Content-Type': 'application/json',
+          Origin: `http://127.0.0.1:${port}`,
+          Host: `127.0.0.1:${port}`,
+        };
+        const created = await request('POST', DESCRIPTION_API_PREFIX, {
+          headers,
+          body: JSON.stringify({
+            screenId: 'race-item',
+            name: '競合',
+            description: '',
+          }),
+        });
+        assert.equal(created.status, 201);
+
+        const get1 = await request('GET', `${DESCRIPTION_API_PREFIX}/race-item`);
+        const doc = structuredClone(get1.json.document);
+        doc.items['item-x'] = {
+          name: 'X',
+          type: 'text',
+          description: '',
+          note: '',
+        };
+        doc.itemOrder = ['item-x'];
+        const put1 = await request('PUT', `${DESCRIPTION_API_PREFIX}/race-item`, {
+          headers,
+          body: JSON.stringify({
+            expectedRevision: get1.json.revision,
+            document: doc,
+          }),
+        });
+        assert.equal(put1.status, 200);
+
+        // collect 相当: snapshot に同じ ID を後から追加
+        const snapDir = path.join(
+          workspaceRoot,
+          'spec',
+          'sample',
+          'src',
+          'snapshots',
+          'race-item'
+        );
+        await fsp.mkdir(snapDir, { recursive: true });
+        await fsp.writeFile(
+          path.join(snapDir, 'default.html'),
+          '<div data-jskim-spec-item="item-x">x</div>\n',
+          'utf8'
+        );
+        // Source も追加して listScreenIds に残す（既に Description があるので不要だが実況に近づける）
+        await fsp.writeFile(
+          path.join(workspaceRoot, 'src', 'sample', 'pages', 'race-item.spec.json'),
+          JSON.stringify(
+            {
+              schemaVersion: '1.0',
+              screen: { id: 'race-item', path: '/' },
+              states: [
+                {
+                  id: 'default',
+                  name: '初期',
+                  viewer: { visible: true, order: 1 },
+                },
+              ],
+              interactions: [],
+            },
+            null,
+            2
+          ) + '\n',
+          'utf8'
+        );
+
+        const get2 = await request('GET', `${DESCRIPTION_API_PREFIX}/race-item`);
+        assert.ok(get2.json.collectedItemIds.includes('item-x'));
+        const removed = structuredClone(get2.json.document);
+        delete removed.items['item-x'];
+        removed.itemOrder = [];
+        const put2 = await request('PUT', `${DESCRIPTION_API_PREFIX}/race-item`, {
+          headers,
+          body: JSON.stringify({
+            expectedRevision: get2.json.revision,
+            document: removed,
+          }),
+        });
+        assert.equal(put2.status, 400);
+        assert.equal(
+          put2.json.code,
+          'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED'
+        );
+
+        const saved = JSON.parse(
+          await fsp.readFile(
+            path.join(
+              workspaceRoot,
+              'spec',
+              'sample',
+              'src',
+              'data',
+              'race-item.json'
+            ),
+            'utf8'
+          )
+        );
+        assert.ok(saved.items['item-x']);
+      });
     }
   );
 });

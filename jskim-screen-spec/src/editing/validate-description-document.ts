@@ -46,15 +46,15 @@ export type DescriptionValidationError = {
 
 /**
  * Viewer 編集用 document を検証する（常に schemaVersion "1.1" として保存する）。
- * 既存ファイルがある場合は既存 item ID の変更・削除を拒否する（追加は許可: oldIds ⊆ newIds）。
- * 既存ファイルが無い場合、`requiredItemIds` が指定されていれば
- * その集合が新しい item ID 集合に含まれることを要求する（IMPLEMENTATION_ONLY 初回保存用、追加は許可）。
+ * `requiredItemIds`（最新の collected item ID 集合）は新しい item ID 集合に
+ * 含まれていなければならない（`currentCollectedItemIds ⊆ newItemIds`）。
+ * collected に無い manual-only 項目の削除と、新規 ID の追加は許可する。
  */
 export function validateEditableDescriptionDocument(options: {
   screenId: string;
   document: unknown;
   existing: DescriptionSpec | null;
-  /** existing が null の場合のみ参照する item ID の必須部分集合 */
+  /** 現在の collected item ID（snapshot から再読込した最新集合） */
   requiredItemIds?: string[] | null;
 }): DescriptionValidationError | null {
   const { screenId, document, existing, requiredItemIds } = options;
@@ -247,24 +247,14 @@ export function validateEditableDescriptionDocument(options: {
     };
   }
 
-  if (existing) {
-    const existingIds = Object.keys(existing.items || {});
+  if (requiredItemIds != null) {
     const nextIdSet = uniqueItemIds;
-    const removedOrRenamed = existingIds.some((id) => !nextIdSet.has(id));
-    if (removedOrRenamed) {
+    const missingCollected = requiredItemIds.some((id) => !nextIdSet.has(id));
+    if (missingCollected) {
       return {
-        code: 'SPEC_DESCRIPTION_INVALID',
-        message: '既存の項目IDは変更または削除できません。',
-      };
-    }
-  } else if (requiredItemIds != null) {
-    const nextIdSet = uniqueItemIds;
-    const missing = requiredItemIds.some((id) => !nextIdSet.has(id));
-    if (missing) {
-      return {
-        code: 'SPEC_DESCRIPTION_INVALID',
+        code: 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED',
         message:
-          '実装側から検出された項目 ID を削除することはできません。',
+          '実装画面と連携された項目は削除できません。最新の画面設計書を再読み込みしてください。',
       };
     }
   }

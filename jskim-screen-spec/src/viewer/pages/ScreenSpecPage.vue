@@ -6,6 +6,8 @@ import DomPreview, {
 import StateSelector from '../components/StateSelector.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
 import CreateItemDialog from '../components/CreateItemDialog.vue';
+import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
+import DeleteItemDialog from '../components/DeleteItemDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import {
   SCREEN_SPEC_STATUS_LABEL,
@@ -31,6 +33,8 @@ const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
 const createItemDialogOpen = ref(false);
+const duplicateSourceItemId = ref<string | null>(null);
+const deleteTargetItemId = ref<string | null>(null);
 
 const editor = useDescriptionEditor(() => props.screenId);
 
@@ -228,6 +232,95 @@ function onCreateItem(payload: {
   });
 }
 
+function openDuplicateItem(itemId: string): void {
+  duplicateSourceItemId.value = itemId;
+}
+
+function closeDuplicateItem(): void {
+  duplicateSourceItemId.value = null;
+}
+
+const duplicateSourceItem = computed(() => {
+  const id = duplicateSourceItemId.value;
+  if (!id || !editor.draftDocument.value) {
+    return null;
+  }
+  const item = editor.draftDocument.value.items[id];
+  if (!item) {
+    return null;
+  }
+  return { itemId: id, ...item };
+});
+
+function onDuplicateItem(payload: {
+  itemId: string;
+  name: string;
+  type: string;
+  description: string;
+  note: string;
+}): void {
+  const sourceId = duplicateSourceItemId.value;
+  if (!sourceId) {
+    return;
+  }
+  const ok = editor.duplicateItem(sourceId, payload);
+  if (!ok) {
+    return;
+  }
+  void nextTick(() => {
+    onSelectItem(payload.itemId);
+  });
+}
+
+function openDeleteItem(itemId: string): void {
+  if (editor.isCollectedItem(itemId)) {
+    return;
+  }
+  deleteTargetItemId.value = itemId;
+}
+
+function closeDeleteItem(): void {
+  deleteTargetItemId.value = null;
+}
+
+const deleteTargetItem = computed(() => {
+  const id = deleteTargetItemId.value;
+  if (!id || !editor.draftDocument.value) {
+    return null;
+  }
+  const item = editor.draftDocument.value.items[id];
+  if (!item) {
+    return null;
+  }
+  return { itemId: id, name: item.name };
+});
+
+function onConfirmDeleteItem(): void {
+  const itemId = deleteTargetItemId.value;
+  if (!itemId || !editor.draftDocument.value) {
+    return;
+  }
+  const order = editor.draftDocument.value.itemOrder;
+  const index = order.indexOf(itemId);
+  const wasSelected = selectedItemId.value === itemId;
+  const removed = editor.removeItem(itemId);
+  if (!removed) {
+    return;
+  }
+  if (!wasSelected) {
+    return;
+  }
+  const nextOrder = editor.draftDocument.value.itemOrder;
+  const nextId = nextOrder[index] ?? nextOrder[index - 1] ?? null;
+  selectedItemId.value = nextId;
+  if (nextId) {
+    void nextTick(() => {
+      const row = document.getElementById(`item-row-${nextId}`);
+      row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+}
+
 function copyDraftJson(): void {
   if (!editor.draftDocument.value) {
     return;
@@ -416,6 +509,9 @@ watch(
             :editable="editor.editingEnabled"
             :draft-items="editor.draftDocument.value?.items || null"
             :item-order="editor.editingEnabled ? displayItemOrder : null"
+            :collected-item-ids="
+              editor.editingEnabled ? editor.collectedItemIds.value : null
+            "
             @select="onSelectItem"
             @change-state="onSelectState"
             @update-item="
@@ -423,6 +519,8 @@ watch(
             "
             @move-up="editor.moveItemUp"
             @move-down="editor.moveItemDown"
+            @duplicate="openDuplicateItem"
+            @remove="openDeleteItem"
           />
         </section>
       </div>
@@ -437,6 +535,30 @@ watch(
       "
       @close="closeCreateItem"
       @create="onCreateItem"
+    />
+
+    <DuplicateItemDialog
+      v-if="duplicateSourceItem"
+      :existing-item-ids="
+        editor.draftDocument.value
+          ? Object.keys(editor.draftDocument.value.items)
+          : []
+      "
+      :source-item-id="duplicateSourceItem.itemId"
+      :initial-name="duplicateSourceItem.name"
+      :initial-type="duplicateSourceItem.type"
+      :initial-description="duplicateSourceItem.description"
+      :initial-note="duplicateSourceItem.note"
+      @close="closeDuplicateItem"
+      @create="onDuplicateItem"
+    />
+
+    <DeleteItemDialog
+      v-if="deleteTargetItem"
+      :item-id="deleteTargetItem.itemId"
+      :item-name="deleteTargetItem.name"
+      @close="closeDeleteItem"
+      @confirm="onConfirmDeleteItem"
     />
   </div>
 </template>

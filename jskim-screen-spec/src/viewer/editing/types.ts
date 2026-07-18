@@ -35,6 +35,8 @@ export type DescriptionApiGetResponse = {
   revision: string;
   exists: boolean;
   document: EditableDocument;
+  /** 最新 snapshot 由来の collected item ID（削除可否判定用） */
+  collectedItemIds?: string[];
 };
 
 export type DescriptionApiPutResponse = {

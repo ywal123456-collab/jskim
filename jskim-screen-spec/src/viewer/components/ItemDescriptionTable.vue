@@ -13,6 +13,8 @@ const props = defineProps<{
   > | null;
   /** 編集中は draft の itemOrder を渡す。未指定時は screen.itemOrder を使う */
   itemOrder?: string[] | null;
+  /** 現在 collected されている item ID（削除不可判定） */
+  collectedItemIds?: string[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -25,13 +27,18 @@ const emit = defineEmits<{
   ];
   'move-up': [itemId: string];
   'move-down': [itemId: string];
+  duplicate: [itemId: string];
+  remove: [itemId: string];
 }>();
 
 const router = useRouter();
 
 const displayItemOrder = computed(() => props.itemOrder ?? props.screen.itemOrder);
+const collectedSet = computed(() => new Set(props.collectedItemIds || []));
 
 const UNREGISTERED_LABEL = '画面設計書未登録';
+const COLLECTED_DELETE_HINT =
+  '実装画面と連携している項目は削除できません。';
 
 function interactionsFor(itemId: string): ScreenInteraction[] {
   return props.screen.interactions.filter((i) => i.itemId === itemId);
@@ -69,6 +76,10 @@ function itemField(
     return props.draftItems[itemId][field] || '';
   }
   return props.screen.items[itemId]?.[field] || '';
+}
+
+function isCollected(itemId: string): boolean {
+  return collectedSet.value.has(itemId);
 }
 </script>
 
@@ -189,6 +200,33 @@ function itemField(
                 >
                   ↓
                 </button>
+                <button
+                  type="button"
+                  class="item-table__action-btn"
+                  aria-label="複製"
+                  title="複製"
+                  @click.stop="emit('duplicate', itemId)"
+                >
+                  複製
+                </button>
+                <button
+                  v-if="!isCollected(itemId)"
+                  type="button"
+                  class="item-table__action-btn item-table__action-btn--danger"
+                  aria-label="削除"
+                  title="削除"
+                  @click.stop="emit('remove', itemId)"
+                >
+                  削除
+                </button>
+                <span
+                  v-else
+                  class="item-table__delete-blocked"
+                  role="note"
+                  :title="COLLECTED_DELETE_HINT"
+                >
+                  {{ COLLECTED_DELETE_HINT }}
+                </span>
               </template>
               <button
                 v-for="(interaction, iIndex) in interactionsFor(itemId)"

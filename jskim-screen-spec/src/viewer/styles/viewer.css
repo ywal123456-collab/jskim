@@ -303,6 +303,36 @@ body,
   background: #e5e7eb;
 }
 
+.item-table__action-btn {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--spec-border);
+  border-radius: 0.25rem;
+  background: var(--spec-surface);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.item-table__action-btn--danger {
+  border-color: #fca5a5;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.item-table__delete-blocked {
+  display: inline-block;
+  max-width: 12rem;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
+.spec-page__btn--danger {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #fff;
+}
+
 .spec-page--error {
   color: #b91c1c;
 }

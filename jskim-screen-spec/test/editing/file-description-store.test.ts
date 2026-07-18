@@ -47,28 +47,54 @@ describe('Description editing store', () => {
     expect(err?.code).toBe('SPEC_DESCRIPTION_INVALID');
   });
 
-  it('既存 item ID の変更・削除を拒否する', () => {
+  it('collected item ID の削除を拒否する', () => {
     const existing = {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a', 'manual'],
       items: {
         a: { name: 'A', type: '', description: '', note: '' },
+        manual: { name: 'M', type: '', description: '', note: '' },
       },
     };
     const doc = toEditableDocument(existing);
-    doc.items = {
-      b: { name: 'B', type: '', description: '', note: '' },
-    };
-    doc.itemOrder = ['b'];
+    delete doc.items.a;
+    doc.itemOrder = ['manual'];
     const err = validateEditableDescriptionDocument({
       screenId: 'crud-create',
       document: doc,
       existing,
+      requiredItemIds: ['a'],
     });
-    expect(err?.message).toBe('既存の項目IDは変更または削除できません。');
+    expect(err?.code).toBe(
+      'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED',
+    );
+    expect(err?.message).toMatch(/実装画面と連携された項目は削除できません/);
   });
 
-  it('既存 item ID を維持したまま新規 item ID の追加は許可する（PUT: oldIds ⊆ newIds）', () => {
+  it('manual-only 項目の削除は許可する（collected に無い ID）', () => {
+    const existing = {
+      schemaVersion: '1.1',
+      screen: { id: 'crud-create', name: 'A', description: '' },
+      itemOrder: ['a', 'manual'],
+      items: {
+        a: { name: 'A', type: '', description: '', note: '' },
+        manual: { name: 'M', type: '', description: '', note: '' },
+      },
+    };
+    const doc = toEditableDocument(existing);
+    delete doc.items.manual;
+    doc.itemOrder = ['a'];
+    const err = validateEditableDescriptionDocument({
+      screenId: 'crud-create',
+      document: doc,
+      existing,
+      requiredItemIds: ['a'],
+    });
+    expect(err).toBeNull();
+  });
+
+  it('既存 item ID を維持したまま新規 item ID の追加は許可する', () => {
     const existing = {
       schemaVersion: '1.1',
       screen: { id: 'crud-create', name: 'A', description: '' },
@@ -443,8 +469,95 @@ describe('Description editing store', () => {
         );
 
         expect(() => store.write('impl-only', next, before.revision)).toThrowError(
-          /項目 ID/,
+          /実装画面と連携された項目は削除できません/,
         );
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('保存後に manual-only 項目だけ削除できる（collected は維持）', () => {
+      const { root, store } = setupImplOnlyWorkspace(['title']);
+      try {
+        const before = store.read('impl-only');
+        expect(before.collectedItemIds).toEqual(['title']);
+        const seeded = structuredClone(before.document);
+        seeded.screen.name = '連携';
+        seeded.items.extra = {
+          name: '手動',
+          type: 'text',
+          description: '',
+          note: '',
+        };
+        seeded.itemOrder = ['title', 'extra'];
+        const written = store.write('impl-only', seeded, before.revision);
+        expect(written.saved).toBe(true);
+
+        const mid = store.read('impl-only');
+        const removed = structuredClone(mid.document);
+        delete removed.items.extra;
+        removed.itemOrder = ['title'];
+        const deleted = store.write('impl-only', removed, mid.revision);
+        expect(deleted.saved).toBe(true);
+        expect(store.read('impl-only').document.itemOrder).toEqual(['title']);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('GET 後に snapshot へ同じ ID が追加されると削除 PUT は拒否する（race）', () => {
+      const { root, store } = setupImplOnlyWorkspace([]);
+      try {
+        // Description だけ先に作る（manual-only）
+        const dataDir = path.join(root, 'spec', 'sample', 'src', 'data');
+        fs.mkdirSync(dataDir, { recursive: true });
+        const filePath = path.join(dataDir, 'impl-only.json');
+        fs.writeFileSync(
+          filePath,
+          `${JSON.stringify(
+            {
+              schemaVersion: '1.1',
+              screen: { id: 'impl-only', name: 'race', description: '' },
+              itemOrder: ['item-x'],
+              items: {
+                'item-x': {
+                  name: 'X',
+                  type: 'text',
+                  description: '',
+                  note: '',
+                },
+              },
+            },
+            null,
+            2,
+          )}\n`,
+          'utf8',
+        );
+
+        const before = store.read('impl-only');
+        expect(before.collectedItemIds).toEqual([]);
+
+        const snapDir = path.join(
+          root,
+          'spec',
+          'sample',
+          'src',
+          'snapshots',
+          'impl-only',
+        );
+        fs.mkdirSync(snapDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(snapDir, 'default.html'),
+          '<div data-jskim-spec-item="item-x">x</div>\n',
+          'utf8',
+        );
+
+        const removed = structuredClone(before.document);
+        delete removed.items['item-x'];
+        removed.itemOrder = [];
+        expect(() =>
+          store.write('impl-only', removed, before.revision),
+        ).toThrowError(/実装画面と連携された項目は削除できません/);
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
