@@ -53,6 +53,19 @@ export {
 } from './status.js';
 
 export {
+  getDeviceCapturePublicInfo,
+  viewerDeviceCaptureImagePath,
+  type DeviceCapturePublicInfo,
+} from './public-info.js';
+
+export {
+  resolveViewerDeviceCaptures,
+  type ViewerDeviceCaptureEntry,
+  type ViewerDeviceCaptures,
+  type DeviceCaptureOutputFile,
+} from './manifest-captures.js';
+
+export {
   collectDeviceCapture,
   collectDeviceCaptureOwned,
   collectDeviceCaptureWithBrowser,

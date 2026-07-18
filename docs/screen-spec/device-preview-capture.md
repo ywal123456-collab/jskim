@@ -5,7 +5,8 @@
 | Phase | 状態 |
 |-------|------|
 | **7C-1A-0** | 調査・設計（文書） |
-| **7C-1A-1** | **完了** — Device Capture **core**（内部 API・atomic 保存・inputRevision / status）。HTTP Capture API / Viewer Live・PC・SP タブは未実装 |
+| **7C-1A-1** | **完了** — Device Capture **core**（内部 API・atomic 保存・inputRevision / status） |
+| **7C-1A-2** | **完了** — `spec dev` POST/GET Capture API・runtime collecting/failed・manifest/output コピー・`meta.json` BUILD_ONLY。Viewer Live/PC/SP タブは未実装 |
 
 親方針（Provider モデル）: [preview-viewport-reference-image.md](./preview-viewport-reference-image.md)
 
@@ -716,15 +717,21 @@ project 単位 Capture queue
 
 実装: `jskim-screen-spec/src/device-capture/`
 
-### Phase 7C-1A-2（未実装）
+### Phase 7C-1A-2（実装済み）
 
 ```text
-spec dev POST collect API
-runtime collecting / error
-同一 key / API リクエスト直列化の公開面
-watcher 後は stale のみ（自動 capture なし）
-BUILD への captures コピー
+POST /_jskim/spec/device-captures:collect（spec dev 専用）
+GET  /_jskim/spec/device-captures/status
+runtime collecting / failed（in-memory、同一 key 409）
+project queue は core を再利用（API 二重 queue なし）
+manifest states[].deviceCaptures（missing/current/stale/invalid）
+参照 generation PNG のみ data/device-captures/ へ出力
+watcher: captures/**/meta.json → BUILD_ONLY（PNG/TEMP は IGNORE）
+no-op / 失敗時は build・reload なし
+自動 Capture なし
 ```
+
+実装: `scripts/lib/create-device-capture-api.js` + companion `device-capture/` + watcher/manifest
 
 ### Phase 7C-1A-3
 

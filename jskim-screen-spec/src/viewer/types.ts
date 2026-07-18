@@ -53,6 +53,21 @@ export type DocumentContext = {
   body: DocumentContextNode;
 };
 
+export type DeviceCaptureManifestEntry =
+  | { status: 'missing' }
+  | { status: 'invalid'; diagnosticCode?: string }
+  | {
+      status: 'current' | 'stale';
+      imagePath: string;
+      inputRevision: string;
+      imageRevision: string;
+      capturedAt: string;
+      viewportWidth: number;
+      viewportHeight: number;
+      imageWidth: number;
+      imageHeight: number;
+    };
+
 export type ScreenState = {
   id: string;
   name: string;
@@ -63,6 +78,11 @@ export type ScreenState = {
   snapshotFile: string;
   styles?: ScreenStateStyle[];
   documentContext?: DocumentContext;
+  /** Device Capture（PC/SP）。runtime 状態は含まない */
+  deviceCaptures?: {
+    pc: DeviceCaptureManifestEntry;
+    sp: DeviceCaptureManifestEntry;
+  };
 };
 
 export type ScreenData = {

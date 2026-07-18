@@ -232,8 +232,15 @@ function createSpecDevOrchestrator(options) {
       'src',
       'theme'
     );
+    const capturesDir = path.join(
+      workspaceRoot,
+      'spec',
+      projectName,
+      'src',
+      'captures'
+    );
 
-    const watchRoots = [dataDir, themeDir];
+    const watchRoots = [dataDir, themeDir, capturesDir];
 
     metadataWatcher = chokidar.watch(watchRoots, {
       ignoreInitial: true,
@@ -246,8 +253,12 @@ function createSpecDevOrchestrator(options) {
         /(^|[/\\])node_modules([/\\]|$)/,
         /(^|[/\\])snapshots([/\\]|$)/,
         /(^|[/\\])resources([/\\]|$)/,
-        /(^|[/\\])captures([/\\]|$)/,
         /(^|[/\\])dist([/\\]|$)/,
+        // captures: generation PNG / TEMP / backup のみ無視（meta.json は監視）
+        /[/\\]captures[/\\].*[/\\]capture-[0-9a-f]{64}\.png$/i,
+        /[/\\]captures[/\\].*\.tmp$/i,
+        /[/\\]captures[/\\].*\.bak(?:-|$)/i,
+        /[/\\]captures[/\\].*[/\\]\./,
       ],
     });
 

@@ -35,6 +35,11 @@ export type CollectDeviceCaptureInternalHooks = PersistCaptureHooks & {
   mutateInputAfterCapture?: () => void;
   /** 固定 capturedAt（テスト用） */
   now?: () => string;
+  /**
+   * Capture 本体開始前に待つ（runtime collecting 検証用）。
+   * project queue に入ったあと・Playwright 操作前に呼ばれる。
+   */
+  awaitBarrier?: () => Promise<void>;
 };
 
 function isSameCaptureResult(
@@ -93,6 +98,10 @@ export async function collectDeviceCaptureWithBrowser(
 
   const ctxBefore = loadDeviceCaptureInputContext(options);
   const inputRevisionBefore = computeInputRevision(ctxBefore);
+
+  if (options.hooks?.awaitBarrier) {
+    await options.hooks.awaitBarrier();
+  }
 
   let context: BrowserContext | null = null;
   let page: Page | null = null;

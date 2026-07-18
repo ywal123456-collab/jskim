@@ -16,6 +16,11 @@ import {
   resourceTokenToViewerUrl,
   findResourceTokens,
 } from '../collector/resources/resource-token.js';
+import {
+  resolveViewerDeviceCaptures,
+  type DeviceCaptureOutputFile,
+  type ViewerDeviceCaptures,
+} from '../device-capture/manifest-captures.js';
 
 export type ViewerInteraction = {
   itemId: string;
@@ -49,6 +54,8 @@ export type ViewerState = {
     html: { class: string[]; attributes: Record<string, string> };
     body: { class: string[]; attributes: Record<string, string> };
   };
+  /** Device Capture（PC/SP）。runtime collecting/failed は含めない */
+  deviceCaptures?: ViewerDeviceCaptures;
 };
 
 export type ViewerScreenData = {
@@ -104,6 +111,8 @@ export type CreatedViewerPayload = {
     bytes: Buffer;
     relativePath: string;
   }>;
+  /** data/ 配下に書く Device Capture PNG（参照されているもののみ） */
+  deviceCaptureFiles: DeviceCaptureOutputFile[];
 };
 
 /**
@@ -187,6 +196,7 @@ function buildInteractions(
 type BuiltStates = {
   viewerStates: ViewerState[];
   snapshotFiles: CreatedViewerPayload['snapshotFiles'];
+  deviceCaptureFiles: DeviceCaptureOutputFile[];
   itemOrder: string[];
 };
 
@@ -198,10 +208,16 @@ function buildStatesAndOrder(
   screen: LoadedScreen,
   base: string,
   knownIds: Set<string>,
+  captureContext: { rootDir: string; projectName: string } | null,
 ): BuiltStates {
   const source = screen.source;
   if (!source) {
-    return { viewerStates: [], snapshotFiles: [], itemOrder: [] };
+    return {
+      viewerStates: [],
+      snapshotFiles: [],
+      deviceCaptureFiles: [],
+      itemOrder: [],
+    };
   }
 
   const snapshotByState = new Map(
@@ -221,6 +237,21 @@ function buildStatesAndOrder(
 
   const viewerStates: ViewerState[] = [];
   const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
+  const deviceCaptureFiles: DeviceCaptureOutputFile[] = [];
+
+  function attachDeviceCaptures(stateId: string): ViewerDeviceCaptures | undefined {
+    if (!captureContext) {
+      return undefined;
+    }
+    const resolved = resolveViewerDeviceCaptures({
+      rootDir: captureContext.rootDir,
+      projectName: captureContext.projectName,
+      screenId: screen.screenId,
+      stateId,
+    });
+    deviceCaptureFiles.push(...resolved.outputFiles);
+    return resolved.deviceCaptures;
+  }
 
   for (const state of source.states) {
     const snap = snapshotByState.get(state.id);
@@ -237,6 +268,7 @@ function buildStatesAndOrder(
       html,
       relativePath,
     });
+    const deviceCaptures = attachDeviceCaptures(state.id);
     viewerStates.push({
       id: state.id,
       name: state.name,
@@ -253,6 +285,7 @@ function buildStatesAndOrder(
       ...(screen.stateDocumentContexts[state.id]
         ? { documentContext: screen.stateDocumentContexts[state.id] }
         : {}),
+      ...(deviceCaptures ? { deviceCaptures } : {}),
     });
   }
 
@@ -270,6 +303,7 @@ function buildStatesAndOrder(
       html,
       relativePath,
     });
+    const deviceCaptures = attachDeviceCaptures(snap.stateId);
     viewerStates.push({
       id: snap.stateId,
       name: snap.stateId,
@@ -283,12 +317,13 @@ function buildStatesAndOrder(
       ...(screen.stateDocumentContexts[snap.stateId]
         ? { documentContext: screen.stateDocumentContexts[snap.stateId] }
         : {}),
+      ...(deviceCaptures ? { deviceCaptures } : {}),
     });
   }
 
   viewerStates.sort((a, b) => a.viewer.order - b.viewer.order);
 
-  return { viewerStates, snapshotFiles, itemOrder };
+  return { viewerStates, snapshotFiles, deviceCaptureFiles, itemOrder };
 }
 
 /**
@@ -308,6 +343,8 @@ export function createViewerManifest(options: {
   screens: LoadedScreen[];
   registeredScreenIds: Set<string>;
   resourceFiles?: Map<string, LoadedResourceFile>;
+  /** Device Capture 解決用。未指定時は deviceCaptures を付けない */
+  rootDir?: string;
 }): CreatedViewerPayload {
   const {
     projectName,
@@ -315,11 +352,17 @@ export function createViewerManifest(options: {
     screens,
     registeredScreenIds,
     resourceFiles = new Map(),
+    rootDir,
   } = options;
 
   const knownIds = new Set(resourceFiles.keys());
   const viewerScreens: ViewerScreenData[] = [];
   const snapshotFiles: CreatedViewerPayload['snapshotFiles'] = [];
+  const deviceCaptureFiles: DeviceCaptureOutputFile[] = [];
+  const captureContext =
+    typeof rootDir === 'string' && rootDir
+      ? { rootDir, projectName }
+      : null;
 
   for (const screen of screens) {
     const name = displayScreenName(screen);
@@ -339,11 +382,18 @@ export function createViewerManifest(options: {
         collectedOrder: null,
       });
       description = screen.description?.screen.description ?? '';
+      // DESIGN_ONLY は Capture を manifest に載せない
     } else {
       screenPath = screen.source?.screen.path ?? '';
-      const built = buildStatesAndOrder(screen, base, knownIds);
+      const built = buildStatesAndOrder(
+        screen,
+        base,
+        knownIds,
+        captureContext,
+      );
       viewerStates = built.viewerStates;
       snapshotFiles.push(...built.snapshotFiles);
+      deviceCaptureFiles.push(...built.deviceCaptureFiles);
       interactions = buildInteractions(screen, registeredScreenIds);
 
       if (screen.status === 'implementation-only') {
@@ -430,6 +480,7 @@ export function createViewerManifest(options: {
     screens: viewerScreens,
     snapshotFiles,
     resourceFiles: outResourceFiles,
+    deviceCaptureFiles,
   };
 }
 

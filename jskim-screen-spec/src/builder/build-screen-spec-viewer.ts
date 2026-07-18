@@ -39,6 +39,7 @@ export async function buildScreenSpecViewer(
     screens: project.screens,
     registeredScreenIds,
     resourceFiles: project.resources?.files,
+    rootDir,
   });
 
   const pkgRoot = packageRootDir();
@@ -81,6 +82,13 @@ export async function buildScreenSpecViewer(
   }
 
   for (const file of payload.resourceFiles) {
+    const target = path.join(dataDir, file.relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.bytes);
+  }
+
+  // Device Capture: 参照されている generation PNG のみ（emptyOutDir で旧出力は消える）
+  for (const file of payload.deviceCaptureFiles) {
     const target = path.join(dataDir, file.relativePath);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, file.bytes);

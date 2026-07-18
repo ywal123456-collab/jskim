@@ -76,6 +76,7 @@ export {
   collectDeviceCapture,
   collectDeviceCaptureWithBrowser,
   getDeviceCaptureStatus,
+  getDeviceCapturePublicInfo,
   computeInputRevision,
   VIEWPORT_PRESETS,
   getViewportPreset,
@@ -85,7 +86,9 @@ export type {
   CollectDeviceCaptureResult,
   DeviceCaptureMetadata,
   DeviceCaptureStatus,
+  DeviceCapturePublicInfo,
   ViewportId,
+  ViewerDeviceCaptures,
 } from './device-capture/index.js';
 export {
   rewriteResourceTokens,

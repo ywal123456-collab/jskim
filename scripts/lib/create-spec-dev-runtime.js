@@ -11,6 +11,7 @@ const { runScreenSpecCollect } = require('./run-screen-spec-collect');
 const { createWatchRuntime } = require('./create-watch-runtime');
 const { createSpecDevOrchestrator } = require('./create-spec-dev-orchestrator');
 const { createDescriptionEditApi } = require('./create-description-edit-api');
+const { createDeviceCaptureApi } = require('./create-device-capture-api');
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -60,6 +61,8 @@ function createSpecDevRuntime(options = {}) {
     let createFileDescriptionStore = options.createFileDescriptionStore;
     let loadScreenSpecProject = options.loadScreenSpecProject;
     let withDescriptionScreenLock = options.withDescriptionScreenLock;
+    let collectDeviceCapture = options.collectDeviceCapture;
+    let getDeviceCapturePublicInfo = options.getDeviceCapturePublicInfo;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -78,6 +81,7 @@ function createSpecDevRuntime(options = {}) {
           requireCollect: true,
           requireWatchHelpers: true,
           requireEditing: true,
+          requireDeviceCapture: true,
         });
       } catch (err) {
         if (err && err.code === 'JSKIM_SCREEN_SPEC_NOT_FOUND') {
@@ -102,6 +106,22 @@ function createSpecDevRuntime(options = {}) {
         loadScreenSpecProject || companion.loadScreenSpecProject;
       withDescriptionScreenLock =
         withDescriptionScreenLock || companion.withDescriptionScreenLock;
+      collectDeviceCapture =
+        collectDeviceCapture || companion.collectDeviceCapture;
+      getDeviceCapturePublicInfo =
+        getDeviceCapturePublicInfo || companion.getDeviceCapturePublicInfo;
+    }
+
+    // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
+    if (typeof collectDeviceCapture !== 'function') {
+      collectDeviceCapture = async () => {
+        const err = new Error('Device Capture が利用できません。');
+        err.code = 'SPEC_DEVICE_CAPTURE_UNAVAILABLE';
+        throw err;
+      };
+    }
+    if (typeof getDeviceCapturePublicInfo !== 'function') {
+      getDeviceCapturePublicInfo = () => ({ status: 'missing' });
     }
 
     if (options.skipInitialCollect !== true) {
@@ -157,6 +177,18 @@ function createSpecDevRuntime(options = {}) {
           : undefined,
     });
 
+    const deviceCaptureApi = createDeviceCaptureApi({
+      rootDir: workspaceRoot,
+      projectName,
+      host,
+      port,
+      baseUrl: `http://127.0.0.1:${port}`,
+      collectDeviceCapture,
+      getDeviceCapturePublicInfo,
+      loadScreenSpecProject,
+      getCollectHooks: options.getDeviceCaptureHooks,
+    });
+
     runtime = createWatchRuntime({
       mode: 'dev',
       workspaceRoot,
@@ -174,6 +206,7 @@ function createSpecDevRuntime(options = {}) {
       injectSpecLiveReload: options.injectSpecLiveReload !== false,
       injectDescriptionEditing: options.injectDescriptionEditing !== false,
       descriptionEditApi,
+      deviceCaptureApi,
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);
@@ -213,6 +246,7 @@ function createSpecDevRuntime(options = {}) {
             orchestrator,
             descriptionStore,
             descriptionEditApi,
+            deviceCaptureApi,
           });
         }
       },

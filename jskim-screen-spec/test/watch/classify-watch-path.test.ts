@@ -49,13 +49,21 @@ describe('classifyScreenSpecWatchPath', () => {
     expect(classify('spec/sample/src/theme/preview.css')).toBe('BUILD_ONLY');
   });
 
-  it('snapshots / resources / captures / dist は IGNORE', () => {
+  it('snapshots / resources / dist は IGNORE、captures meta.json は BUILD_ONLY', () => {
     expect(classify('spec/sample/src/snapshots/crud-create/default.html')).toBe(
       'IGNORE',
     );
     expect(classify('spec/sample/src/resources/files/abc.css')).toBe('IGNORE');
     expect(
       classify('spec/sample/src/captures/demo/default/pc/meta.json'),
+    ).toBe('BUILD_ONLY');
+    expect(
+      classify(
+        `spec/sample/src/captures/demo/default/pc/capture-${'a'.repeat(64)}.png`,
+      ),
+    ).toBe('IGNORE');
+    expect(
+      classify('spec/sample/src/captures/demo/default/pc/.capture-temp.1.png.tmp'),
     ).toBe('IGNORE');
     expect(classify('spec/sample/dist/index.html')).toBe('IGNORE');
   });

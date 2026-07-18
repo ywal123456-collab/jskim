@@ -131,6 +131,23 @@ async function resolveScreenSpecModule(options = {}) {
     }
   }
 
+  if (options.requireDeviceCapture) {
+    if (typeof mod.collectDeviceCapture !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に collectDeviceCapture がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.getDeviceCapturePublicInfo !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に getDeviceCapturePublicInfo がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
     buildScreenSpecViewerAtomic: mod.buildScreenSpecViewerAtomic,
@@ -140,6 +157,9 @@ async function resolveScreenSpecModule(options = {}) {
     createFileDescriptionStore: mod.createFileDescriptionStore,
     loadScreenSpecProject: mod.loadScreenSpecProject,
     withDescriptionScreenLock: mod.withDescriptionScreenLock,
+    collectDeviceCapture: mod.collectDeviceCapture,
+    getDeviceCapturePublicInfo: mod.getDeviceCapturePublicInfo,
+    getDeviceCaptureStatus: mod.getDeviceCaptureStatus,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };
