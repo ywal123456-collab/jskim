@@ -16,7 +16,7 @@ describe('DeviceCaptureImage', () => {
     );
     expect(img.attributes('src')).not.toMatch(/[?&](t|timestamp|random)=/);
     expect(img.attributes('alt')).toContain('PC Device Preview');
-    expect(img.classes()).toContain('device-capture-image__img');
+    expect(img.classes()).toContain('preview-image__img');
   });
 
   it('load error を表示する', async () => {

@@ -1,15 +1,17 @@
 /**
- * Preview provider 選択（Live / PC / SP）。
+ * Preview provider 選択（Live / PC / SP / 参照）。
  * project 単位で sessionStorage に保持する。
  */
 
-export type PreviewProvider = 'live' | 'pc' | 'sp';
+export type PreviewProvider = 'live' | 'pc' | 'sp' | 'reference';
 
 export type DeviceCaptureViewport = 'pc' | 'sp';
 
+export type ReferenceViewport = 'pc' | 'sp';
+
 const STORAGE_PREFIX = 'jskim-spec-preview-provider:';
 
-const VALID: ReadonlySet<string> = new Set(['live', 'pc', 'sp']);
+const VALID: ReadonlySet<string> = new Set(['live', 'pc', 'sp', 'reference']);
 
 function storage(): Storage | null {
   try {
@@ -33,6 +35,12 @@ export function isPreviewProvider(value: unknown): value is PreviewProvider {
 export function isDeviceCaptureViewport(
   value: unknown,
 ): value is DeviceCaptureViewport {
+  return value === 'pc' || value === 'sp';
+}
+
+export function isReferenceViewport(
+  value: unknown,
+): value is ReferenceViewport {
   return value === 'pc' || value === 'sp';
 }
 
@@ -66,16 +74,45 @@ export function writePreferredPreviewProvider(
   }
 }
 
+export type PreviewTabAvailability = {
+  /** Live / PC / SP タブを出せるか（実装 Preview あり） */
+  canShowDeviceTabs: boolean;
+  /** 参照タブを出せるか */
+  canShowReferenceTab: boolean;
+};
+
 /**
- * 実装 Preview がある画面では preferred をそのまま使う。
- * DESIGN_ONLY 等でタブが出せない場合は effective を決めず呼び出し側で No Preview にする。
+ * 現在画面で選べる Preview provider 一覧。
+ * DESIGN_ONLY では参照のみ、実装ありでは Live/PC/SP/参照。
+ */
+export function listAvailablePreviewProviders(
+  options: PreviewTabAvailability,
+): PreviewProvider[] {
+  const list: PreviewProvider[] = [];
+  if (options.canShowDeviceTabs) {
+    list.push('live', 'pc', 'sp');
+  }
+  if (options.canShowReferenceTab) {
+    list.push('reference');
+  }
+  return list;
+}
+
+/**
+ * preferred を可能な限り尊重する。
+ * タブが無い場合は 'live'（呼び出し側で No Preview 判定）。
+ * preferred が現在タブに無い場合は先頭（通常 Live、DESIGN_ONLY なら reference）。
  */
 export function resolveEffectivePreviewProvider(
   preferred: PreviewProvider,
-  options: { canShowDeviceTabs: boolean },
+  options: PreviewTabAvailability,
 ): PreviewProvider {
-  if (!options.canShowDeviceTabs) {
+  const available = listAvailablePreviewProviders(options);
+  if (available.length === 0) {
     return 'live';
   }
-  return preferred;
+  if (available.includes(preferred)) {
+    return preferred;
+  }
+  return available[0];
 }

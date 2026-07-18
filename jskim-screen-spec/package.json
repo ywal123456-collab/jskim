@@ -81,6 +81,7 @@
     "test:device-capture-api": "vitest run test/device-capture/manifest-captures.test.ts test/watch/classify-watch-path.test.ts",
     "test:device-capture-ui": "vitest run test/viewer/preview-provider.test.ts test/viewer/preview-provider-tabs.test.ts test/viewer/device-capture-image.test.ts test/viewer/device-capture-panel.test.ts test/viewer/pending-device-capture.test.ts test/viewer/use-device-capture-panel.test.ts test/viewer/device-capture-ui.test.ts",
     "test:reference-image-core": "vitest run test/reference-image test/watch/classify-watch-path.test.ts",
+    "test:reference-image-ui": "vitest run test/viewer/reference-viewport.test.ts test/viewer/pending-reference-image.test.ts test/viewer/reference-image-client.test.ts test/viewer/use-reference-image-panel.test.ts test/viewer/reference-image-panel.test.ts test/viewer/reference-image-ui.test.ts test/viewer/preview-provider.test.ts test/viewer/preview-provider-tabs.test.ts",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit",
     "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"

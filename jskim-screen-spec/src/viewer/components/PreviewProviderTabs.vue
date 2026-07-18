@@ -2,20 +2,31 @@
 import { computed, nextTick, ref } from 'vue';
 import type { PreviewProvider } from '../preview/preview-provider';
 
-const props = defineProps<{
-  modelValue: PreviewProvider;
-  idPrefix?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: PreviewProvider;
+    providers?: PreviewProvider[];
+    idPrefix?: string;
+  }>(),
+  {
+    providers: () => ['live', 'pc', 'sp'],
+  },
+);
 
 const emit = defineEmits<{
   'update:modelValue': [PreviewProvider];
 }>();
 
-const tabs: Array<{ id: PreviewProvider; label: string }> = [
-  { id: 'live', label: 'Live' },
-  { id: 'pc', label: 'PC' },
-  { id: 'sp', label: 'SP' },
-];
+const LABELS: Record<PreviewProvider, string> = {
+  live: 'Live',
+  pc: 'PC',
+  sp: 'SP',
+  reference: '参照',
+};
+
+const tabs = computed(() =>
+  props.providers.map((id) => ({ id, label: LABELS[id] })),
+);
 
 const prefix = computed(() => props.idPrefix || 'preview-provider');
 const tablistRef = ref<HTMLElement | null>(null);
@@ -43,19 +54,20 @@ function focusTab(provider: PreviewProvider): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  const index = tabs.findIndex((t) => t.id === props.modelValue);
+  const list = tabs.value;
+  const index = list.findIndex((t) => t.id === props.modelValue);
   if (index < 0) {
     return;
   }
   let next = index;
   if (event.key === 'ArrowRight') {
-    next = (index + 1) % tabs.length;
+    next = (index + 1) % list.length;
   } else if (event.key === 'ArrowLeft') {
-    next = (index - 1 + tabs.length) % tabs.length;
+    next = (index - 1 + list.length) % list.length;
   } else if (event.key === 'Home') {
     next = 0;
   } else if (event.key === 'End') {
-    next = tabs.length - 1;
+    next = list.length - 1;
   } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
     select(props.modelValue);
@@ -64,7 +76,7 @@ function onKeydown(event: KeyboardEvent): void {
     return;
   }
   event.preventDefault();
-  const provider = tabs[next].id;
+  const provider = list[next].id;
   select(provider);
   focusTab(provider);
 }

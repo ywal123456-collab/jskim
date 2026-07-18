@@ -20,7 +20,7 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 - CLI 便利機能（`build --all`、project 省略、`--host` / `--port`、`dev --open`）
 - CLI binary `jskim`
 - プロジェクト生成 CLI `create-jskim`
-- 画面設計書（optional）: `jskim spec collect` / `jskim spec build` / **`jskim spec dev`**（収集・viewer build・同一 port の `/spec/` 自動更新）。Viewer では **Live / PC / SP** Preview を切り替えられます（Live は Shadow DOM、PC/SP は実 viewport の Device Capture 画像。再収集は `spec dev` のみ）。通常の `jskim dev` は Screen Spec を自動実行しません。
+- 画面設計書（optional）: `jskim spec collect` / `jskim spec build` / **`jskim spec dev`**（収集・viewer build・同一 port の `/spec/` 自動更新）。Viewer では **Live / PC / SP / 参照** Preview を切り替えられます（Live は Shadow DOM、PC/SP は実装結果の Device Capture、参照はデザイン基準の Reference Image。PNG の追加・置き換え・削除と Device Capture 再収集は `spec dev` のみ。read-only Viewer では表示のみ）。通常の `jskim dev` は Screen Spec を自動実行しません。
 
 詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は **optional** の公開 npm package です。利用時は engine とあわせてインストールし、Chromium（Playwright）の用意が必要です。Vite HMR や screen 単位の incremental collect はありません（full-page reload / ローカル利用）。
 

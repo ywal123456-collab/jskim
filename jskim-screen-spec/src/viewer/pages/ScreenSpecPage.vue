@@ -6,6 +6,7 @@ import DomPreview, {
 import StateSelector from '../components/StateSelector.vue';
 import PreviewProviderTabs from '../components/PreviewProviderTabs.vue';
 import DeviceCapturePanel from '../components/DeviceCapturePanel.vue';
+import ReferenceImagePanel from '../components/ReferenceImagePanel.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
 import CreateItemDialog from '../components/CreateItemDialog.vue';
 import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
@@ -16,12 +17,20 @@ import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
+import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
 import {
+  listAvailablePreviewProviders,
   readPreferredPreviewProvider,
+  resolveEffectivePreviewProvider,
   writePreferredPreviewProvider,
   type DeviceCaptureViewport,
   type PreviewProvider,
+  type ReferenceViewport,
 } from '../preview/preview-provider';
+import {
+  resolveInitialReferenceViewport,
+  writeReferenceViewport,
+} from '../preview/reference-viewport';
 import {
   SCREEN_SPEC_STATUS_LABEL,
   type DocumentContext,
@@ -46,6 +55,11 @@ const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
 const preferredProvider = ref<PreviewProvider>('live');
+const referenceViewport = ref<ReferenceViewport>('pc');
+const referencePanelRef = ref<{
+  closeUpload: () => void;
+  closeDelete: () => void;
+} | null>(null);
 const previewTabsIdPrefix = 'screen-preview';
 const createItemDialogOpen = ref(false);
 const duplicateSourceItemId = ref<string | null>(null);
@@ -63,25 +77,70 @@ const projectName = computed(
 
 const viewerBaseUrl = computed(() => import.meta.env.BASE_URL);
 
-/** LINKED / IMPLEMENTATION_ONLY で Live/PC/SP を出す。DESIGN_ONLY は出さない */
+/** LINKED / IMPLEMENTATION_ONLY で Live/PC/SP を出す */
 const canShowDeviceTabs = computed(
   () =>
     Boolean(screen.value?.hasPreview) &&
     (screen.value?.states.length ?? 0) > 0,
 );
 
-const effectiveProvider = computed<PreviewProvider>(() => {
-  if (!canShowDeviceTabs.value) {
-    return 'live';
+/**
+ * 参照タブ:
+ * - editable: 常に表示（DESIGN_ONLY の upload 入口含む）
+ * - LINKED / IMPLEMENTATION_ONLY read-only: 常に表示（missing 案内含む）
+ * - DESIGN_ONLY read-only: current/invalid があるときのみ
+ */
+const canShowReferenceTab = computed(() => {
+  if (!screen.value || props.screenId === '_empty') {
+    return false;
   }
-  return preferredProvider.value;
+  if (editor.editingEnabled) {
+    return true;
+  }
+  if (canShowDeviceTabs.value) {
+    return true;
+  }
+  const refs = screen.value.referenceImages;
+  if (!refs) {
+    return false;
+  }
+  const visible = (entry: { status: string }) =>
+    entry.status === 'current' || entry.status === 'invalid';
+  return visible(refs.pc) || visible(refs.sp);
 });
+
+const availableProviders = computed(() =>
+  listAvailablePreviewProviders({
+    canShowDeviceTabs: canShowDeviceTabs.value,
+    canShowReferenceTab: canShowReferenceTab.value,
+  }),
+);
+
+const showPreviewTabs = computed(() => availableProviders.value.length > 0);
+
+const showNoPreview = computed(
+  () => !showPreviewTabs.value && !canShowDeviceTabs.value,
+);
+
+const effectiveProvider = computed<PreviewProvider>(() =>
+  resolveEffectivePreviewProvider(preferredProvider.value, {
+    canShowDeviceTabs: canShowDeviceTabs.value,
+    canShowReferenceTab: canShowReferenceTab.value,
+  }),
+);
 
 const captureViewport = computed<DeviceCaptureViewport | null>(() => {
   if (effectiveProvider.value === 'pc' || effectiveProvider.value === 'sp') {
     return effectiveProvider.value;
   }
   return null;
+});
+
+const activeReferenceViewport = computed<ReferenceViewport | null>(() => {
+  if (effectiveProvider.value !== 'reference') {
+    return null;
+  }
+  return referenceViewport.value;
 });
 
 const currentStateName = computed(() => {
@@ -101,6 +160,10 @@ const captureDisabledReason = computed(() => {
   }
   return '';
 });
+
+const referenceBlocked = computed(
+  () => duplicateScreenDialogOpen.value || deleteScreenDialogOpen.value,
+);
 
 function screenDataUrl(screenId: string): string {
   const base = import.meta.env.BASE_URL;
@@ -156,17 +219,59 @@ const deviceCapture = useDeviceCapturePanel({
   screenDataUrl,
 });
 
+const referenceImage = useReferenceImagePanel({
+  projectName: () => projectName.value,
+  screenId: () => props.screenId,
+  viewport: () => activeReferenceViewport.value,
+  active: () => effectiveProvider.value === 'reference',
+  screen: () => screen.value,
+  editable: () => Boolean(editor.editingEnabled),
+  blocked: () => referenceBlocked.value,
+  reloadScreen: reloadScreenData,
+  screenDataUrl,
+});
+
 function onPreviewProviderChange(next: PreviewProvider): void {
-  // DESIGN_ONLY 表示中でも preferred は保持（タブ非表示時は呼ばれない想定）
   preferredProvider.value = next;
   writePreferredPreviewProvider(projectName.value, next);
+}
+
+function onReferenceViewportChange(next: ReferenceViewport): void {
+  referenceViewport.value = next;
+  writeReferenceViewport(projectName.value, next);
 }
 
 function initPreferredProvider(): void {
   preferredProvider.value = readPreferredPreviewProvider(projectName.value);
 }
 
+function initReferenceViewport(): void {
+  referenceViewport.value = resolveInitialReferenceViewport({
+    projectName: projectName.value,
+    editable: Boolean(editor.editingEnabled),
+    referenceImages: screen.value?.referenceImages,
+  });
+}
+
+async function onReferenceUpload(payload: {
+  file: File;
+  expectedImageRevision: string | null;
+}): Promise<void> {
+  const result = await referenceImage.uploadOrReplace(payload);
+  if (result.ok) {
+    referencePanelRef.value?.closeUpload();
+  } else if (!('keepDialog' in result) || !result.keepDialog) {
+    referencePanelRef.value?.closeUpload();
+  }
+}
+
+async function onReferenceDelete(expectedImageRevision: string): Promise<void> {
+  referencePanelRef.value?.closeDelete();
+  await referenceImage.deleteCurrent(expectedImageRevision);
+}
+
 initPreferredProvider();
+initReferenceViewport();
 
 /** Description ファイルがある DESIGN_ONLY / LINKED のみ削除 action を出す */
 const canDeleteScreenDescription = computed(() => {
@@ -296,6 +401,7 @@ async function loadScreen(screenId: string): Promise<void> {
   }
   const data = (await screenRes.json()) as ScreenData;
   screen.value = data;
+  initReferenceViewport();
 
   if (editor.editingEnabled) {
     await editor.loadDescription(screenId);
@@ -794,7 +900,7 @@ watch(
     </div>
 
     <StateSelector
-      v-if="screen.states.length > 0"
+      v-if="screen.states.length > 0 && effectiveProvider !== 'reference'"
       :states="screen.states"
       :selected-state-id="selectedStateId"
       @select="onSelectState"
@@ -811,17 +917,18 @@ watch(
         <div class="spec-page__preview-header">
           <h2 class="spec-page__section-title">Preview</h2>
           <PreviewProviderTabs
-            v-if="canShowDeviceTabs"
-            :model-value="preferredProvider"
+            v-if="showPreviewTabs"
+            :model-value="effectiveProvider"
+            :providers="availableProviders"
             :id-prefix="previewTabsIdPrefix"
             data-testid="preview-provider-tabs"
             @update:model-value="onPreviewProviderChange"
           />
         </div>
 
-        <template v-if="canShowDeviceTabs">
+        <template v-if="showPreviewTabs">
           <div
-            v-show="effectiveProvider === 'live'"
+            v-show="effectiveProvider === 'live' && canShowDeviceTabs"
             :id="`${previewTabsIdPrefix}-panel-live`"
             role="tabpanel"
             :aria-labelledby="`${previewTabsIdPrefix}-tab-live`"
@@ -855,8 +962,30 @@ watch(
             :disabled-reason="captureDisabledReason"
             @collect="deviceCapture.collectCurrent()"
           />
+          <ReferenceImagePanel
+            v-if="effectiveProvider === 'reference'"
+            ref="referencePanelRef"
+            :viewport="referenceViewport"
+            :screen-name="displayName || screen.id"
+            :reference="referenceImage.persistedReference.value"
+            :runtime="referenceImage.runtime.value"
+            :editable="editor.editingEnabled"
+            :busy="referenceImage.isBusy.value"
+            :actions-disabled="referenceImage.actionsDisabled.value"
+            :status-message="referenceImage.statusMessage.value"
+            :error-message="referenceImage.errorMessage.value"
+            :info-message="referenceImage.infoMessage.value"
+            :dialog-error="referenceImage.dialogError.value"
+            :image-base-url="viewerBaseUrl"
+            :panel-id="`${previewTabsIdPrefix}-panel-reference`"
+            :labelled-by="`${previewTabsIdPrefix}-tab-reference`"
+            @update:viewport="onReferenceViewportChange"
+            @upload="onReferenceUpload"
+            @delete="onReferenceDelete"
+            @clear-dialog-error="referenceImage.clearDialogError()"
+          />
         </template>
-        <div v-else class="spec-page__no-preview" data-testid="no-preview">
+        <div v-else-if="showNoPreview" class="spec-page__no-preview" data-testid="no-preview">
           <p>この画面はまだ実装画面と連携されていません。</p>
           <p>基本情報は先に編集できます。</p>
           <p>実装後に <code>jskim spec collect</code> を実行すると Preview が表示されます。</p>

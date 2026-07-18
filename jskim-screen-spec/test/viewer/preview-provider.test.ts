@@ -28,17 +28,32 @@ describe('preview provider sessionStorage', () => {
     );
   });
 
-  it('DESIGN_ONLY 相当では effective を live にするが preferred は保持', () => {
+  it('タブ無しでは live、参照のみでは reference。preferred は保持', () => {
     writePreferredPreviewProvider('proj-a', 'sp');
     expect(
-      resolveEffectivePreviewProvider('sp', { canShowDeviceTabs: false }),
+      resolveEffectivePreviewProvider('sp', {
+        canShowDeviceTabs: false,
+        canShowReferenceTab: false,
+      }),
     ).toBe('live');
+    expect(
+      resolveEffectivePreviewProvider('sp', {
+        canShowDeviceTabs: false,
+        canShowReferenceTab: true,
+      }),
+    ).toBe('reference');
     expect(readPreferredPreviewProvider('proj-a')).toBe('sp');
     expect(
       resolveEffectivePreviewProvider(
         readPreferredPreviewProvider('proj-a'),
-        { canShowDeviceTabs: true },
+        { canShowDeviceTabs: true, canShowReferenceTab: true },
       ),
     ).toBe('sp');
+    expect(
+      resolveEffectivePreviewProvider('reference', {
+        canShowDeviceTabs: true,
+        canShowReferenceTab: true,
+      }),
+    ).toBe('reference');
   });
 });

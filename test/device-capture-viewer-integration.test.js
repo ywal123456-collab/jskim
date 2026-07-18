@@ -262,7 +262,11 @@ describe('Device Capture Viewer same-port integration', () => {
     }
 
     await openScreen('live');
-    assert.equal(await page.locator('[role="tab"]').count(), 3);
+    // Live/PC/SP/参照（参照内部 PC/SP は reference 選択時のみ追加）
+    assert.equal(
+      await page.locator('[data-testid="preview-provider-tabs"] [role="tab"]').count(),
+      4
+    );
 
     // PC 未収集 → 再収集
     await page.click('[data-provider="pc"]');
@@ -372,7 +376,11 @@ describe('Device Capture Viewer same-port integration', () => {
     );
 
     await openScreen('pc');
-    assert.equal(await page.locator('[role="tab"]').count(), 3);
+    // Live/PC/SP/参照（参照内部 PC/SP は reference 選択時のみ追加）
+    assert.equal(
+      await page.locator('[data-testid="preview-provider-tabs"] [role="tab"]').count(),
+      4
+    );
     const statusBadge = await page.locator('.spec-page__status-badge').innerText();
     assert.match(statusBadge, /実装のみ/);
     await page.waitForSelector('[data-testid="device-capture-image"] img');

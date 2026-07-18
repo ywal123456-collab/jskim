@@ -199,25 +199,28 @@ describe('Device Capture Viewer UI (ScreenSpecPage)', () => {
     delete window.__JSKIM_SPEC_EDIT__;
   });
 
-  it('LINKED / IMPLEMENTATION_ONLY は Live/PC/SP、DESIGN_ONLY はタブなし', async () => {
+  it('LINKED / IMPLEMENTATION_ONLY は Live/PC/SP/参照、DESIGN_ONLY read-only missing は No Preview', async () => {
     const linked = await mountPage({ screen: linkedScreen() });
-    expect(linked.findAll('[role="tab"]')).toHaveLength(3);
+    // provider tabs 4 + 参照内部 PC/SP は reference 選択時のみ
+    expect(linked.findAll('[data-testid="preview-provider-tabs"] [role="tab"]')).toHaveLength(4);
     expect(linked.findComponent(DomPreview).exists()).toBe(true);
     linked.unmount();
 
     const impl = await mountPage({ screen: implOnly() });
-    expect(impl.findAll('[role="tab"]')).toHaveLength(3);
+    expect(impl.findAll('[data-testid="preview-provider-tabs"] [role="tab"]')).toHaveLength(4);
     impl.unmount();
 
-    const design = await mountPage({ screen: designOnly() });
-    expect(design.findAll('[role="tab"]')).toHaveLength(0);
+    const design = await mountPage({ screen: designOnly(), editable: false });
+    expect(design.findAll('[data-testid="preview-provider-tabs"] [role="tab"]')).toHaveLength(0);
     expect(design.find('[data-testid="no-preview"]').exists()).toBe(true);
     design.unmount();
   });
 
   it('PC 選択で Capture panel、state 変更でも SP を維持', async () => {
     const wrapper = await mountPage({ screen: linkedScreen(), editable: true });
-    await wrapper.find('[data-provider="sp"]').trigger('click');
+    await wrapper
+      .find('[data-testid="preview-provider-tabs"] [data-provider="sp"]')
+      .trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="device-capture-panel"]').exists()).toBe(
       true,
@@ -248,7 +251,9 @@ describe('Device Capture Viewer UI (ScreenSpecPage)', () => {
 
   it('read-only でもタブは出し再収集ボタンは出さない', async () => {
     const wrapper = await mountPage({ screen: linkedScreen(), editable: false });
-    await wrapper.find('[data-provider="pc"]').trigger('click');
+    await wrapper
+      .find('[data-testid="preview-provider-tabs"] [data-provider="pc"]')
+      .trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="device-capture-panel"]').exists()).toBe(
       true,
@@ -265,7 +270,7 @@ describe('Device Capture Viewer UI (ScreenSpecPage)', () => {
 
   it('DESIGN_ONLY 訪問後も preferred SP を保持し実装画面で復元', async () => {
     sessionStorage.setItem('jskim-spec-preview-provider:sample', 'sp');
-    const design = await mountPage({ screen: designOnly() });
+    const design = await mountPage({ screen: designOnly(), editable: false });
     expect(sessionStorage.getItem('jskim-spec-preview-provider:sample')).toBe(
       'sp',
     );
@@ -274,7 +279,9 @@ describe('Device Capture Viewer UI (ScreenSpecPage)', () => {
     const linked = await mountPage({ screen: linkedScreen() });
     await flushPromises();
     expect(
-      linked.find('[data-provider="sp"]').attributes('aria-selected'),
+      linked
+        .find('[data-testid="preview-provider-tabs"] [data-provider="sp"]')
+        .attributes('aria-selected'),
     ).toBe('true');
     expect(linked.find('[data-testid="device-capture-panel"]').exists()).toBe(
       true,

@@ -36,4 +36,16 @@ describe('PreviewProviderTabs', () => {
     await wrapper.find('[role="tablist"]').trigger('keydown', { key: 'End' });
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['sp']);
   });
+
+  it('参照タブを含められる', () => {
+    const wrapper = mount(PreviewProviderTabs, {
+      props: {
+        modelValue: 'reference',
+        providers: ['live', 'pc', 'sp', 'reference'],
+        idPrefix: 'r',
+      },
+    });
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(4);
+    expect(wrapper.find('[data-provider="reference"]').text()).toBe('参照');
+  });
 });

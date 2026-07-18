@@ -369,9 +369,9 @@ spec/{project}/dist/data/device-captures/.../capture-<sha256hex>.png
 （参照中の current/stale のみ。invalid/orphan/TEMP はコピーしない）
 ```
 
-## Reference Image（Phase 7C-2A-1 / 7C-2A-2）
+## Reference Image（Phase 7C-2A-1 / 7C-2A-2 / 7C-2A-3）
 
-デザイン基準画像（実装結果ではない）を保存する **内部 core** です。multipart HTTP API と Viewer 参照タブは未実装です。
+デザイン基準画像（実装結果ではない）を保存する **内部 core** と、`jskim spec dev` HTTP API・Viewer 参照タブ（追加/置き換え/削除）です。
 
 ```ts
 import {
@@ -416,7 +416,16 @@ GET    /_jskim/spec/reference-images/status?screenId=&viewport=
 - same-origin / Content-Type / JSON body 制限は Description・Device Capture write API と同方針
 - runtime registry（in-memory）: `idle` / `uploading` / `deleting` / `failed`。同一 key 進行中は 409
 - API 成功後の build/reload は watcher の meta.json BUILD_ONLY に委譲（API は直接呼び出さない）
-- Viewer 参照タブ・Dialog は未実装（Phase 7C-2A-3）
+Viewer（Phase 7C-2A-3）:
+
+- Preview provider: `live` / `pc` / `sp` / `reference`（preferred は project-scope sessionStorage）
+- 参照タブ内 viewport: `pc` / `sp`（`jskim-spec-reference-viewport:<project>`。Device Capture の PC/SP とは独立）
+- DESIGN_ONLY editable は参照タブのみ。StateSelector は参照中に非表示
+- Upload / Replace / Delete Dialog → FormData PUT / JSON DELETE
+- pending: `jskim-spec-pending-reference-image:<project>`（created/updated は result revision 待ち、delete は missing 待ち。固定 timeout 成功なし）
+- runtime status GET は参照タブ・editable のみ。uploading/deleting のときだけ polling
+- 共通画像表示: `PreviewImage`（fit-to-width・拡大なし・revision URL・timestamp query なし）
+- read-only は画像/invalid 案内のみ（write / status / Dialog なし）
 
 保存先:
 
