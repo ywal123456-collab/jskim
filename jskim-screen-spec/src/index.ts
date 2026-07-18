@@ -73,6 +73,21 @@ export type {
   CollectScreenSpecProjectResult,
 } from './collector/collect-screen-spec-project.js';
 export {
+  collectDeviceCapture,
+  collectDeviceCaptureWithBrowser,
+  getDeviceCaptureStatus,
+  computeInputRevision,
+  VIEWPORT_PRESETS,
+  getViewportPreset,
+} from './device-capture/index.js';
+export type {
+  CollectDeviceCaptureOptions,
+  CollectDeviceCaptureResult,
+  DeviceCaptureMetadata,
+  DeviceCaptureStatus,
+  ViewportId,
+} from './device-capture/index.js';
+export {
   rewriteResourceTokens,
   toResourceToken,
   SpecResourceTokenError,

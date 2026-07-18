@@ -18,6 +18,7 @@
     "src/index.ts",
     "src/builder/**/*.ts",
     "src/collector/**/*.ts",
+    "src/device-capture/**/*.ts",
     "src/editing/**/*.ts",
     "src/util/**/*.ts",
     "src/watch/**/*.ts"

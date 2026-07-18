@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "screen": {
+    "id": "device-capture-demo",
+    "path": "/index.html"
+  },
+  "states": [
+    {
+      "id": "default",
+      "name": "初期表示",
+      "viewer": {
+        "visible": true,
+        "order": 10
+      },
+      "collect": {
+        "actions": []
+      }
+    },
+    {
+      "id": "help-modal",
+      "name": "ヘルプ表示",
+      "viewer": {
+        "visible": true,
+        "order": 20
+      },
+      "collect": {
+        "actions": [
+          {
+            "type": "click",
+            "target": "open-help"
+          }
+        ]
+      }
+    }
+  ]
+}

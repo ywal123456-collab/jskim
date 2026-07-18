@@ -1,12 +1,13 @@
-# Device Preview Capture 方針（Phase 7C-1A-0）
+# Device Preview Capture 方針（Phase 7C-1A-0 / 7C-1A-1）
 
 このドキュメントは、Screen Spec の **PC/SP Device Capture**（Playwright 実 viewport 画像）の保存モデル・状態・再収集 lifecycle の調査結果と詳細設計です。
 
-**Phase 7C-1A-0:** 調査・設計のみ。production code / Collector / Viewer / API / Schema は変更しない。
+| Phase | 状態 |
+|-------|------|
+| **7C-1A-0** | 調査・設計（文書） |
+| **7C-1A-1** | **完了** — Device Capture **core**（内部 API・atomic 保存・inputRevision / status）。HTTP Capture API / Viewer Live・PC・SP タブは未実装 |
 
 親方針（Provider モデル）: [preview-viewport-reference-image.md](./preview-viewport-reference-image.md)
-
-調査時点: amend 後の Phase 7C-0 文書が `origin/main` にある状態から開始。
 
 ---
 
@@ -517,22 +518,23 @@ media query / 実 CSSOM / 実 JS と乖離しやすい
 
 ## 23. Capture 安定化（初期保証範囲）
 
-初期にやる（推奨最小）:
+初期にやる（7C-1A-1 実装）:
 
 ```text
-setViewportSize
+BrowserContext viewport（pc|sp）
 waitUntil: load（現行踏襲）
 明示 wait action（Source 定義）
-images: 主要 img の load/error 待ち（軽い限度）
-screenshot: fullPage true
-deviceScaleFactor: 1
+document.fonts.ready
+images: load/error 待ち
+Capture 直前に animation/transition を 0s にする style 注入
+screenshot: fullPage PNG + animations: 'disabled'
+deviceScaleFactor: 1（isMobile / touch / UA 変更なし）
 ```
 
 初期に保証しない（過設計回避）:
 
 ```text
-完全 networkidle
-全 CSS animation 無効化
+完全 networkidle（持続 polling 画面で timeout しやすい）
 Date/random 固定
 API mock 基盤
 広告・外部 iframe
@@ -697,24 +699,29 @@ preserve/strip 結果に影響しない
 
 ## 34. 実装 Phase
 
-### Phase 7C-1A-1
+### Phase 7C-1A-1（実装済み）
 
 ```text
-captures/ 契約
-sidecar metadata
-Playwright PC/SP 単一 capture core（setViewportSize + fullPage PNG）
-atomic write
-inputRevision / stale 計算
-CLI または internal 関数（Viewer なし）
+captures/ 契約（generation PNG + meta.json）
+inputRevision / imageRevision / status（missing|current|stale|invalid）
+Playwright PC/SP 単一 capture core（BrowserContext viewport + fullPage PNG）
+実 route 再実行 + 既存 collect actions 再利用
+fonts/images 待機・animation 無効化（networkidle なし）
+meta.json atomic commit + orphan generation cleanup
+同一結果 no-op / 失敗時は既存 Capture 維持
+project 単位 Capture queue
+内部 API: collectDeviceCapture / getDeviceCaptureStatus
+（HTTP API・Viewer タブなし。既存 collect は自動 Capture しない）
 ```
 
-### Phase 7C-1A-2
+実装: `jskim-screen-spec/src/device-capture/`
+
+### Phase 7C-1A-2（未実装）
 
 ```text
 spec dev POST collect API
 runtime collecting / error
-同一 key 直列化
-project concurrency
+同一 key / API リクエスト直列化の公開面
 watcher 後は stale のみ（自動 capture なし）
 BUILD への captures コピー
 ```

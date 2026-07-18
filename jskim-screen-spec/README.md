@@ -309,6 +309,43 @@ spec/{project}/src/snapshots/{screenId}/{stateId}.html
 
 収集時は `[data-jskim-spec-screen]` の outerHTML を、input / textarea / select / checkbox / details / dialog のランタイム状態を attribute へ反映したうえで保存します（クローン上で処理し、ライブ DOM は壊しません）。
 
+## Device Capture core（Phase 7C-1A-1）
+
+PC/SP の実 viewport 静止画を保存する **内部 API** です。HTTP endpoint と Viewer タブはまだありません。既存 `collect` からも自動呼び出ししません。
+
+```ts
+import {
+  collectDeviceCapture,
+  getDeviceCaptureStatus,
+} from '@ywal123456/jskim-screen-spec';
+
+const result = await collectDeviceCapture({
+  rootDir: process.cwd(),
+  projectName: 'sample',
+  baseUrl: 'http://127.0.0.1:4173',
+  screenId: 'inquiry-input',
+  stateId: 'default',
+  viewport: 'sp', // or 'pc'
+});
+// status: 'created' | 'updated' | 'unchanged'
+```
+
+保存先:
+
+```text
+spec/{project}/src/captures/{screenId}/{stateId}/{viewportId}/
+├─ capture-<sha256hex>.png
+└─ meta.json
+```
+
+- **inputRevision**: JSkim が知る決定可能入力（screen/state/route/actions/snapshot bytes/resource hash/viewport/政策）の SHA-256。外部 runtime データの同一性は含まない
+- **imageRevision**: 出力 PNG bytes の SHA-256
+- commit point は `meta.json` の atomic 置換。失敗時は既存 Capture を維持
+- status: `missing` / `current` / `stale` / `invalid`（`getDeviceCaptureStatus`）
+- 同一 project の Capture は内部 queue で直列化（Description screen lock とは別）
+- 同一 input・同一画像の再収集は no-op（`capturedAt` も更新しない）
+
+
 ## CSS / アセット自動収集（Phase 5B）
 
 `jskim spec collect` は各 state で stylesheet（`link` / `style`）と HTML 内リソース（`img` / `srcset` / `style` url など）を収集し、次へ書き込みます。

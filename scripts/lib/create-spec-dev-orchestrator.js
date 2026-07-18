@@ -246,6 +246,7 @@ function createSpecDevOrchestrator(options) {
         /(^|[/\\])node_modules([/\\]|$)/,
         /(^|[/\\])snapshots([/\\]|$)/,
         /(^|[/\\])resources([/\\]|$)/,
+        /(^|[/\\])captures([/\\]|$)/,
         /(^|[/\\])dist([/\\]|$)/,
       ],
     });

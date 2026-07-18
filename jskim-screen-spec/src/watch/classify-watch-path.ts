@@ -18,7 +18,7 @@ export type ClassifyScreenSpecWatchPathOptions = {
  *
  * - COLLECT_AND_BUILD: 実装画面 / Source sidecar
  * - BUILD_ONLY: Description JSON / theme
- * - IGNORE: collector/builder 生成物（snapshots / resources / dist）
+ * - IGNORE: collector/builder 生成物（snapshots / resources / captures / dist）
  */
 export function classifyScreenSpecWatchPath(
   options: ClassifyScreenSpecWatchPathOptions,
@@ -48,7 +48,9 @@ export function classifyScreenSpecWatchPath(
       underSpec === 'src/snapshots' ||
       underSpec.startsWith('src/snapshots/') ||
       underSpec === 'src/resources' ||
-      underSpec.startsWith('src/resources/')
+      underSpec.startsWith('src/resources/') ||
+      underSpec === 'src/captures' ||
+      underSpec.startsWith('src/captures/')
     ) {
       return 'IGNORE';
     }

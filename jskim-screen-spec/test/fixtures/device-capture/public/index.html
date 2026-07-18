@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>device-capture-demo</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+      }
+      #viewport-label {
+        font-size: 24px;
+        padding: 16px;
+        background: #ccc;
+      }
+      #viewport-label::after {
+        content: 'unknown';
+      }
+      @media (min-width: 800px) {
+        #viewport-label {
+          background: rgb(0, 128, 0);
+        }
+        #viewport-label::after {
+          content: 'pc-layout';
+        }
+      }
+      @media (max-width: 799px) {
+        #viewport-label {
+          background: rgb(0, 0, 200);
+        }
+        #viewport-label::after {
+          content: 'sp-layout';
+        }
+      }
+      .tall {
+        height: 1600px;
+        background: linear-gradient(#eee, #999);
+      }
+      .fixed-bar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        background: #222;
+        color: #fff;
+        padding: 4px 8px;
+        z-index: 10;
+      }
+      .sticky-note {
+        position: sticky;
+        top: 40px;
+        background: #ff0;
+        padding: 4px;
+      }
+      .spin {
+        width: 40px;
+        height: 40px;
+        background: #f00;
+        animation: spin 2s linear infinite;
+      }
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .modal {
+        display: none;
+        border: 2px solid #000;
+        padding: 1rem;
+        margin: 1rem;
+      }
+      .modal.is-open {
+        display: block;
+        background: #ffd;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fixed-bar" data-jskim-spec-item="fixed-bar">fixed</div>
+    <main data-jskim-spec-screen="device-capture-demo">
+      <div id="viewport-label" data-jskim-spec-item="viewport-label"></div>
+      <div class="sticky-note" data-jskim-spec-item="sticky-note">sticky</div>
+      <div class="spin" data-jskim-spec-item="spin-box"></div>
+      <img
+        data-jskim-spec-item="hero-image"
+        src="./pixel.png"
+        width="32"
+        height="32"
+        alt="pixel"
+      />
+      <button
+        type="button"
+        id="open-help"
+        data-jskim-spec-item="open-help"
+        data-jskim-spec-action="open-help"
+      >
+        ヘルプ
+      </button>
+      <div
+        id="help-modal"
+        class="modal"
+        data-jskim-spec-item="help-modal"
+        data-jskim-spec-state="help-modal"
+      >
+        ヘルプ本文
+      </div>
+      <div class="tall" data-jskim-spec-item="tall-section">long</div>
+    </main>
+    <script>
+      document.getElementById('open-help').addEventListener('click', function () {
+        document.getElementById('help-modal').classList.add('is-open');
+      });
+    </script>
+  </body>
+</html>

@@ -66,7 +66,7 @@
     "generate:snapshots": "tsx scripts/generate-sample-snapshots.ts",
     "dev:sample": "npm run build:sample && vite preview --base /spec/",
     "preview:sample": "vite preview --base /spec/",
-    "test": "vitest run --exclude **/collect-integration.test.ts --exclude **/resource-integration.test.ts",
+    "test": "vitest run --exclude **/collect-integration.test.ts --exclude **/resource-integration.test.ts --exclude **/device-capture/collect-integration.test.ts",
     "test:collector": "vitest run test/collector",
     "test:resources": "vitest run test/resources test/collector/resource-integration.test.ts",
     "test:watch": "vitest run test/watch",
@@ -77,6 +77,7 @@
     "test:implementation-only": "vitest run test/collector/write-collected-description.test.ts test/builder/load-screen-spec-project.test.ts test/editing/file-description-store.test.ts",
     "test:screen-delete-api": "vitest run test/editing/file-description-delete.test.ts test/editing/description-concurrency.test.ts",
     "test:screen-delete-ui": "vitest run test/viewer/resolve-delete-screen-fallback.test.ts test/viewer/delete-screen-dialog.test.ts test/editing/pending-screen.test.ts test/viewer/screen-spec-page.test.ts",
+    "test:device-capture-core": "vitest run test/device-capture",
     "install:browsers": "playwright install chromium",
     "typecheck": "vue-tsc --noEmit || tsc --noEmit",
     "release:check": "npm run build && npm test && npm run test:collector && npm run test:resources && npm run test:watch"

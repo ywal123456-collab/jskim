@@ -411,7 +411,8 @@ export function assertLocalScreenPath(
   }
 }
 
-async function launchChromium(): Promise<Browser> {
+/** Device Capture 等からも再利用する Chromium launch */
+export async function launchChromium(): Promise<Browser> {
   try {
     return await chromium.launch({ headless: true });
   } catch (err) {
@@ -436,7 +437,8 @@ function isBrowserMissingMessage(message: string): boolean {
   );
 }
 
-async function navigateLocal(
+/** Device Capture 等からも再利用する同一オリジン遷移 */
+export async function navigateLocal(
   page: import('playwright').Page,
   baseUrl: string,
   screenPath: string,
