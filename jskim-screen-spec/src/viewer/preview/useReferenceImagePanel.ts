@@ -315,10 +315,11 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         return { ok: false, keepDialog: false };
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
+        // refreshStatus は runtime.failed の API 文言で上書きするため呼ばない。
+        // 最新 persisted 状態は reloadScreen で reconciliate する。
         errorMessage.value =
           '参照画像が別の操作で更新されました。最新の状態を確認してから再度実行してください。';
         runtime.value = { status: 'idle' };
-        await refreshStatus();
         await options.reloadScreen();
         return { ok: false, keepDialog: false };
       }
@@ -417,10 +418,10 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         return false;
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
+        // refreshStatus は runtime.failed の API 文言で上書きするため呼ばない。
         errorMessage.value =
           '参照画像が別の操作で更新されました。最新の状態を確認してから再度実行してください。';
         runtime.value = { status: 'idle' };
-        await refreshStatus();
         await options.reloadScreen();
         return false;
       }

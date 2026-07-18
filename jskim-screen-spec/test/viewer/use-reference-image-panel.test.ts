@@ -371,16 +371,27 @@ describe('useReferenceImagePanel', () => {
     wrapper.unmount();
   });
 
-  it('revision conflict は最新状態を再取得する', async () => {
+  it('revision conflict は Viewer 案内を保ち reloadScreen する', async () => {
     const reloadScreen = vi.fn(async () => {});
+    let statusCalls = 0;
     const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = (init?.method || 'GET').toUpperCase();
       if (url.includes('reference-images/status')) {
+        statusCalls += 1;
+        // API は conflict 後に runtime.failed を返すことがある。
+        // その文言で Viewer 案内を上書きしてはならない。
         return jsonResponse({
           screenId: 'demo',
           viewport: 'pc',
-          runtime: { status: 'idle' },
+          runtime: {
+            status: 'failed',
+            operation: 'upload',
+            error: {
+              code: 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT',
+              message: '参照画像の revision が一致しません。最新を再読込してください。',
+            },
+          },
           referenceImage: {
             status: 'current',
             imageRevision: 'sha256:' + 'b'.repeat(64),
@@ -391,7 +402,7 @@ describe('useReferenceImagePanel', () => {
         return jsonResponse(
           {
             code: 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT',
-            message: '参照画像が別の操作で更新されています。',
+            message: '参照画像の revision が一致しません。最新を再読込してください。',
           },
           409,
         );
@@ -405,14 +416,18 @@ describe('useReferenceImagePanel', () => {
       reloadScreen,
     });
     await flushPromises();
+    const statusCallsBefore = statusCalls;
     await api.uploadOrReplace({
       file: pngFile(),
       expectedImageRevision: 'sha256:' + 'a'.repeat(64),
     });
     await flushPromises();
     expect(api.errorMessage.value).toContain('別の操作で更新されました');
+    expect(api.errorMessage.value).not.toContain('revision が一致しません');
     expect(api.runtime.value.status).toBe('idle');
     expect(reloadScreen).toHaveBeenCalled();
+    // conflict 経路では失敗 runtime を取りに行かない
+    expect(statusCalls).toBe(statusCallsBefore);
     wrapper.unmount();
   });
 
