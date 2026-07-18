@@ -59,6 +59,7 @@ function createSpecDevRuntime(options = {}) {
     let mergeKinds = options.mergeKinds;
     let createFileDescriptionStore = options.createFileDescriptionStore;
     let loadScreenSpecProject = options.loadScreenSpecProject;
+    let withDescriptionScreenLock = options.withDescriptionScreenLock;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -99,6 +100,8 @@ function createSpecDevRuntime(options = {}) {
         createFileDescriptionStore || companion.createFileDescriptionStore;
       loadScreenSpecProject =
         loadScreenSpecProject || companion.loadScreenSpecProject;
+      withDescriptionScreenLock =
+        withDescriptionScreenLock || companion.withDescriptionScreenLock;
     }
 
     if (options.skipInitialCollect !== true) {
@@ -148,6 +151,10 @@ function createSpecDevRuntime(options = {}) {
       store: descriptionStore,
       host,
       port,
+      withScreenLock:
+        typeof withDescriptionScreenLock === 'function'
+          ? withDescriptionScreenLock
+          : undefined,
     });
 
     runtime = createWatchRuntime({

@@ -8,15 +8,22 @@ const MAX_BODY_BYTES = 256 * 1024;
 /**
  * Description 編集 API（jskim spec dev 専用）。
  *
- * GET/PUT /_jskim/spec/descriptions/:screenId
+ * GET/PUT/DELETE /_jskim/spec/descriptions/:screenId
+ * POST /_jskim/spec/descriptions
  *
  * @param {object} options
  * @param {object} options.store FileDescriptionStore
  * @param {string} options.host listen host（same-origin 比較用）
  * @param {number} options.port
+ * @param {(screenId: string, fn: () => any) => Promise<any>} [options.withScreenLock]
+ *        screenId 単位の直列化。未指定時はロックなし（後方互換・単体テスト用）。
  */
 function createDescriptionEditApi(options) {
   const store = options.store;
+  const withScreenLock =
+    typeof options.withScreenLock === 'function'
+      ? options.withScreenLock
+      : async (_screenId, fn) => fn();
 
   function listenHost() {
     return String(options.host || '127.0.0.1').trim();
@@ -43,7 +50,8 @@ function createDescriptionEditApi(options) {
       method !== 'GET' &&
       method !== 'PUT' &&
       method !== 'HEAD' &&
-      method !== 'POST'
+      method !== 'POST' &&
+      method !== 'DELETE'
     ) {
       sendJson(res, 405, {
         code: 'SPEC_DESCRIPTION_METHOD_NOT_ALLOWED',
@@ -103,6 +111,10 @@ function createDescriptionEditApi(options) {
       return true;
     }
 
+    if (method === 'DELETE') {
+      return handleDelete(req, res, screenId);
+    }
+
     // PUT
     const body = await readSameOriginJsonBody(req, res);
     if (body === undefined) {
@@ -114,12 +126,76 @@ function createDescriptionEditApi(options) {
     const document = body && body.document;
 
     try {
-      const result = store.write(screenId, document, expectedRevision);
+      const result = await withScreenLock(screenId, () =>
+        store.write(screenId, document, expectedRevision)
+      );
       sendJson(res, 200, {
         screenId: result.screenId,
         revision: result.revision,
         saved: result.saved,
         written: result.written,
+      });
+    } catch (err) {
+      sendStoreError(res, err);
+    }
+    return true;
+  }
+
+  /**
+   * DELETE /_jskim/spec/descriptions/:screenId
+   *
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @param {string} screenId
+   * @returns {Promise<boolean>}
+   */
+  async function handleDelete(req, res, screenId) {
+    const body = await readSameOriginJsonBody(req, res);
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'リクエスト本文は object である必要があります。',
+      });
+      return true;
+    }
+
+    const allowedKeys = new Set(['expectedRevision']);
+    const unknownKey = Object.keys(body).find((key) => !allowedKeys.has(key));
+    if (unknownKey) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: `許可されていないフィールドです: ${unknownKey}`,
+      });
+      return true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(body, 'expectedRevision')) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID_REVISION',
+        message: 'expectedRevision は必須です。',
+      });
+      return true;
+    }
+
+    if (typeof store.delete !== 'function') {
+      sendJson(res, 500, {
+        code: 'SPEC_DESCRIPTION_DELETE_FAILED',
+        message: '画面設計書の削除に対応していません。',
+      });
+      return true;
+    }
+
+    try {
+      const result = await withScreenLock(screenId, () =>
+        store.delete(screenId, body.expectedRevision)
+      );
+      sendJson(res, 200, {
+        screenId: result.screenId,
+        deleted: true,
       });
     } catch (err) {
       sendStoreError(res, err);
@@ -164,12 +240,16 @@ function createDescriptionEditApi(options) {
     }
 
     try {
-      const result = store.create({
-        screenId: body.screenId,
-        name: body.name,
-        description: body.description,
-        copyFromScreenId: body.copyFromScreenId,
-      });
+      const screenIdForLock =
+        typeof body.screenId === 'string' ? body.screenId : '__create__';
+      const result = await withScreenLock(screenIdForLock, () =>
+        store.create({
+          screenId: body.screenId,
+          name: body.name,
+          description: body.description,
+          copyFromScreenId: body.copyFromScreenId,
+        })
+      );
       res.setHeader(
         'Location',
         `${DESCRIPTION_API_PREFIX}/${encodeURIComponent(result.screenId)}`

@@ -250,7 +250,7 @@ spec/{project}/src/data/{screenId}.json
 | 状態 | 影響 |
 |--------|------|
 | 設計のみ（Description のみ、Source/snapshot 無し） | Description ファイルの削除だけで完結（`expectedRevision` 必須） |
-| 設計＋実装（LINKED） | Description を削除しても **実装側は消さない**。IMPLEMENTATION_ONLY へ遷移し、**以降の collect でも Description を再作成しない**（Phase 7B-3B-1）。削除 API / Viewer UI は未実装（詳細は [screen-description-deletion.md](./screen-description-deletion.md)） |
+| 設計＋実装（LINKED） | Description を削除しても **実装側は消さない**。IMPLEMENTATION_ONLY へ遷移し、**以降の collect でも Description を再作成しない**（Phase 7B-3B-1）。`DELETE` API は Phase 7B-3B-2 で実装済み。Viewer 削除 UI は未実装（詳細は [screen-description-deletion.md](./screen-description-deletion.md)） |
 | 実装側の削除 | Description は残す（実装側の削除は Screen Spec の範囲外） |
 
 注意:

@@ -127,7 +127,13 @@ Vue Viewer（「＋ 画面を作成」）
 - 同じ `screenId` で 2 回目の `POST` は `409 SPEC_DESCRIPTION_ALREADY_EXISTS`
 - 作成直後の画面は `design-only` かつ `hasPreview: false`。Viewer は Preview 領域に No Preview を表示し、`states` が無いため State selector も表示しない
 - 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
-- 画面の rename / archive / 削除は未実装
+- 画面の rename / archive は未実装
+- 画面設計書の削除 API（phase 7B-3B-2）: `DELETE /_jskim/spec/descriptions/:screenId`（`expectedRevision` 必須）
+  - `FileDescriptionStore.delete` は Description JSON のみ unlink（source / snapshot / resources は触らない）
+  - DESIGN_ONLY → 一覧から除去。LINKED → IMPLEMENTATION_ONLY（Collector は再作成しない）
+  - `withDescriptionScreenLock` で PUT / create / DELETE / Collector merge-write を screenId 単位直列化
+  - API は build を呼ばない。unlink を watcher が検知して build-only + `reload(target=spec)`
+  - 外部 editor との TOCTOU は保証外。Viewer 削除 UI / route fallback は未実装（7B-3B-3）
 - 画面複製（phase 7B-3A）: Viewer「画面を複製」→ `POST` + `copyFromScreenId`
   - 複製元は **保存済み** Description（または IMPLEMENTATION_ONLY の normalized GET draft）。dirty draft は使わない
   - active `items` / `itemOrder` を deep copy。`excludedItems` は常に `{}`

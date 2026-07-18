@@ -139,6 +139,7 @@ async function resolveScreenSpecModule(options = {}) {
     mergeScreenSpecWatchKinds: mod.mergeScreenSpecWatchKinds,
     createFileDescriptionStore: mod.createFileDescriptionStore,
     loadScreenSpecProject: mod.loadScreenSpecProject,
+    withDescriptionScreenLock: mod.withDescriptionScreenLock,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };

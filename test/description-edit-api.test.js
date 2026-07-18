@@ -121,6 +121,42 @@ function createMemoryStore(initial = {}) {
         written: !same,
       };
     },
+    delete(screenId, expectedRevision) {
+      const entry = docs.get(screenId);
+      if (!entry) {
+        const err = new Error(`画面「${screenId}」は登録されていません。`);
+        err.code = 'SPEC_DESCRIPTION_SCREEN_NOT_FOUND';
+        err.statusCode = 404;
+        throw err;
+      }
+      if (!entry.exists) {
+        const err = new Error('画面設計書が見つかりません。');
+        err.code = 'SPEC_DESCRIPTION_NOT_FOUND';
+        err.statusCode = 404;
+        throw err;
+      }
+      if (
+        typeof expectedRevision !== 'string' ||
+        !expectedRevision.startsWith('sha256:')
+      ) {
+        const err = new Error('expectedRevision の形式が不正です。');
+        err.code = 'SPEC_DESCRIPTION_INVALID_REVISION';
+        err.statusCode = 400;
+        throw err;
+      }
+      if (expectedRevision !== entry.revision) {
+        const err = new Error(
+          '画面設計書が別の処理で更新されています。最新の内容を読み込み直してください。'
+        );
+        err.code = 'SPEC_DESCRIPTION_REVISION_CONFLICT';
+        err.statusCode = 409;
+        err.expectedRevision = expectedRevision;
+        err.currentRevision = entry.revision;
+        throw err;
+      }
+      docs.delete(screenId);
+      return { screenId, deleted: true };
+    },
   };
 }
 
@@ -148,13 +184,19 @@ async function withServer(store, run) {
 
   async function request(method, reqPath, { headers = {}, body } = {}) {
     return new Promise((resolve, reject) => {
+      const payload =
+        body == null ? null : Buffer.from(String(body), 'utf8');
+      const nextHeaders = { ...headers };
+      if (payload) {
+        nextHeaders['Content-Length'] = String(payload.length);
+      }
       const req = http.request(
         {
           hostname: '127.0.0.1',
           port,
           method,
           path: reqPath,
-          headers,
+          headers: nextHeaders,
         },
         (res) => {
           const chunks = [];
@@ -172,8 +214,8 @@ async function withServer(store, run) {
         }
       );
       req.on('error', reject);
-      if (body != null) {
-        req.end(body);
+      if (payload) {
+        req.end(payload);
       } else {
         req.end();
       }
@@ -454,7 +496,7 @@ describe('createDescriptionEditApi', () => {
     });
   });
 
-  it('POST の許可されていないフィールドは 400、GET/PUT/HEAD/POST 以外は 405', async () => {
+  it('POST の許可されていないフィールドは 400、コレクション DELETE と画面 POST は 405', async () => {
     const store = createMemoryStore();
     await withServer(store, async ({ port, request }) => {
       const badField = await request('POST', DESCRIPTION_API_PREFIX, {
@@ -483,6 +525,98 @@ describe('createDescriptionEditApi', () => {
         `${DESCRIPTION_API_PREFIX}/some-screen`
       );
       assert.equal(postOnScreenPath.status, 405);
+    });
+  });
+
+  it('DELETE で Description を削除し 200 を返す', async () => {
+    const store = createMemoryStore({
+      demo: {
+        revision: 'sha256:demo-rev',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'demo', name: 'Demo', description: '' },
+          itemOrder: [],
+          items: {},
+          excludedItems: {},
+        },
+      },
+    });
+    await withServer(store, async ({ port, request }) => {
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+      const ok = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers,
+        body: JSON.stringify({ expectedRevision: 'sha256:demo-rev' }),
+      });
+      assert.equal(ok.status, 200);
+      assert.deepEqual(ok.json, { screenId: 'demo', deleted: true });
+
+      const missing = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers,
+        body: JSON.stringify({ expectedRevision: 'sha256:demo-rev' }),
+      });
+      assert.equal(missing.status, 404);
+      assert.equal(missing.json.code, 'SPEC_DESCRIPTION_SCREEN_NOT_FOUND');
+    });
+  });
+
+  it('DELETE は revision 不一致・必須欠落・unknown field・cross-origin を拒否する', async () => {
+    const store = createMemoryStore({
+      demo: {
+        revision: 'sha256:demo-rev',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'demo', name: 'Demo', description: '' },
+          itemOrder: [],
+          items: {},
+          excludedItems: {},
+        },
+      },
+    });
+    await withServer(store, async ({ port, request }) => {
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const conflict = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers,
+        body: JSON.stringify({ expectedRevision: 'sha256:stale' }),
+      });
+      assert.equal(conflict.status, 409);
+      assert.equal(conflict.json.code, 'SPEC_DESCRIPTION_REVISION_CONFLICT');
+
+      const noRev = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers,
+        body: JSON.stringify({}),
+      });
+      assert.equal(noRev.status, 400);
+      assert.equal(noRev.json.code, 'SPEC_DESCRIPTION_INVALID_REVISION');
+
+      const unknown = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers,
+        body: JSON.stringify({
+          expectedRevision: 'sha256:demo-rev',
+          extra: true,
+        }),
+      });
+      assert.equal(unknown.status, 400);
+
+      const cross = await request('DELETE', `${DESCRIPTION_API_PREFIX}/demo`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'http://evil.example',
+          Host: `127.0.0.1:${port}`,
+        },
+        body: JSON.stringify({ expectedRevision: 'sha256:demo-rev' }),
+      });
+      assert.equal(cross.status, 403);
     });
   });
 

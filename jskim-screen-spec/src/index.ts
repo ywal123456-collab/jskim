@@ -27,8 +27,14 @@ export type {
   DescriptionWriteResult,
   DescriptionCreateInput,
   DescriptionCreateResult,
+  DescriptionDeleteResult,
   FileDescriptionStore,
 } from './editing/file-description-store.js';
+export {
+  withDescriptionScreenLock,
+  descriptionScreenLockSizeForTest,
+  resetDescriptionScreenLocksForTest,
+} from './editing/description-screen-lock.js';
 export {
   validateEditableDescriptionDocument,
   toEditableDocument,

@@ -43,6 +43,101 @@ describe('IMPLEMENTATION_ONLY collect（Description 自動生成なし）', () =
   });
 
   it(
+    'TEMP sample: Store.delete 後の collect は JSON を再作成せず、初回 PUT で LINKED に戻る',
+    { timeout: 180000 },
+    async () => {
+      const workspaceRoot = await fsp.mkdtemp(
+        path.join(os.tmpdir(), 'jskim-impl-only-delete-')
+      );
+      temps.push(workspaceRoot);
+
+      await fse.copy(
+        path.join(REPO_ROOT, 'jskim.config.js'),
+        path.join(workspaceRoot, 'jskim.config.js')
+      );
+      await fse.copy(
+        path.join(REPO_ROOT, 'src/sample'),
+        path.join(workspaceRoot, 'src/sample')
+      );
+      await fse.copy(
+        path.join(REPO_ROOT, 'spec/sample/src'),
+        path.join(workspaceRoot, 'spec/sample/src')
+      );
+
+      const screenId = 'wizard-input';
+      const descPath = path.join(
+        workspaceRoot,
+        'spec',
+        'sample',
+        'src',
+        'data',
+        `${screenId}.json`
+      );
+      assert.equal(fs.existsSync(descPath), true);
+
+      const store = companion.createFileDescriptionStore({
+        rootDir: workspaceRoot,
+        projectName: 'sample',
+        listScreenIds: () =>
+          companion
+            .loadScreenSpecProject({
+              rootDir: workspaceRoot,
+              projectName: 'sample',
+            })
+            .screens.map((s) => s.screenId),
+      });
+      const before = store.read(screenId);
+      assert.equal(before.exists, true);
+      const deleted = store.delete(screenId, before.revision);
+      assert.equal(deleted.deleted, true);
+      assert.equal(fs.existsSync(descPath), false);
+
+      const { config } = loadConfig(workspaceRoot);
+      const project = resolveProject({
+        config,
+        workspaceRoot,
+        projectName: 'sample',
+        commandName: 'spec collect',
+      });
+
+      await runScreenSpecCollect({
+        project,
+        workspaceRoot,
+        projectName: 'sample',
+        collectScreenSpecProject: companion.collectScreenSpecProject,
+        log: false,
+      });
+      assert.equal(fs.existsSync(descPath), false);
+      assert.equal(
+        companion
+          .loadScreenSpecProject({
+            rootDir: workspaceRoot,
+            projectName: 'sample',
+          })
+          .screens.find((s) => s.screenId === screenId)?.status,
+        'implementation-only'
+      );
+
+      const getState = store.read(screenId);
+      assert.equal(getState.exists, false);
+      const nextDoc = structuredClone(getState.document);
+      nextDoc.screen.name = '削除後の再保存';
+      const put = store.write(screenId, nextDoc, getState.revision);
+      assert.equal(put.written, true);
+      assert.equal(fs.existsSync(descPath), true);
+      assert.equal(
+        companion
+          .loadScreenSpecProject({
+            rootDir: workspaceRoot,
+            projectName: 'sample',
+          })
+          .screens.find((s) => s.screenId === screenId)?.status,
+        'linked'
+      );
+    }
+  );
+
+  it(
     'TEMP sample: Description 削除後の collect は JSON を再作成せず実装のみを維持する',
     { timeout: 180000 },
     async () => {

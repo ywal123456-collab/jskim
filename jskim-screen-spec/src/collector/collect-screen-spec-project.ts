@@ -8,6 +8,7 @@ import { mergeDescription } from './merge-description.js';
 import {
   writeCollectedDescription,
 } from './write-collected-description.js';
+import { withDescriptionScreenLock } from '../editing/description-screen-lock.js';
 import {
   assertWaitWithinLimit,
   normalizeCollectActions,
@@ -309,13 +310,17 @@ export async function collectScreenSpecProject(
 
       for (const desc of pendingDescriptions) {
         // missing Description は writeCollectedDescription が skip（再作成しない）
-        if (fs.existsSync(desc.filePath)) {
-          fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
-        }
-        writeCollectedDescription({
-          filePath: desc.filePath,
-          screenId: desc.screenId,
-          foundItemIds: desc.foundItemIds,
+        // PUT/DELETE と screenId 単位で直列化する
+        // eslint-disable-next-line no-await-in-loop
+        await withDescriptionScreenLock(desc.screenId, () => {
+          if (fs.existsSync(desc.filePath)) {
+            fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
+          }
+          writeCollectedDescription({
+            filePath: desc.filePath,
+            screenId: desc.screenId,
+            foundItemIds: desc.foundItemIds,
+          });
         });
       }
 

@@ -60,6 +60,11 @@ export type DescriptionCreateResult = {
   created: true;
 };
 
+export type DescriptionDeleteResult = {
+  screenId: string;
+  deleted: true;
+};
+
 export type DescriptionStoreError = Error & {
   code: string;
   statusCode: number;
@@ -80,8 +85,25 @@ function storeError(
   return err;
 }
 
+function assertExpectedRevision(expectedRevision: unknown): asserts expectedRevision is string {
+  if (typeof expectedRevision !== 'string' || !expectedRevision.startsWith('sha256:')) {
+    throw storeError(
+      400,
+      'SPEC_DESCRIPTION_INVALID_REVISION',
+      'expectedRevision の形式が不正です。',
+    );
+  }
+  if (expectedRevision.length < 'sha256:'.length + 1) {
+    throw storeError(
+      400,
+      'SPEC_DESCRIPTION_INVALID_REVISION',
+      'expectedRevision の形式が不正です。',
+    );
+  }
+}
+
 /**
- * Description JSON の read/write/create 境界。
+ * Description JSON の read/write/create/delete 境界。
  * Viewer はファイルパスを知らず、この store 経由でのみ永続化する。
  */
 export function createFileDescriptionStore(options: FileDescriptionStoreOptions) {
@@ -220,14 +242,7 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     expectedRevision: string,
   ): DescriptionWriteResult {
     assertScreenAccessible(screenId);
-
-    if (typeof expectedRevision !== 'string' || !expectedRevision.startsWith('sha256:')) {
-      throw storeError(
-        400,
-        'SPEC_DESCRIPTION_INVALID_REVISION',
-        'expectedRevision の形式が不正です。',
-      );
-    }
+    assertExpectedRevision(expectedRevision);
 
     const filePath = descriptionPath(screenId);
     const raw = readRawFile(filePath);
@@ -512,12 +527,99 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     };
   }
 
+  /**
+   * Description JSON だけを削除する（source / snapshot / resources は触らない）。
+   *
+   * - expectedRevision 必須（内容 SHA-256）
+   * - ファイル無し（IMPLEMENTATION_ONLY 含む）→ 404 SPEC_DESCRIPTION_NOT_FOUND
+   * - revision 不一致 → 409
+   * - TEMP / backup は作らない
+   */
+  function deleteDescription(
+    screenId: string,
+    expectedRevision: string,
+  ): DescriptionDeleteResult {
+    assertScreenAccessible(screenId);
+    assertExpectedRevision(expectedRevision);
+
+    const filePath = descriptionPath(screenId);
+    if (!fs.existsSync(filePath)) {
+      throw storeError(
+        404,
+        'SPEC_DESCRIPTION_NOT_FOUND',
+        '画面設計書が見つかりません。',
+      );
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw storeError(
+        500,
+        'SPEC_DESCRIPTION_DELETE_FAILED',
+        `画面設計書の削除に失敗しました。原因: ${message}`,
+      );
+    }
+
+    const currentRevision = computeContentRevision(buffer);
+    if (expectedRevision !== currentRevision) {
+      throw storeError(
+        409,
+        'SPEC_DESCRIPTION_REVISION_CONFLICT',
+        '画面設計書が別の処理で更新されています。最新の内容を読み込み直してください。',
+        {
+          expectedRevision,
+          currentRevision,
+        },
+      );
+    }
+
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code || '')
+          : '';
+      if (code === 'ENOENT') {
+        throw storeError(
+          404,
+          'SPEC_DESCRIPTION_NOT_FOUND',
+          '画面設計書が見つかりません。',
+        );
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      throw storeError(
+        500,
+        'SPEC_DESCRIPTION_DELETE_FAILED',
+        `画面設計書の削除に失敗しました。原因: ${message}`,
+      );
+    }
+
+    // unlink 後に残っていないこと（外部復元は対象外）
+    if (fs.existsSync(filePath)) {
+      throw storeError(
+        500,
+        'SPEC_DESCRIPTION_DELETE_FAILED',
+        '画面設計書の削除に失敗しました。ファイルが残っています。',
+      );
+    }
+
+    return {
+      screenId,
+      deleted: true,
+    };
+  }
+
   return {
     dataDir,
     descriptionPath,
     read,
     write,
     create,
+    delete: deleteDescription,
   };
 }
 

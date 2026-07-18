@@ -1,10 +1,11 @@
-# 画面設計書の削除方針（Phase 7B-3B-0 / 7B-3B-1）
+# 画面設計書の削除方針（Phase 7B-3B-0 / 7B-3B-1 / 7B-3B-2）
 
 このドキュメントは、Screen Spec Viewer における **画面設計書（Description JSON）削除** と、それと衝突する **Collector の Description 自動生成** についての調査結果と詳細設計です。
 
-**Phase 7B-3B-0:** 調査・設計（削除 API / Viewer UI は含まない）。
+**Phase 7B-3B-0:** 調査・設計。
 **Phase 7B-3B-1（実装済み）:** Collector は missing Description を自動生成しない。IMPLEMENTATION_ONLY を安定維持する。
-**Phase 7B-3B-2 以降（未実装）:** `FileDescriptionStore.delete` / DELETE API → Viewer 削除 UI。
+**Phase 7B-3B-2（実装済み）:** `FileDescriptionStore.delete` / `DELETE /_jskim/spec/descriptions/{screenId}` / screenId 単位ロック / watcher build-only。
+**Phase 7B-3B-3（未実装）:** Viewer 削除ボタン・確認 Dialog・route fallback。
 
 関連:
 
@@ -405,8 +406,9 @@ revision が変わる
 ### 外部 editor
 
 filesystem 上の revision 確認と unlink の間には TOCTOU がある。
+**同一 process 内**の PUT / DELETE / Collector は `withDescriptionScreenLock` で直列化するが、
 外部 editor との完全な排他は保証しない（現行 PUT と同じ限界）。
-仕様上は「best-effort + expectedRevision」とし、Git 等の外部管理に委ねる。
+初期実装では quarantine rename は採用しない。Git 等の外部管理に委ねる。
 
 ---
 
@@ -584,26 +586,26 @@ README / design-first / companion 文言 / 回帰テスト更新
 
 削除 API / Viewer 削除 UI は **まだ未実装**（本 Phase の範囲外）。
 
-### Phase 7B-3B-2 — Store / DELETE API
+### Phase 7B-3B-2 — Store / DELETE API【実装済み】
 
 ```text
 FileDescriptionStore.delete(screenId, expectedRevision)
-DELETE /_jskim/spec/descriptions/{screenId}
-revision / race
-watcher 回数
+DELETE /_jskim/spec/descriptions/{screenId}（JSON body: expectedRevision）
+withDescriptionScreenLock（PUT / create / DELETE / Collector merge-write）
+watcher: Description unlink → collect 0 / build 1 / reload spec 1
 ```
 
-### Phase 7B-3B-3 — Viewer UI
+Viewer 削除 UI と route fallback は **まだ未実装**。
+
+### Phase 7B-3B-3 — Viewer UI【未実装】
 
 ```text
 削除ボタン / 確認 Dialog
 dirty 抑制
 DESIGN_ONLY fallback
 LINKED → IMPLEMENTATION_ONLY 表示
-same-port integration / sample smoke
+same-port Viewer UI integration
 ```
-
-**一括実装は推奨しない。** Collector 変更（3B-1）を先に分離することで、削除 UI 無しでも IMPLEMENTATION_ONLY の意味が正しくなる。
 
 ---
 
