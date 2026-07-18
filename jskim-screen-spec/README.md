@@ -129,24 +129,26 @@ Vue Viewer（「＋ 画面を作成」）
 - 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
 - 画面の rename / archive は本 phase の対象外（未実装）
 
-### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）と除外（phase 7B-2C-1）
+### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）と除外（phase 7B-2C-1 / 7B-2C-2）
 
-Description Schema は `1.1`（`itemOrder`）と `1.2`（`excludedItems`）を追加しました。`1.0` schema は変更していません。
+Description Schema は `1.1`（`itemOrder`）と `1.2`（`excludedItems`）を追加しました。`1.0` schema は変更していません。保存モデル / PUT / Collector は phase 7B-2C-1、Viewer UI は 7B-2C-2 です。
 
 ```text
-Vue Viewer（「＋ 項目を追加」→ 項目 ID / 項目名 / 種類 / 説明 / 備考）
-  → draft の items / itemOrder を更新（ローカルのみ・未保存）
+Vue Viewer（除外確認 → excludeDescriptionItem / 復元 → restoreDescriptionItem）
+  → draft の items / itemOrder / excludedItems を更新（ローカルのみ・未保存）
+  → Preview Badge は draft itemOrder（active items）だけで再描画
   → 保存時に same-origin PUT /_jskim/spec/descriptions/:screenId
-  → FileDescriptionStore.write()（schemaVersion "1.2" + itemOrder + excludedItems で書き出し）
+  → FileDescriptionStore.write()（schemaVersion "1.2" + itemOrder + excludedItems）
 ```
 
 - 読込は `1.0` / `1.1` / `1.2` に対応（lazy migration。保存操作が起きるまで既存 `1.0`/`1.1` ファイルを書き換えない）
 - GET 正規化は常に `schemaVersion "1.2"` + `excludedItems`（欠落時は `{}`）を返す
 - 新規作成（POST）は `schemaVersion "1.2"` + `itemOrder: []` + `excludedItems: {}`
 - PUT: **最新 collected ⊆ keys(items) ∪ keys(excludedItems)**。新規除外は collected のみ（manual-only 除外は拒否）。既存除外の直接削除は拒否（復元してから削除）。`itemOrder` ↔ `items` bijection、`items ∩ excludedItems = ∅`
-- GET は `collectedItemIds` を返し、Viewer の削除可否表示に使う。PUT では snapshot を再読込して検証する
-- Viewer では上下ボタンで並び替え、複製、manual-only 削除が可能。collected / linked 項目は削除不可
-- **除外 / 復元 UI は未実装**（API・Collector・保存契約のみ 7B-2C-1 で実装済み）
+- GET は `collectedItemIds` を返し、削除可否・除外可否・「実装あり / 実装なし」表示に使う。PUT では snapshot を再読込して検証する
+- Viewer: 上下並び替え、複製、manual-only 削除、collected の「設計対象から除外」、除外一覧の「設計対象に戻す」（復元は `itemOrder` 末尾）
+- Preview Badge は active collected のみ。除外 DOM をクリックしても選択しない。読み取り専用では除外 UI を出さない
+- 保存エラー（例: `SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED` / revision conflict）では draft / dirty を保持する
 - `jskim spec collect` は `keys(excludedItems)` を items / itemOrder へ再追加せず、人が並べた `itemOrder` を維持する。実際の Description 変更があるときだけ `1.2` へ upgrade。変更が無い `1.0`/`1.1` は rewrite しない
 
 ### `jskim spec dev` の監視

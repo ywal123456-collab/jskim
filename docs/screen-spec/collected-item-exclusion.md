@@ -4,7 +4,7 @@
 
 **Phase 7B-2C-0** は調査・設計でした。
 **Phase 7B-2C-1（実装済み）:** Schema 1.2 / 保存・GET 正規化 / Collector 再追加抑制 / PUT validation / local exclude·restore helper。
-**Phase 7B-2C-2（未実装）:** Viewer の除外 / 復元 UI・除外一覧表示。
+**Phase 7B-2C-2（実装済み）:** Viewer の除外 / 復元 UI・除外一覧（実装あり / 実装なし）・Preview Badge フィルタ。接続解除・ORPHAN は未実装。
 
 **保存モデル:** **keys(excludedItems) を除外 ID 集合とする単一 map**（`excludedItemIds` 配列は持たない）。
 

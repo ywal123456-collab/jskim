@@ -182,7 +182,7 @@ describe('ItemDescriptionTable', () => {
     expect(rows[1].findAll('td')[1].text()).toContain('title');
   });
 
-  it('editable=true のとき複製ボタンを出し、collected 項目は削除不可案内を出す', async () => {
+  it('editable=true のとき複製ボタンを出し、collected 項目は除外・manual は削除を出す', async () => {
     const { wrapper } = await mountTable(null, {
       editable: true,
       collectedItemIds: ['title', 'save'],
@@ -190,22 +190,24 @@ describe('ItemDescriptionTable', () => {
     const rows = wrapper.findAll('tbody tr');
     expect(rows[0].find('[aria-label="複製"]').exists()).toBe(true);
     expect(rows[0].find('[aria-label="削除"]').exists()).toBe(false);
-    expect(rows[0].find('.item-table__delete-blocked').text()).toContain(
-      '実装画面と連携している項目は削除できません',
-    );
+    expect(rows[0].find('[aria-label="設計対象から除外"]').exists()).toBe(true);
+
+    await rows[0].find('[aria-label="設計対象から除外"]').trigger('click');
+    expect(wrapper.emitted('exclude')![0]).toEqual(['title']);
 
     await rows[2].find('[aria-label="複製"]').trigger('click');
     expect(wrapper.emitted('duplicate')![0]).toEqual(['goto-list']);
 
     expect(rows[2].find('[aria-label="削除"]').exists()).toBe(true);
+    expect(rows[2].find('[aria-label="設計対象から除外"]').exists()).toBe(false);
     await rows[2].find('[aria-label="削除"]').trigger('click');
     expect(wrapper.emitted('remove')![0]).toEqual(['goto-list']);
   });
 
-  it('editable=false のとき複製・削除 UI を出さない', async () => {
+  it('editable=false のとき複製・削除・除外 UI を出さない', async () => {
     const { wrapper } = await mountTable();
     expect(wrapper.find('[aria-label="複製"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="削除"]').exists()).toBe(false);
-    expect(wrapper.find('.item-table__delete-blocked').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="設計対象から除外"]').exists()).toBe(false);
   });
 });

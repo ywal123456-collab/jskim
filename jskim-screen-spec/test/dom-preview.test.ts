@@ -76,6 +76,41 @@ describe('DomPreview', () => {
     wrapper.unmount();
   });
 
+  it('itemOrder に無い（除外済み）項目は Badge を出さずクリックでも select しない', async () => {
+    const wrapper = mount(DomPreview, {
+      props: {
+        html: FIXTURE_HTML,
+        itemOrder: ['a'],
+        selectedItemId: null,
+        previewCss: '',
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+
+    const shadow = (wrapper.element as HTMLElement).shadowRoot!;
+    const badges = shadow.querySelectorAll('.spec-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toBe('1');
+
+    const itemB = shadow.querySelector(
+      '[data-jskim-spec-item="b"]',
+    ) as HTMLElement;
+    expect(itemB.querySelector('.spec-badge')).toBeNull();
+    itemB.click();
+    await nextTick();
+    expect(wrapper.emitted('select')).toBeFalsy();
+
+    const itemA = shadow.querySelector(
+      '[data-jskim-spec-item="a"]',
+    ) as HTMLElement;
+    itemA.click();
+    await nextTick();
+    expect(wrapper.emitted('select')![0]).toEqual(['a']);
+
+    wrapper.unmount();
+  });
+
   it('selectedItemId に is-selected を付ける', async () => {
     const wrapper = mount(DomPreview, {
       props: {

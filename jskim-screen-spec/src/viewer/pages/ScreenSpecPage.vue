@@ -8,6 +8,8 @@ import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
 import CreateItemDialog from '../components/CreateItemDialog.vue';
 import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
 import DeleteItemDialog from '../components/DeleteItemDialog.vue';
+import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
+import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import {
   SCREEN_SPEC_STATUS_LABEL,
@@ -35,8 +37,21 @@ const loadError = ref<string | null>(null);
 const createItemDialogOpen = ref(false);
 const duplicateSourceItemId = ref<string | null>(null);
 const deleteTargetItemId = ref<string | null>(null);
+const excludeTargetItemId = ref<string | null>(null);
 
 const editor = useDescriptionEditor(() => props.screenId);
+
+/** 新規 ID 重複チェック用（active + excluded） */
+const existingItemIdsForCreate = computed(() => {
+  const doc = editor.draftDocument.value;
+  if (!doc) {
+    return [] as string[];
+  }
+  return [
+    ...Object.keys(doc.items || {}),
+    ...Object.keys(doc.excludedItems || {}),
+  ];
+});
 
 const specStatusLabel = computed(() => {
   if (!screen.value) {
@@ -201,10 +216,47 @@ function scrollToSection(id: string): void {
 }
 
 function onSelectItem(itemId: string): void {
+  // 除外済み ID は通常一覧に無いため選択しない
+  if (
+    editor.editingEnabled &&
+    editor.draftDocument.value &&
+    !editor.draftDocument.value.items[itemId]
+  ) {
+    return;
+  }
   selectedItemId.value = itemId;
   const row = document.getElementById(`item-row-${itemId}`);
   if (row) {
     row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function syncSelectionAfterOrderChange(
+  previousOrder: string[],
+  removedId: string,
+  wasSelected: boolean,
+): void {
+  if (!wasSelected) {
+    return;
+  }
+  const index = previousOrder.indexOf(removedId);
+  const nextOrder = editor.draftDocument.value?.itemOrder ?? [];
+  const nextId = nextOrder[index] ?? nextOrder[index - 1] ?? null;
+  selectedItemId.value = nextId;
+  if (nextId) {
+    void nextTick(() => {
+      document
+        .getElementById(`item-row-${nextId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+}
+
+function onCancelEdits(): void {
+  editor.cancel();
+  const order = editor.draftDocument.value?.itemOrder ?? [];
+  if (selectedItemId.value && !order.includes(selectedItemId.value)) {
+    selectedItemId.value = order[0] ?? null;
   }
 }
 
@@ -300,25 +352,63 @@ function onConfirmDeleteItem(): void {
   if (!itemId || !editor.draftDocument.value) {
     return;
   }
-  const order = editor.draftDocument.value.itemOrder;
-  const index = order.indexOf(itemId);
+  const order = [...editor.draftDocument.value.itemOrder];
   const wasSelected = selectedItemId.value === itemId;
   const removed = editor.removeItem(itemId);
   if (!removed) {
     return;
   }
-  if (!wasSelected) {
+  syncSelectionAfterOrderChange(order, itemId, wasSelected);
+}
+
+function openExcludeItem(itemId: string): void {
+  if (!editor.isCollectedItem(itemId)) {
     return;
   }
-  const nextOrder = editor.draftDocument.value.itemOrder;
-  const nextId = nextOrder[index] ?? nextOrder[index - 1] ?? null;
-  selectedItemId.value = nextId;
-  if (nextId) {
-    void nextTick(() => {
-      const row = document.getElementById(`item-row-${nextId}`);
-      row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
+  if (!editor.draftDocument.value?.items[itemId]) {
+    return;
   }
+  excludeTargetItemId.value = itemId;
+}
+
+function closeExcludeItem(): void {
+  excludeTargetItemId.value = null;
+}
+
+const excludeTargetItem = computed(() => {
+  const id = excludeTargetItemId.value;
+  if (!id || !editor.draftDocument.value) {
+    return null;
+  }
+  const item = editor.draftDocument.value.items[id];
+  if (!item) {
+    return null;
+  }
+  return { itemId: id, name: item.name };
+});
+
+function onConfirmExcludeItem(): void {
+  const itemId = excludeTargetItemId.value;
+  if (!itemId || !editor.draftDocument.value) {
+    return;
+  }
+  const order = [...editor.draftDocument.value.itemOrder];
+  const wasSelected = selectedItemId.value === itemId;
+  const ok = editor.excludeItem(itemId);
+  if (!ok) {
+    return;
+  }
+  syncSelectionAfterOrderChange(order, itemId, wasSelected);
+}
+
+function onRestoreExcludedItem(itemId: string): void {
+  const ok = editor.restoreItem(itemId);
+  if (!ok) {
+    return;
+  }
+  void nextTick(() => {
+    onSelectItem(itemId);
+  });
 }
 
 function copyDraftJson(): void {
@@ -394,7 +484,7 @@ watch(
           type="button"
           class="spec-page__btn spec-page__btn--secondary"
           :disabled="!editor.dirty.value || editor.saving.value"
-          @click="editor.cancel()"
+          @click="onCancelEdits"
         >
           キャンセル
         </button>
@@ -521,6 +611,19 @@ watch(
             @move-down="editor.moveItemDown"
             @duplicate="openDuplicateItem"
             @remove="openDeleteItem"
+            @exclude="openExcludeItem"
+          />
+
+          <ExcludedItemsPanel
+            v-if="
+              editor.editingEnabled &&
+              editor.draftDocument.value &&
+              Object.keys(editor.draftDocument.value.excludedItems || {}).length >
+                0
+            "
+            :excluded-items="editor.draftDocument.value.excludedItems"
+            :collected-item-ids="editor.collectedItemIds.value"
+            @restore="onRestoreExcludedItem"
           />
         </section>
       </div>
@@ -528,22 +631,14 @@ watch(
 
     <CreateItemDialog
       v-if="createItemDialogOpen"
-      :existing-item-ids="
-        editor.draftDocument.value
-          ? Object.keys(editor.draftDocument.value.items)
-          : []
-      "
+      :existing-item-ids="existingItemIdsForCreate"
       @close="closeCreateItem"
       @create="onCreateItem"
     />
 
     <DuplicateItemDialog
       v-if="duplicateSourceItem"
-      :existing-item-ids="
-        editor.draftDocument.value
-          ? Object.keys(editor.draftDocument.value.items)
-          : []
-      "
+      :existing-item-ids="existingItemIdsForCreate"
       :source-item-id="duplicateSourceItem.itemId"
       :initial-name="duplicateSourceItem.name"
       :initial-type="duplicateSourceItem.type"
@@ -559,6 +654,14 @@ watch(
       :item-name="deleteTargetItem.name"
       @close="closeDeleteItem"
       @confirm="onConfirmDeleteItem"
+    />
+
+    <ExcludeItemDialog
+      v-if="excludeTargetItem"
+      :item-id="excludeTargetItem.itemId"
+      :item-name="excludeTargetItem.name"
+      @close="closeExcludeItem"
+      @confirm="onConfirmExcludeItem"
     />
   </div>
 </template>

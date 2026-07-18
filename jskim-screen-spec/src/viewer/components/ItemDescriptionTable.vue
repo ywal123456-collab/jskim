@@ -29,6 +29,7 @@ const emit = defineEmits<{
   'move-down': [itemId: string];
   duplicate: [itemId: string];
   remove: [itemId: string];
+  exclude: [itemId: string];
 }>();
 
 const router = useRouter();
@@ -37,8 +38,6 @@ const displayItemOrder = computed(() => props.itemOrder ?? props.screen.itemOrde
 const collectedSet = computed(() => new Set(props.collectedItemIds || []));
 
 const UNREGISTERED_LABEL = '画面設計書未登録';
-const COLLECTED_DELETE_HINT =
-  '実装画面と連携している項目は削除できません。';
 
 function interactionsFor(itemId: string): ScreenInteraction[] {
   return props.screen.interactions.filter((i) => i.itemId === itemId);
@@ -219,14 +218,17 @@ function isCollected(itemId: string): boolean {
                 >
                   削除
                 </button>
-                <span
+                <button
                   v-else
-                  class="item-table__delete-blocked"
-                  role="note"
-                  :title="COLLECTED_DELETE_HINT"
+                  type="button"
+                  class="item-table__action-btn"
+                  aria-label="設計対象から除外"
+                  title="設計対象から除外"
+                  data-action="exclude-item"
+                  @click.stop="emit('exclude', itemId)"
                 >
-                  {{ COLLECTED_DELETE_HINT }}
-                </span>
+                  設計対象から除外
+                </button>
               </template>
               <button
                 v-for="(interaction, iIndex) in interactionsFor(itemId)"

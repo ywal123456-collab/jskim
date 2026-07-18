@@ -192,7 +192,8 @@ async function renderPreview(): Promise<void> {
     const itemEl = target?.closest?.('[data-jskim-spec-item]') as HTMLElement | null;
     if (itemEl) {
       const itemId = itemEl.getAttribute('data-jskim-spec-item');
-      if (itemId) {
+      // 設計対象（itemOrder）にある項目だけ選択する。除外済み DOM は Badge も選択も無い
+      if (itemId && badgeNumber(itemId) > 0) {
         emit('select', itemId);
       }
     }

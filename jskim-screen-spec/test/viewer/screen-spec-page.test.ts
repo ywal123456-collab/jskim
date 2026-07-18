@@ -270,4 +270,173 @@ describe('ScreenSpecPage', () => {
     expect(reordered[0].findAll('td')[1].text()).toContain('submit-button');
     expect(reordered[1].findAll('td')[1].text()).toContain('title');
   });
+
+  it('編集モードで collected 項目を除外すると Badge が消え、復元で戻る', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    const linkedManifest: ManifestScreen = {
+      id: 'linked-screen',
+      name: '連携画面',
+      path: '/linked.html',
+      dataFile: 'screens/linked-screen.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    const linkedScreen: ScreenData = {
+      id: 'linked-screen',
+      name: '連携画面',
+      description: '',
+      path: '/linked.html',
+      itemOrder: ['title', 'layout'],
+      items: {
+        title: { name: 'タイトル', type: 'text', description: '', note: '' },
+        layout: { name: '枠', type: 'container', description: '説明保持', note: '' },
+      },
+      states: [
+        {
+          id: 'default',
+          name: '初期',
+          viewer: { visible: true, order: 1 },
+          snapshotFile: 'snapshots/linked-screen/default.html',
+        },
+      ],
+      interactions: [],
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+
+    mockFetchFor(
+      { 'linked-screen': linkedScreen },
+      {
+        'linked-screen/default.html':
+          '<div data-jskim-spec-item="title">t</div><div data-jskim-spec-item="layout">l</div>',
+      },
+      {
+        screenId: 'linked-screen',
+        revision: 'sha256:r1',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'linked-screen', name: '連携画面', description: '' },
+          itemOrder: ['title', 'layout'],
+          items: {
+            title: { name: 'タイトル', type: 'text', description: '', note: '' },
+            layout: {
+              name: '枠',
+              type: 'container',
+              description: '説明保持',
+              note: '',
+            },
+          },
+          excludedItems: {},
+        },
+        collectedItemIds: ['title', 'layout'],
+      },
+    );
+
+    const wrapper = await mountPage({
+      screenId: 'linked-screen',
+      manifestScreens: [linkedManifest],
+      editingEnabled: true,
+    });
+    await flushPromises();
+
+    const preview = wrapper.findComponent(DomPreview);
+    expect(preview.exists()).toBe(true);
+    await flushPromises();
+    const shadowBefore = (preview.element as HTMLElement).shadowRoot!;
+    expect(shadowBefore.querySelectorAll('.spec-badge')).toHaveLength(2);
+
+    const layoutRow = wrapper.find('#item-row-layout');
+    expect(layoutRow.exists()).toBe(true);
+    await layoutRow.find('[aria-label="設計対象から除外"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('項目を設計対象から除外しますか？');
+    await wrapper.find('[data-action="confirm-exclude"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('#item-row-layout').exists()).toBe(false);
+    expect(wrapper.find('.excluded-items-panel__toggle').text()).toContain(
+      '除外した項目（1）',
+    );
+    expect(wrapper.find('.spec-page__status').attributes('data-status')).toBe(
+      'dirty',
+    );
+
+    await flushPromises();
+    const shadowAfterExclude = (preview.element as HTMLElement).shadowRoot!;
+    expect(shadowAfterExclude.querySelectorAll('.spec-badge')).toHaveLength(1);
+    expect(
+      shadowAfterExclude.querySelector('[data-jskim-spec-item="layout"] .spec-badge'),
+    ).toBeNull();
+
+    await wrapper.find('.excluded-items-panel__toggle').trigger('click');
+    expect(wrapper.text()).toContain('実装あり');
+    // 折りたたみ一覧では説明 field を編集しないが、項目名は表示する
+    expect(wrapper.find('#excluded-item-row-layout').text()).toContain('枠');
+
+    await wrapper
+      .find('[aria-label="設計対象に戻す: layout"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('#item-row-layout').exists()).toBe(true);
+    expect(wrapper.find('.excluded-items-panel').exists()).toBe(false);
+    await flushPromises();
+    const shadowAfterRestore = (preview.element as HTMLElement).shadowRoot!;
+    expect(shadowAfterRestore.querySelectorAll('.spec-badge')).toHaveLength(2);
+  });
+
+  it('読み取り専用では除外 UI / 除外領域を出さない', async () => {
+    const linkedManifest: ManifestScreen = {
+      id: 'linked-ro',
+      name: '連携',
+      path: '/x.html',
+      dataFile: 'screens/linked-ro.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    const linkedScreen: ScreenData = {
+      id: 'linked-ro',
+      name: '連携',
+      description: '',
+      path: '/x.html',
+      itemOrder: ['title'],
+      items: {
+        title: { name: 'T', type: 'text', description: '', note: '' },
+      },
+      states: [
+        {
+          id: 'default',
+          name: '初期',
+          viewer: { visible: true, order: 1 },
+          snapshotFile: 'snapshots/linked-ro/default.html',
+        },
+      ],
+      interactions: [],
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    mockFetchFor(
+      { 'linked-ro': linkedScreen },
+      { 'linked-ro/default.html': '<div data-jskim-spec-item="title">t</div>' },
+    );
+    const wrapper = await mountPage({
+      screenId: 'linked-ro',
+      manifestScreens: [linkedManifest],
+      editingEnabled: false,
+    });
+    expect(wrapper.find('[aria-label="設計対象から除外"]').exists()).toBe(false);
+    expect(wrapper.find('.excluded-items-panel').exists()).toBe(false);
+  });
 });

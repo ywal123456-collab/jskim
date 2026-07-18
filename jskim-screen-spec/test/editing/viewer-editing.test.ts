@@ -458,4 +458,117 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.draftDocument.value?.items.manual).toBeUndefined();
     expect(wrapper.vm.editor.dirty.value).toBe(true);
   });
+
+  it('excludeItem / restoreItem は説明を保持し、manual 除外は拒否する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            revision: 'sha256:r1',
+            exists: true,
+            document: {
+              ...baseDocument,
+              itemOrder: ['title', 'manual'],
+              items: {
+                title: {
+                  name: 'タイトル',
+                  type: 'text',
+                  description: '見出し説明',
+                  note: '備考',
+                },
+                manual: {
+                  name: '手動',
+                  type: 'text',
+                  description: '',
+                  note: '',
+                },
+              },
+              excludedItems: {},
+            },
+            collectedItemIds: ['title'],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.excludeItem('manual')).toBe(false);
+    expect(wrapper.vm.editor.excludeItem('title')).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.items.title).toBeUndefined();
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual(['manual']);
+    expect(wrapper.vm.editor.draftDocument.value?.excludedItems.title).toEqual({
+      name: 'タイトル',
+      type: 'text',
+      description: '見出し説明',
+      note: '備考',
+    });
+    expect(wrapper.vm.editor.dirty.value).toBe(true);
+
+    expect(wrapper.vm.editor.restoreItem('title')).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+      'manual',
+      'title',
+    ]);
+    expect(wrapper.vm.editor.draftDocument.value?.excludedItems).toEqual({});
+    expect(wrapper.vm.editor.draftDocument.value?.items.title.description).toBe(
+      '見出し説明',
+    );
+  });
+
+  it('除外保存で MANUAL_ITEM_EXCLUDE が返ると draft を保持したままエラー表示する', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init || init.method === 'GET' || !init.method) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            revision: 'sha256:r1',
+            exists: true,
+            document: {
+              ...baseDocument,
+              itemOrder: ['title'],
+              items: {
+                title: {
+                  name: 'タイトル',
+                  type: 'text',
+                  description: 'd',
+                  note: '',
+                },
+              },
+              excludedItems: {},
+            },
+            collectedItemIds: ['title'],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          code: 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
+          message: 'server message',
+        }),
+        { status: 400 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.excludeItem('title')).toBe(true);
+    const ok = await wrapper.vm.editor.save();
+    expect(ok).toBe(false);
+    expect(wrapper.vm.editor.status.value).toBe('error');
+    expect(wrapper.vm.editor.statusMessage.value).toContain(
+      '最新の画面設計書を再読み込みしてください',
+    );
+    expect(wrapper.vm.editor.dirty.value).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.excludedItems.title).toBeTruthy();
+  });
 });

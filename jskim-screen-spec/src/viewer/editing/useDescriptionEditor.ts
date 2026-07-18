@@ -1,6 +1,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
 import {
+  excludeDescriptionItem,
+  restoreDescriptionItem,
+} from '../../editing/exclude-description-item';
+import {
   cloneEditableDocument,
   documentsEqual,
   getSpecEditBootstrap,
@@ -118,7 +122,12 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       if (!res.ok) {
         const err = (await res.json().catch(() => null)) as DescriptionApiError | null;
         status.value = 'error';
-        statusMessage.value = err?.message || '保存に失敗しました。';
+        if (err?.code === 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED') {
+          statusMessage.value =
+            '実装画面と連携していない項目は設計対象から除外できません。\n最新の画面設計書を再読み込みしてください。';
+        } else {
+          statusMessage.value = err?.message || '保存に失敗しました。';
+        }
         return false;
       }
 
@@ -328,6 +337,50 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     return true;
   }
 
+  /**
+   * collected 項目を設計対象から除外する（draft のみ。保存は別途）。
+   */
+  function excludeItem(itemId: string): boolean {
+    if (!draftDocument.value) {
+      return false;
+    }
+    const id = itemId.trim();
+    if (!id || !isCollectedItem(id)) {
+      return false;
+    }
+    try {
+      draftDocument.value = excludeDescriptionItem(
+        draftDocument.value,
+        id,
+      ) as EditableDocument;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 除外項目を設計対象へ戻す（draft のみ。itemOrder 末尾へ追加）。
+   */
+  function restoreItem(itemId: string): boolean {
+    if (!draftDocument.value) {
+      return false;
+    }
+    const id = itemId.trim();
+    if (!id || !draftDocument.value.excludedItems?.[id]) {
+      return false;
+    }
+    try {
+      draftDocument.value = restoreDescriptionItem(
+        draftDocument.value,
+        id,
+      ) as EditableDocument;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function onBeforeUnload(event: BeforeUnloadEvent): void {
     if (!dirty.value) {
       return;
@@ -377,6 +430,8 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     addItem,
     duplicateItem,
     removeItem,
+    excludeItem,
+    restoreItem,
     isCollectedItem,
     moveItemUp,
     moveItemDown,
