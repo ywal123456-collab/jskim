@@ -369,7 +369,7 @@ spec/{project}/dist/data/device-captures/.../capture-<sha256hex>.png
 （参照中の current/stale のみ。invalid/orphan/TEMP はコピーしない）
 ```
 
-## Reference Image（Phase 7C-2A-1）
+## Reference Image（Phase 7C-2A-1 / 7C-2A-2）
 
 デザイン基準画像（実装結果ではない）を保存する **内部 core** です。multipart HTTP API と Viewer 参照タブは未実装です。
 
@@ -401,6 +401,22 @@ await putReferenceImage({
 - manifest: screen の `referenceImages` / `hasReferenceImage` / `hasAnyPreview`（`hasPreview` 意味は維持）
 - output: `data/reference-images/{screenId}/{viewport}/reference-<sha>.png`（current のみ）
 - Description 削除・画面複製では Reference を自動削除/複製しない
+
+HTTP API（Phase 7C-2A-2、`jskim spec dev` のみ。engine `scripts/lib`）:
+
+```text
+PUT    /_jskim/spec/reference-images/{screenId}/{viewport}   multipart/form-data
+DELETE /_jskim/spec/reference-images/{screenId}/{viewport}   application/json
+GET    /_jskim/spec/reference-images/status?screenId=&viewport=
+```
+
+- 保存は companion core（`putReferenceImage` / `deleteReferenceImage`）に委譲。API 層に第 2 queue は持たない
+- multipart: binary-safe 最小 parser（外部依存なし）。全体 body 上限 21 MiB、PNG 本体 20 MiB
+- field 契約: `image` ファイル 1 件必須、`expectedImageRevision` テキスト 0..1。unknown / 重複 field は 400
+- same-origin / Content-Type / JSON body 制限は Description・Device Capture write API と同方針
+- runtime registry（in-memory）: `idle` / `uploading` / `deleting` / `failed`。同一 key 進行中は 409
+- API 成功後の build/reload は watcher の meta.json BUILD_ONLY に委譲（API は直接呼び出さない）
+- Viewer 参照タブ・Dialog は未実装（Phase 7C-2A-3）
 
 保存先:
 

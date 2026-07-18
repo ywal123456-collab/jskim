@@ -148,6 +148,30 @@ async function resolveScreenSpecModule(options = {}) {
     }
   }
 
+  if (options.requireReferenceImage) {
+    if (typeof mod.putReferenceImage !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に putReferenceImage がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.deleteReferenceImage !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に deleteReferenceImage がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.getReferenceImagePublicInfo !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に getReferenceImagePublicInfo がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
     buildScreenSpecViewerAtomic: mod.buildScreenSpecViewerAtomic,
@@ -160,6 +184,10 @@ async function resolveScreenSpecModule(options = {}) {
     collectDeviceCapture: mod.collectDeviceCapture,
     getDeviceCapturePublicInfo: mod.getDeviceCapturePublicInfo,
     getDeviceCaptureStatus: mod.getDeviceCaptureStatus,
+    putReferenceImage: mod.putReferenceImage,
+    deleteReferenceImage: mod.deleteReferenceImage,
+    getReferenceImagePublicInfo: mod.getReferenceImagePublicInfo,
+    getReferenceImageStatus: mod.getReferenceImageStatus,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };

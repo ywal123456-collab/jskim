@@ -80,6 +80,11 @@ function createWatchRuntime(options) {
     typeof options.deviceCaptureApi.handleRequest === 'function'
       ? options.deviceCaptureApi
       : null;
+  const referenceImageApi =
+    options.referenceImageApi &&
+    typeof options.referenceImageApi.handleRequest === 'function'
+      ? options.referenceImageApi
+      : null;
   const injectDescriptionEditing = Boolean(options.injectDescriptionEditing);
 
   /** @type {string|undefined} */
@@ -221,6 +226,12 @@ function createWatchRuntime(options) {
         if (
           deviceCaptureApi &&
           (await deviceCaptureApi.handleRequest(req, res, meta))
+        ) {
+          return true;
+        }
+        if (
+          referenceImageApi &&
+          (await referenceImageApi.handleRequest(req, res, meta))
         ) {
           return true;
         }

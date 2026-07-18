@@ -12,6 +12,7 @@ const { createWatchRuntime } = require('./create-watch-runtime');
 const { createSpecDevOrchestrator } = require('./create-spec-dev-orchestrator');
 const { createDescriptionEditApi } = require('./create-description-edit-api');
 const { createDeviceCaptureApi } = require('./create-device-capture-api');
+const { createReferenceImageApi } = require('./create-reference-image-api');
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -63,6 +64,9 @@ function createSpecDevRuntime(options = {}) {
     let withDescriptionScreenLock = options.withDescriptionScreenLock;
     let collectDeviceCapture = options.collectDeviceCapture;
     let getDeviceCapturePublicInfo = options.getDeviceCapturePublicInfo;
+    let putReferenceImage = options.putReferenceImage;
+    let deleteReferenceImage = options.deleteReferenceImage;
+    let getReferenceImagePublicInfo = options.getReferenceImagePublicInfo;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -82,6 +86,7 @@ function createSpecDevRuntime(options = {}) {
           requireWatchHelpers: true,
           requireEditing: true,
           requireDeviceCapture: true,
+          requireReferenceImage: true,
         });
       } catch (err) {
         if (err && err.code === 'JSKIM_SCREEN_SPEC_NOT_FOUND') {
@@ -110,6 +115,11 @@ function createSpecDevRuntime(options = {}) {
         collectDeviceCapture || companion.collectDeviceCapture;
       getDeviceCapturePublicInfo =
         getDeviceCapturePublicInfo || companion.getDeviceCapturePublicInfo;
+      putReferenceImage = putReferenceImage || companion.putReferenceImage;
+      deleteReferenceImage =
+        deleteReferenceImage || companion.deleteReferenceImage;
+      getReferenceImagePublicInfo =
+        getReferenceImagePublicInfo || companion.getReferenceImagePublicInfo;
     }
 
     // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
@@ -122,6 +132,23 @@ function createSpecDevRuntime(options = {}) {
     }
     if (typeof getDeviceCapturePublicInfo !== 'function') {
       getDeviceCapturePublicInfo = () => ({ status: 'missing' });
+    }
+    if (typeof putReferenceImage !== 'function') {
+      putReferenceImage = async () => {
+        const err = new Error('参照画像機能が利用できません。');
+        err.code = 'SPEC_REFERENCE_IMAGE_UNAVAILABLE';
+        throw err;
+      };
+    }
+    if (typeof deleteReferenceImage !== 'function') {
+      deleteReferenceImage = async () => {
+        const err = new Error('参照画像機能が利用できません。');
+        err.code = 'SPEC_REFERENCE_IMAGE_UNAVAILABLE';
+        throw err;
+      };
+    }
+    if (typeof getReferenceImagePublicInfo !== 'function') {
+      getReferenceImagePublicInfo = () => ({ status: 'missing' });
     }
 
     if (options.skipInitialCollect !== true) {
@@ -189,6 +216,19 @@ function createSpecDevRuntime(options = {}) {
       getCollectHooks: options.getDeviceCaptureHooks,
     });
 
+    const referenceImageApi = createReferenceImageApi({
+      rootDir: workspaceRoot,
+      projectName,
+      host,
+      port,
+      putReferenceImage,
+      deleteReferenceImage,
+      getReferenceImagePublicInfo,
+      loadScreenSpecProject,
+      getPutHooks: options.getReferenceImagePutHooks,
+      getDeleteHooks: options.getReferenceImageDeleteHooks,
+    });
+
     runtime = createWatchRuntime({
       mode: 'dev',
       workspaceRoot,
@@ -207,6 +247,7 @@ function createSpecDevRuntime(options = {}) {
       injectDescriptionEditing: options.injectDescriptionEditing !== false,
       descriptionEditApi,
       deviceCaptureApi,
+      referenceImageApi,
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);
@@ -247,6 +288,7 @@ function createSpecDevRuntime(options = {}) {
             descriptionStore,
             descriptionEditApi,
             deviceCaptureApi,
+            referenceImageApi,
           });
         }
       },

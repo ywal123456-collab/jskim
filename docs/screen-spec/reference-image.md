@@ -1,11 +1,12 @@
-# Reference Image 方針（Phase 7C-2A-0 / 7C-2A-1）
+# Reference Image 方針（Phase 7C-2A-0 / 7C-2A-1 / 7C-2A-2）
 
 このドキュメントは、Screen Spec Viewer の **Reference Image（デザイン基準画像）** について、保存モデル・画面/Viewport 関係・Upload/Replace/Delete API・Viewer 表示・Figma Import 受け入れ口を確定する設計です。
 
 | Phase | 状態 |
 |-------|------|
 | **7C-2A-0** | 調査・設計（文書） |
-| **7C-2A-1** | **完了** — Reference Image **core**（put/delete/status、PNG 検証、atomic 保存、optimistic revision、watcher、manifest/output）。multipart HTTP API / Viewer 参照タブは未実装 |
+| **7C-2A-1** | **完了** — Reference Image **core**（put/delete/status、PNG 検証、atomic 保存、optimistic revision、watcher、manifest/output） |
+| **7C-2A-2** | **完了** — `jskim spec dev` multipart PUT / DELETE / status GET、runtime registry、same-port 統合。Viewer 参照タブは未実装 |
 
 関連:
 
@@ -49,11 +50,10 @@ DESIGN_ONLY は実装 snapshot が無いため **No Preview** のままである
 7. 実装 Phase を安全に分割する
 ```
 
-本 Phase で実装しないもの:
+本設計文書の当初スコープ外（Viewer / Figma / 比較は後続 Phase）:
 
 ```text
-Viewer UI
-multipart API 実装
+Viewer 参照タブ / Dialog
 Schema 変更
 Figma API
 visual diff / overlay
@@ -485,7 +485,7 @@ viewport: path の pc | sp
 
 **upload と replace は同一 PUT。** 既存があれば replace、なければ create。
 
-`scripts/lib` に multipart 処理は現状無い。7C-2A-2 で最小実装を追加する（外部依存は可能な限り増やさない）。
+`scripts/lib/parse-multipart-form-data.js` に binary-safe な最小 multipart parser を実装済み（外部依存なし。7C-2A-2）。
 
 ---
 
@@ -923,14 +923,17 @@ output data/reference-images/...
 Viewer UI なし
 ```
 
-### Phase 7C-2A-2（API・未実装）
+### Phase 7C-2A-2（API・完了）
 
 ```text
-spec dev multipart PUT / DELETE
-runtime uploading/deleting/failed
-same-origin / size limit
-same-port API integration
-no-op / 409 / 失敗保全
+spec dev multipart PUT / DELETE / status GET
+runtime uploading/deleting/failed（in-memory registry）
+同一 key 進行中 409（API 層。core 二重呼び出しなし）
+same-origin / multipart 21 MiB / PNG 20 MiB
+core 委譲（put/delete/getPublicInfo）。API に第 2 queue なし
+API は build/reload 非実行（watcher meta.json BUILD_ONLY）
+same-port integration（created/updated/unchanged/delete/in-progress）
+Viewer UI なし
 ```
 
 ### Phase 7C-2A-3（Viewer）
@@ -968,27 +971,29 @@ Frame Import → 同一 Reference core
 | Capture と path/UI 混同 | ディレクトリ・タブ文言・状態モデルを分離 |
 | Description 削除で画像消失 | 自動削除しない |
 | replace 競合 | expectedImageRevision |
-| multipart 未整備 | 7C-2A-2 で最小実装。依存追加は慎重に |
+| multipart / API 誤用 | binary-safe 最小 parser・field 契約・same-origin。依存追加なし |
 | 2x export と論理 viewport 混同 | metadata で寸法を分離 |
 | Git binary 肥大 | PNG 手動管理・orphan cleanup 後続 |
 | DESIGN_ONLY No Preview 固定化 | hasReferenceImage / hasAnyPreview |
 
 ---
 
-## 40. 未決事項（API / Viewer Phase で確定）
+## 40. 未決事項（Viewer Phase で確定）
 
 ```text
-missing DELETE を HTTP 404 に統一するか冪等 204 にするか（core は NOT_FOUND）
 参照タブの preferred key 文字列（reference vs reference-image）
 hasAnyPreview に Device Capture のみの画面を含めるか
 JPEG/WebP をいつ解禁するか
 ```
 
-7C-2A-1 で確定済み:
+7C-2A-1 / 7C-2A-2 で確定済み:
 
 ```text
 最大入力 PNG: 20 MiB
 最大寸法: 16384 × 65536
+multipart 全体 body: 21 MiB
+missing DELETE: HTTP 404 SPEC_REFERENCE_IMAGE_NOT_FOUND（冪等 204 にしない）
+同一 key 進行中: 409 SPEC_REFERENCE_IMAGE_IN_PROGRESS
 ```
 
 ---
@@ -1042,11 +1047,11 @@ JPEG/WebP をいつ解禁するか
 | Capture path | `captures/{screen}/{state}/{viewport}` | `references/{screen}/{viewport}`（state 無し） |
 | Atomic | `write-file-atomic.ts` / Capture persist | 再利用・薄い Reference persist |
 | PNG | `png-dimensions.ts` | 再利用 |
-| multipart | `scripts/lib` に無し | 7C-2A-2 で新設 |
+| multipart | `parse-multipart-form-data.js` | binary-safe・依存なし |
 | Description CRUD | JSON のみ。assets 非接触 | Reference も自動削除しない |
 | Watcher | captures の meta のみ BUILD_ONLY | references も同様 |
 | DESIGN_ONLY UI | No Preview 固定 | hasAnyPreview で分岐が必要 |
 
 ---
 
-*Phase 7C-2A-1 で core / watcher / manifest / output まで実装。multipart API・Viewer 参照タブ・Figma・比較 UX は未実装。version は変更しない。*
+*Phase 7C-2A-2 で multipart PUT/DELETE/status API・runtime registry・same-port 統合まで実装。Viewer 参照タブ・Figma・比較 UX は未実装。version は変更しない。*

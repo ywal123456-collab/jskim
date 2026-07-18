@@ -116,6 +116,29 @@ describe('Description edit API は spec dev 専用', () => {
     });
     assert.notEqual(putRes.status, 200);
 
+    const refPut = await httpRequest({
+      port,
+      method: 'PUT',
+      path: '/_jskim/spec/reference-images/demo/pc',
+      headers: {
+        'Content-Type': 'multipart/form-data; boundary=----x',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      },
+      body: Buffer.from('----x--\r\n'),
+    });
+    assert.notEqual(refPut.status, 200);
+
+    const refStatus = await httpRequest({
+      port,
+      path: '/_jskim/spec/reference-images/status?screenId=demo&viewport=pc',
+      headers: {
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      },
+    });
+    assert.notEqual(refStatus.status, 200);
+
     const spec = await httpRequest({ port, path: '/spec/' });
     assert.equal(spec.status, 200);
     assert.doesNotMatch(spec.body.toString('utf8'), /__JSKIM_SPEC_EDIT__/);
