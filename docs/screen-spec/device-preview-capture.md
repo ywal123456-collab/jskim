@@ -747,6 +747,18 @@ read-only はタブ+画像のみ（再収集・runtime GET なし）
 
 実装: `jskim-screen-spec/src/viewer/preview/` + Preview タブ / DeviceCapturePanel
 
+### Phase 7C-1A-3S（検証安定化・実装済み）
+
+same-port Viewer browser integration で次を決定的に検証:
+
+```text
+stale → Viewer 再収集 → current（他 viewport 維持・自動 Capture 0）
+collecting + polling + 同一 key 409 → barrier 解除で完了
+失敗 → 既存画像/meta 保全 → 再試行で failed 解消
+```
+
+テスト: `test/device-capture-viewer-stabilization.test.js`（awaitBarrier / failScreenshot hooks）
+
 ### Phase 7C-1B（任意）
 
 ```text
