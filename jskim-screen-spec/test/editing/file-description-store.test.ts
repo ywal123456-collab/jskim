@@ -494,6 +494,152 @@ describe('Description editing store', () => {
         fs.rmSync(root, { recursive: true, force: true });
       }
     });
+
+    it('copyFromScreenId は active items / itemOrder を複製し excludedItems は空にする', () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-desc-copy-'));
+      try {
+        const store = makeStore(root, () => ['source']);
+        const dataDir = path.join(root, 'spec', 'sample', 'src', 'data');
+        fs.mkdirSync(dataDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(dataDir, 'source.json'),
+          `${JSON.stringify(
+            {
+              schemaVersion: '1.2',
+              screen: { id: 'source', name: '元', description: '元説明' },
+              itemOrder: ['title', 'submit'],
+              items: {
+                title: {
+                  name: 'タイトル',
+                  type: 'text',
+                  description: 'd',
+                  note: 'n',
+                },
+                submit: {
+                  name: '送信',
+                  type: 'button',
+                  description: '',
+                  note: '',
+                },
+              },
+              excludedItems: {
+                layout: {
+                  name: '枠',
+                  type: 'container',
+                  description: '除外',
+                  note: '',
+                },
+              },
+            },
+            null,
+            2,
+          )}\n`,
+          'utf8',
+        );
+
+        const result = store.create({
+          screenId: 'source-copy',
+          name: '元 コピー',
+          description: '新説明',
+          copyFromScreenId: 'source',
+        });
+        expect(result.document.schemaVersion).toBe('1.2');
+        expect(result.document.itemOrder).toEqual(['title', 'submit']);
+        expect(result.document.items.title).toEqual({
+          name: 'タイトル',
+          type: 'text',
+          description: 'd',
+          note: 'n',
+        });
+        expect(result.document.excludedItems).toEqual({});
+        expect(result.document.screen).toEqual({
+          id: 'source-copy',
+          name: '元 コピー',
+          description: '新説明',
+        });
+
+        const sourceSaved = JSON.parse(
+          fs.readFileSync(path.join(dataDir, 'source.json'), 'utf8'),
+        );
+        expect(sourceSaved.excludedItems.layout.name).toBe('枠');
+        expect(sourceSaved.screen.name).toBe('元');
+        expect(result.document.items.title).not.toBe(sourceSaved.items.title);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('copyFromScreenId で IMPLEMENTATION_ONLY の placeholder を複製し元ファイルは作らない', () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-desc-copy-impl-'));
+      try {
+        const snapDir = path.join(
+          root,
+          'spec',
+          'sample',
+          'src',
+          'snapshots',
+          'impl-only',
+        );
+        fs.mkdirSync(snapDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(snapDir, 'default.html'),
+          '<div data-jskim-spec-item="title">t</div>\n',
+          'utf8',
+        );
+        const store = makeStore(root, () => ['impl-only']);
+        const result = store.create({
+          screenId: 'impl-copy',
+          name: '実装コピー',
+          description: '',
+          copyFromScreenId: 'impl-only',
+        });
+        expect(result.document.itemOrder).toEqual(['title']);
+        expect(result.document.items.title).toEqual({
+          name: '',
+          type: '',
+          description: '',
+          note: '',
+        });
+        expect(result.document.excludedItems).toEqual({});
+        expect(
+          fs.existsSync(
+            path.join(root, 'spec', 'sample', 'src', 'data', 'impl-only.json'),
+          ),
+        ).toBe(false);
+        expect(
+          fs.existsSync(
+            path.join(root, 'spec', 'sample', 'src', 'data', 'impl-copy.json'),
+          ),
+        ).toBe(true);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('copyFromScreenId が無い画面 / 同一 ID は拒否する', () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-desc-copy-err-'));
+      try {
+        const store = makeStore(root, () => ['source']);
+        expect(() =>
+          store.create({
+            screenId: 'x',
+            name: 'A',
+            description: '',
+            copyFromScreenId: 'missing',
+          }),
+        ).toThrowError(/複製元の画面が見つかりません/);
+        expect(() =>
+          store.create({
+            screenId: 'source',
+            name: 'A',
+            description: '',
+            copyFromScreenId: 'source',
+          }),
+        ).toThrowError(/複製元と異なるID/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('IMPLEMENTATION_ONLY の GET/PUT draft', () => {

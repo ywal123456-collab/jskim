@@ -16,13 +16,7 @@ function createMemoryStore(initial = {}) {
   }
 
   return {
-    create({ screenId, name, description }) {
-      if (docs.has(screenId)) {
-        const err = new Error(`画面設計書「${screenId}」は既に存在します。`);
-        err.code = 'SPEC_DESCRIPTION_ALREADY_EXISTS';
-        err.statusCode = 409;
-        throw err;
-      }
+    create({ screenId, name, description, copyFromScreenId }) {
       if (typeof screenId !== 'string' || !/^[a-z][a-z0-9-]*$/.test(screenId)) {
         const err = new Error('画面 ID の形式が不正です。');
         err.code = 'SPEC_DESCRIPTION_INVALID_SCREEN_ID';
@@ -35,10 +29,39 @@ function createMemoryStore(initial = {}) {
         err.statusCode = 400;
         throw err;
       }
+      let items = {};
+      let itemOrder = [];
+      if (copyFromScreenId != null) {
+        if (copyFromScreenId === screenId) {
+          const err = new Error(
+            '複製先の画面IDには、複製元と異なるIDを指定してください。'
+          );
+          err.code = 'SPEC_DESCRIPTION_INVALID';
+          err.statusCode = 400;
+          throw err;
+        }
+        const source = docs.get(copyFromScreenId);
+        if (!source) {
+          const err = new Error('複製元の画面が見つかりません。');
+          err.code = 'SPEC_DESCRIPTION_COPY_SOURCE_NOT_FOUND';
+          err.statusCode = 404;
+          throw err;
+        }
+        items = structuredClone(source.document.items || {});
+        itemOrder = [...(source.document.itemOrder || Object.keys(items))];
+      }
+      if (docs.has(screenId)) {
+        const err = new Error(`画面設計書「${screenId}」は既に存在します。`);
+        err.code = 'SPEC_DESCRIPTION_ALREADY_EXISTS';
+        err.statusCode = 409;
+        throw err;
+      }
       const document = {
-        schemaVersion: '1.0',
+        schemaVersion: '1.2',
         screen: { id: screenId, name, description: description || '' },
-        items: {},
+        itemOrder,
+        items,
+        excludedItems: {},
       };
       docs.set(screenId, {
         revision: 'sha256:created',
@@ -366,6 +389,71 @@ describe('createDescriptionEditApi', () => {
     });
   });
 
+  it('POST copyFromScreenId で項目を複製し、除外・不明元は拒否する', async () => {
+    const store = createMemoryStore({
+      source: {
+        revision: 'sha256:src',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: { id: 'source', name: '元', description: '元説明' },
+          itemOrder: ['a', 'b'],
+          items: {
+            a: { name: 'A', type: 't', description: 'da', note: 'na' },
+            b: { name: 'B', type: 't', description: '', note: '' },
+          },
+          excludedItems: {
+            z: { name: 'Z', type: '', description: '', note: '' },
+          },
+        },
+      },
+    });
+    await withServer(store, async ({ port, request }) => {
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+      const ok = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers,
+        body: JSON.stringify({
+          screenId: 'source-copy',
+          name: '元 コピー',
+          description: '新説明',
+          copyFromScreenId: 'source',
+        }),
+      });
+      assert.equal(ok.status, 201);
+      assert.deepEqual(ok.json.document.itemOrder, ['a', 'b']);
+      assert.equal(ok.json.document.items.a.name, 'A');
+      assert.deepEqual(ok.json.document.excludedItems, {});
+      assert.equal(ok.json.document.screen.description, '新説明');
+
+      const sameId = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers,
+        body: JSON.stringify({
+          screenId: 'source',
+          name: 'x',
+          description: '',
+          copyFromScreenId: 'source',
+        }),
+      });
+      assert.equal(sameId.status, 400);
+
+      const missing = await request('POST', DESCRIPTION_API_PREFIX, {
+        headers,
+        body: JSON.stringify({
+          screenId: 'no-src-copy',
+          name: 'x',
+          description: '',
+          copyFromScreenId: 'missing-source',
+        }),
+      });
+      assert.equal(missing.status, 404);
+      assert.equal(missing.json.code, 'SPEC_DESCRIPTION_COPY_SOURCE_NOT_FOUND');
+    });
+  });
+
   it('POST の許可されていないフィールドは 400、GET/PUT/HEAD/POST 以外は 405', async () => {
     const store = createMemoryStore();
     await withServer(store, async ({ port, request }) => {
@@ -379,7 +467,7 @@ describe('createDescriptionEditApi', () => {
           screenId: 'x',
           name: 'A',
           description: '',
-          copyFromScreenId: 'other',
+          unexpectedField: true,
         }),
       });
       assert.equal(badField.status, 400);

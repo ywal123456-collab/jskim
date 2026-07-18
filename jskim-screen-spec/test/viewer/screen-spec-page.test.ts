@@ -393,6 +393,53 @@ describe('ScreenSpecPage', () => {
     expect(shadowAfterRestore.querySelectorAll('.spec-badge')).toHaveLength(2);
   });
 
+  it('編集モードでは画面を複製ボタンを出し、dirty 時は disabled にする', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+    mockFetchFor(
+      { 'design-screen': designOnlyScreen },
+      {},
+      {
+        screenId: 'design-screen',
+        revision: 'sha256:r1',
+        exists: true,
+        document: {
+          schemaVersion: '1.2',
+          screen: {
+            id: 'design-screen',
+            name: '設計のみ画面',
+            description: '設計だけの画面です。',
+          },
+          itemOrder: ['title'],
+          items: {
+            title: { name: 'タイトル', type: 'text', description: '', note: '' },
+          },
+          excludedItems: {},
+        },
+        collectedItemIds: [],
+      },
+    );
+    const wrapper = await mountPage({
+      screenId: 'design-screen',
+      manifestScreens: [designOnlyManifestScreen],
+      editingEnabled: true,
+    });
+
+    const dupBtn = wrapper.find('[data-action="duplicate-screen"]');
+    expect(dupBtn.exists()).toBe(true);
+    expect(dupBtn.attributes('disabled')).toBeUndefined();
+
+    await wrapper
+      .find('#section-basic input')
+      .setValue('変更名');
+    await flushPromises();
+    expect(
+      wrapper.find('[data-action="duplicate-screen"]').attributes('disabled'),
+    ).toBeDefined();
+  });
+
   it('読み取り専用では除外 UI / 除外領域を出さない', async () => {
     const linkedManifest: ManifestScreen = {
       id: 'linked-ro',
@@ -438,5 +485,8 @@ describe('ScreenSpecPage', () => {
     });
     expect(wrapper.find('[aria-label="設計対象から除外"]').exists()).toBe(false);
     expect(wrapper.find('.excluded-items-panel').exists()).toBe(false);
+    expect(wrapper.find('[data-action="duplicate-screen"]').exists()).toBe(
+      false,
+    );
   });
 });

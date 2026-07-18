@@ -148,7 +148,12 @@ function createDescriptionEditApi(options) {
       return true;
     }
 
-    const allowedKeys = new Set(['screenId', 'name', 'description']);
+    const allowedKeys = new Set([
+      'screenId',
+      'name',
+      'description',
+      'copyFromScreenId',
+    ]);
     const unknownKey = Object.keys(body).find((key) => !allowedKeys.has(key));
     if (unknownKey) {
       sendJson(res, 400, {
@@ -163,6 +168,7 @@ function createDescriptionEditApi(options) {
         screenId: body.screenId,
         name: body.name,
         description: body.description,
+        copyFromScreenId: body.copyFromScreenId,
       });
       res.setHeader(
         'Location',

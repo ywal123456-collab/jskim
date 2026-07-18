@@ -10,6 +10,7 @@ import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
 import DeleteItemDialog from '../components/DeleteItemDialog.vue';
 import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
+import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
 import {
   SCREEN_SPEC_STATUS_LABEL,
@@ -38,6 +39,7 @@ const createItemDialogOpen = ref(false);
 const duplicateSourceItemId = ref<string | null>(null);
 const deleteTargetItemId = ref<string | null>(null);
 const excludeTargetItemId = ref<string | null>(null);
+const duplicateScreenDialogOpen = ref(false);
 
 const editor = useDescriptionEditor(() => props.screenId);
 
@@ -419,6 +421,32 @@ function copyDraftJson(): void {
   void navigator.clipboard?.writeText(text);
 }
 
+function openDuplicateScreen(): void {
+  if (editor.dirty.value || editor.saving.value) {
+    return;
+  }
+  duplicateScreenDialogOpen.value = true;
+}
+
+function closeDuplicateScreen(): void {
+  duplicateScreenDialogOpen.value = false;
+}
+
+/** 複製元は保存済み（loaded）内容。dirty draft は使わない */
+const duplicateSourceMeta = computed(() => {
+  const loaded = editor.loadedDocument.value;
+  if (loaded) {
+    return {
+      name: loaded.screen.name || screen.value?.name || props.screenId,
+      description: loaded.screen.description || '',
+    };
+  }
+  return {
+    name: screen.value?.name || props.screenId,
+    description: '',
+  };
+});
+
 watch(
   () => props.screenId,
   (id) => {
@@ -472,6 +500,20 @@ watch(
           class="spec-page__status"
           :data-status="editor.status.value"
         >{{ statusLabel }}</span>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-action="duplicate-screen"
+          :disabled="editor.dirty.value || editor.saving.value"
+          :title="
+            editor.dirty.value
+              ? '画面を複製する前に、編集中の変更を保存してください。'
+              : '画面を複製'
+          "
+          @click="openDuplicateScreen"
+        >
+          画面を複製
+        </button>
         <button
           type="button"
           class="spec-page__btn"
@@ -662,6 +704,15 @@ watch(
       :item-name="excludeTargetItem.name"
       @close="closeExcludeItem"
       @confirm="onConfirmExcludeItem"
+    />
+
+    <DuplicateScreenDialog
+      v-if="duplicateScreenDialogOpen"
+      :copy-from-screen-id="props.screenId"
+      :source-name="duplicateSourceMeta.name"
+      :source-description="duplicateSourceMeta.description"
+      :source-dirty="editor.dirty.value"
+      @close="closeDuplicateScreen"
     />
   </div>
 </template>

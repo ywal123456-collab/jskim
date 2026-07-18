@@ -127,7 +127,11 @@ Vue Viewer（「＋ 画面を作成」）
 - 同じ `screenId` で 2 回目の `POST` は `409 SPEC_DESCRIPTION_ALREADY_EXISTS`
 - 作成直後の画面は `design-only` かつ `hasPreview: false`。Viewer は Preview 領域に No Preview を表示し、`states` が無いため State selector も表示しない
 - 実装と連携して `jskim spec collect` を実行すると snapshot が追加され、`status` は `linked` に変わる
-- 画面の rename / archive は本 phase の対象外（未実装）
+- 画面の rename / archive / 削除は未実装
+- 画面複製（phase 7B-3A）: Viewer「画面を複製」→ `POST` + `copyFromScreenId`
+  - 複製元は **保存済み** Description（または IMPLEMENTATION_ONLY の normalized GET draft）。dirty draft は使わない
+  - active `items` / `itemOrder` を deep copy。`excludedItems` は常に `{}`
+  - `createFileAtomic` + pending navigation（新規作成と同じ）。結果は `design-only` / No Preview
 
 ### 項目の追加・並び替え / `itemOrder`（phase 7B-2A）と除外（phase 7B-2C-1 / 7B-2C-2）
 

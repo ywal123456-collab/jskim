@@ -504,6 +504,156 @@ describe('design-first Description create: watcher 回数', () => {
   );
 
   it(
+    '画面複製 POST: collect:0 build:1 reload(spec):1',
+    { timeout: 30000 },
+    async () => {
+      const workspaceRoot = await createEmptyDesignWorkspace();
+      const { port, counters } = await startRuntime(workspaceRoot);
+      const sse = await openSse({ port });
+      await sleep(120);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: `http://127.0.0.1:${port}`,
+        Host: `127.0.0.1:${port}`,
+      };
+
+      const create = await httpRequest({
+        port,
+        method: 'POST',
+        path: DESCRIPTION_API_PREFIX,
+        headers,
+        body: JSON.stringify({
+          screenId: 'dup-source',
+          name: '複製元',
+          description: '元説明',
+        }),
+      });
+      assert.equal(create.status, 201);
+      await waitFor(() => counters.build === 1, {
+        timeoutMs: 10000,
+        label: 'source create build',
+      });
+      await sleep(350);
+
+      const getRes = await httpRequest({
+        port,
+        path: `${DESCRIPTION_API_PREFIX}/dup-source`,
+      });
+      const getJson = JSON.parse(getRes.body.toString('utf8'));
+      const seeded = structuredClone(getJson.document);
+      seeded.items.a = {
+        name: 'A',
+        type: 'text',
+        description: '',
+        note: '',
+      };
+      seeded.items.b = {
+        name: 'B',
+        type: 'button',
+        description: '',
+        note: '',
+      };
+      seeded.itemOrder = ['a', 'b'];
+      const putRes = await httpRequest({
+        port,
+        method: 'PUT',
+        path: `${DESCRIPTION_API_PREFIX}/dup-source`,
+        headers,
+        body: JSON.stringify({
+          expectedRevision: getJson.revision,
+          document: seeded,
+        }),
+      });
+      assert.equal(putRes.status, 200);
+      await waitFor(() => counters.build === 2, {
+        timeoutMs: 10000,
+        label: 'source seed build',
+      });
+      await sleep(350);
+
+      // excludedItems は PUT では新規追加できないため、ディスク上で複製元へ付与する
+      const sourcePath = path.join(
+        workspaceRoot,
+        'spec',
+        'sample',
+        'src',
+        'data',
+        'dup-source.json'
+      );
+      const onDisk = JSON.parse(await fsp.readFile(sourcePath, 'utf8'));
+      onDisk.excludedItems = {
+        layout: {
+          name: '枠',
+          type: 'container',
+          description: '',
+          note: '',
+        },
+      };
+      await fsp.writeFile(
+        sourcePath,
+        `${JSON.stringify(onDisk, null, 2)}\n`,
+        'utf8'
+      );
+      await waitFor(() => counters.build === 3, {
+        timeoutMs: 10000,
+        label: 'source excludedItems write build',
+      });
+      await sleep(350);
+
+      const beforeBuild = counters.build;
+      const beforeCollect = counters.collect;
+      const beforeSpec = countReloadTarget(sse, 'spec');
+
+      const copy = await httpRequest({
+        port,
+        method: 'POST',
+        path: DESCRIPTION_API_PREFIX,
+        headers,
+        body: JSON.stringify({
+          screenId: 'dup-source-copy',
+          name: '複製元 コピー',
+          description: '新説明',
+          copyFromScreenId: 'dup-source',
+        }),
+      });
+      assert.equal(copy.status, 201);
+
+      await waitFor(() => counters.build === beforeBuild + 1, {
+        timeoutMs: 10000,
+        label: 'duplicate build once',
+      });
+      await sleep(350);
+
+      assert.equal(counters.collect, beforeCollect);
+      assert.equal(counters.build, beforeBuild + 1);
+      assert.equal(countReloadTarget(sse, 'spec'), beforeSpec + 1);
+
+      const saved = JSON.parse(
+        await fsp.readFile(
+          path.join(
+            workspaceRoot,
+            'spec',
+            'sample',
+            'src',
+            'data',
+            'dup-source-copy.json'
+          ),
+          'utf8'
+        )
+      );
+      assert.equal(saved.schemaVersion, '1.2');
+      assert.deepEqual(saved.itemOrder, ['a', 'b']);
+      assert.deepEqual(saved.excludedItems, {});
+      assert.equal(saved.screen.description, '新説明');
+
+      const sourceSaved = JSON.parse(await fsp.readFile(sourcePath, 'utf8'));
+      assert.equal(sourceSaved.excludedItems.layout.name, '枠');
+      sse.close();
+    }
+  );
+
+  it(
     'collected 除外 PUT: collect:0 build:1 reload(spec):1',
     { timeout: 30000 },
     async () => {

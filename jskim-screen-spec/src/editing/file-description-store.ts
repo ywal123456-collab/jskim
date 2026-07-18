@@ -49,6 +49,8 @@ export type DescriptionCreateInput = {
   screenId: unknown;
   name: unknown;
   description?: unknown;
+  /** 指定時は既存画面の active items / itemOrder を複製する（excludedItems は複製しない） */
+  copyFromScreenId?: unknown;
 };
 
 export type DescriptionCreateResult = {
@@ -332,12 +334,29 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
     };
   }
 
+  function deepCloneItems(
+    source: EditableDescriptionDocument['items'],
+  ): EditableDescriptionDocument['items'] {
+    const items: EditableDescriptionDocument['items'] = {};
+    for (const [id, item] of Object.entries(source || {})) {
+      items[id] = {
+        name: item.name,
+        type: item.type,
+        description: item.description,
+        note: item.note,
+      };
+    }
+    return items;
+  }
+
   /**
    * 新規 Description を作成する（create-if-absent、上書きしない）。
    *
    * - screenId が listScreenIds に無くても良い（DESIGN_ONLY の新規作成）
    * - screenId が IMPLEMENTATION_ONLY として既に登録されている場合は
    *   snapshot から集めた item ID を placeholder として items に含める
+   * - copyFromScreenId がある場合は複製元の active items / itemOrder を使い、
+   *   excludedItems は常に {}。複製元ファイルは変更しない
    * - Description ファイルが既に存在する場合は 409
    */
   function create(input: DescriptionCreateInput): DescriptionCreateResult {
@@ -399,17 +418,60 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
       );
     }
 
-    const filePath = descriptionPath(screenId);
-    const isKnownImplementationOnly = options.listScreenIds().includes(screenId);
-    const collectedItemIds = isKnownImplementationOnly
-      ? collectImplementationItemIds(screenId)
-      : [];
-
-    const items: EditableDescriptionDocument['items'] = {};
-    for (const id of collectedItemIds) {
-      items[id] = { name: '', type: '', description: '', note: '' };
+    const hasCopyFrom =
+      input?.copyFromScreenId !== undefined && input?.copyFromScreenId !== null;
+    let copyFromScreenId: string | null = null;
+    if (hasCopyFrom) {
+      if (!isValidScreenId(input.copyFromScreenId)) {
+        throw storeError(
+          400,
+          'SPEC_DESCRIPTION_INVALID_SCREEN_ID',
+          '複製元の画面 ID の形式が不正です。',
+        );
+      }
+      copyFromScreenId = input.copyFromScreenId as string;
+      if (containsPathTraversal(copyFromScreenId)) {
+        throw storeError(
+          400,
+          'SPEC_DESCRIPTION_INVALID_SCREEN_ID',
+          '複製元の画面 ID が不正です。',
+        );
+      }
+      if (copyFromScreenId === screenId) {
+        throw storeError(
+          400,
+          'SPEC_DESCRIPTION_INVALID',
+          '複製先の画面IDには、複製元と異なるIDを指定してください。',
+        );
+      }
+      if (!options.listScreenIds().includes(copyFromScreenId)) {
+        throw storeError(
+          404,
+          'SPEC_DESCRIPTION_COPY_SOURCE_NOT_FOUND',
+          '複製元の画面が見つかりません。',
+        );
+      }
     }
-    const itemOrder = [...collectedItemIds];
+
+    const filePath = descriptionPath(screenId);
+    let items: EditableDescriptionDocument['items'] = {};
+    let itemOrder: string[] = [];
+
+    if (copyFromScreenId) {
+      const source = read(copyFromScreenId);
+      items = deepCloneItems(source.document.items);
+      itemOrder = [...source.document.itemOrder];
+    } else {
+      const isKnownImplementationOnly =
+        options.listScreenIds().includes(screenId);
+      const collectedItemIds = isKnownImplementationOnly
+        ? collectImplementationItemIds(screenId)
+        : [];
+      for (const id of collectedItemIds) {
+        items[id] = { name: '', type: '', description: '', note: '' };
+      }
+      itemOrder = [...collectedItemIds];
+    }
 
     const excludedItems: EditableDescriptionDocument['excludedItems'] = {};
     const screen = { id: screenId, name, description };

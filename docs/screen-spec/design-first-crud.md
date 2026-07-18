@@ -10,7 +10,7 @@
 
 **Phase 7B-2B で追加実装済みなのは** 項目の複製、現在 collected されていない manual-only 項目の削除、削除確認ダイアログ、PUT 時の最新 collected 再検証です。
 
-collected 項目の設計対象除外・接続解除、drag-drop 並び替え、画面の複製・削除・アーカイブ、Figma 連携は未実装です。
+接続解除、drag-drop 並び替え、画面の削除・アーカイブ、Figma 連携は未実装です。画面複製（Phase 7B-3A）と収集項目の設計対象除外（7B-2C）は実装済みです。
 
 ## 関連
 
@@ -225,17 +225,19 @@ spec/{project}/src/data/{screenId}.json
 既存の GET/PUT は `screen.name` / `screen.description` を編集できます（7A-1 と同一）。
 画面が未収集でも編集 API を呼べるように、`listScreenIds` は **union で計算**するようにしています（Phase 7B-1）。
 
-### 5.4 画面の複製（Phase 7B-3・将来）
+### 5.4 画面の複製（Phase 7B-3A・実装済み）
 
-想定: 既存の `screenId` から名前だけ変えた新規画面を作る。
+既存の `screenId` から新しい設計のみ画面を作る。`POST /_jskim/spec/descriptions` に optional `copyFromScreenId` を渡す。
 
 | 複製する内容 | 複製しない内容 |
 |----------|------------|
-| `screen.name` / `description`（新しい値で上書き） | Source / snapshot / resources |
-| `items`（`itemOrder` 含む。Phase 7B-2A で導入済み） | collected の DOM 依存情報 |
-| Description 内の画面固有 field | Figma binding（実装後にひも付ける） |
+| `screen.description`（POST の新値） / 新 `screenId` / 新 `name` | Source / snapshot / resources |
+| active `items` + `itemOrder`（deep copy） | `excludedItems`（常に `{}`） |
+| | collected metadata / Preview / Figma binding |
 
-実装案: `POST` create に `copyFromScreenId` を追加する案（7B-1 の POST には含めない）。
+- 結果は常に `DESIGN_ONLY` / No Preview。複製先の項目は manual-only
+- dirty な未保存 draft は複製しない（Viewer で保存を促す）
+- 画面削除は未実装（5.6）
 
 ### 5.5 画面のアーカイブ（archive）
 
@@ -679,8 +681,8 @@ POST /_jskim/spec/descriptions
 
 | API | Phase |
 |-----|-------|
-| `POST` に `copyFromScreenId`（複製） | 7B-3 |
-| `DELETE /_jskim/spec/descriptions/{screenId}` | 7B-3 |
+| `POST` に `copyFromScreenId`（複製） | **7B-3A 実装済み** |
+| `DELETE /_jskim/spec/descriptions/{screenId}` | 7B-3B 以降 |
 
 DELETE の設計候補（未決定）:
 
@@ -853,7 +855,7 @@ drag-drop 並び替え
 
 ### Phase 7B-3（実装先行と設計先行を統合する検討）
 
-- 画面複製（POST + `copyFromScreenId`）
+- 画面複製（POST + `copyFromScreenId`）… **7B-3A 実装済み**
 - 画面削除（DELETE + revision）と LINKED 画面への影響
 - アーカイブ（archive）等の将来検討事項の切り出し
 - 削除時の snapshot 扱いの検討
@@ -894,7 +896,7 @@ drag-drop 並び替え
 4. **screenId / itemId は変更不能な stable ID**。変更する仕組みは追加しない
 5. **7B-1 は schema 1.0 のまま。** `itemOrder` は 7B-2A で **1.1** に上げた（実装済み・lazy migration）
 6. **項目の追加・並び替え・複製・manual-only 削除は whole-document PUT のみ（7B-2A/2B・実装済み）。collected 除外は未実装**
-7. **7B-1 の API は GET / PUT / POST（画面作成含む）。** 複製・DELETE は 7B-3
+7. **7B-1 の API は GET / PUT / POST（画面作成含む）。** 複製は 7B-3A（`copyFromScreenId`）。DELETE は 7B-3B 以降
 8. **No Preview 表示は文言のみ。** Figma / 参考画像 / ボタンは表示しない
 9. **画面設計のみの編集は実装連携を必須にしない**
 10. **既存 JSON への破壊的な rewrite は行わない**（1.0 → 1.1 も保存操作が起きるまで rewrite しない）
