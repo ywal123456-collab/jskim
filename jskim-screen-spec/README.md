@@ -309,9 +309,18 @@ spec/{project}/src/snapshots/{screenId}/{stateId}.html
 
 収集時は `[data-jskim-spec-screen]` の outerHTML を、input / textarea / select / checkbox / details / dialog のランタイム状態を attribute へ反映したうえで保存します（クローン上で処理し、ライブ DOM は壊しません）。
 
-## Device Capture（Phase 7C-1A-1 / 7C-1A-2）
+## Device Capture（Phase 7C-1A-1 / 7C-1A-2 / 7C-1A-3）
 
-PC/SP の実 viewport 静止画を保存する core と、`jskim spec dev` 専用 HTTP API です。Viewer タブはまだありません。既存 `collect` からも自動呼び出ししません。
+PC/SP の実 viewport 静止画を保存する core・`jskim spec dev` 専用 HTTP API・Viewer の Live/PC/SP タブです。既存 `collect` からは自動呼び出ししません。
+
+### Viewer（Phase 7C-1A-3）
+
+- Preview タブ: **Live**（既存 DomPreview） / **PC** / **SP**（Capture 画像）
+- LINKED / IMPLEMENTATION_ONLY でタブ表示。DESIGN_ONLY は従来の No Preview（タブなし）
+- preferred provider は project 単位の `sessionStorage`（`jskim-spec-preview-provider:<project>`）
+- persisted: 最新 / 更新が必要 / 未収集 / データ破損。runtime collecting/failed は editable のみ
+- 再収集は現在 screen/state/viewport のみ（`spec dev`）。POST 後は expected `imageRevision` の manifest 反映を待つ（`unchanged` は待たない）
+- read-only Viewer はタブと画像のみ（再収集・runtime GET なし）
 
 ### 内部 core
 

@@ -4,6 +4,8 @@ import DomPreview, {
   type PreviewStylesheet,
 } from '../components/DomPreview.vue';
 import StateSelector from '../components/StateSelector.vue';
+import PreviewProviderTabs from '../components/PreviewProviderTabs.vue';
+import DeviceCapturePanel from '../components/DeviceCapturePanel.vue';
 import ItemDescriptionTable from '../components/ItemDescriptionTable.vue';
 import CreateItemDialog from '../components/CreateItemDialog.vue';
 import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
@@ -13,6 +15,13 @@ import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
+import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
+import {
+  readPreferredPreviewProvider,
+  writePreferredPreviewProvider,
+  type DeviceCaptureViewport,
+  type PreviewProvider,
+} from '../preview/preview-provider';
 import {
   SCREEN_SPEC_STATUS_LABEL,
   type DocumentContext,
@@ -36,6 +45,8 @@ const snapshotHtml = ref('');
 const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
+const preferredProvider = ref<PreviewProvider>('live');
+const previewTabsIdPrefix = 'screen-preview';
 const createItemDialogOpen = ref(false);
 const duplicateSourceItemId = ref<string | null>(null);
 const deleteTargetItemId = ref<string | null>(null);
@@ -45,6 +56,117 @@ const deleteScreenDialogOpen = ref(false);
 const deleteSuccessMessage = ref('');
 
 const editor = useDescriptionEditor(() => props.screenId);
+
+const projectName = computed(
+  () => manifest?.value.projectName || 'default',
+);
+
+const viewerBaseUrl = computed(() => import.meta.env.BASE_URL);
+
+/** LINKED / IMPLEMENTATION_ONLY で Live/PC/SP を出す。DESIGN_ONLY は出さない */
+const canShowDeviceTabs = computed(
+  () =>
+    Boolean(screen.value?.hasPreview) &&
+    (screen.value?.states.length ?? 0) > 0,
+);
+
+const effectiveProvider = computed<PreviewProvider>(() => {
+  if (!canShowDeviceTabs.value) {
+    return 'live';
+  }
+  return preferredProvider.value;
+});
+
+const captureViewport = computed<DeviceCaptureViewport | null>(() => {
+  if (effectiveProvider.value === 'pc' || effectiveProvider.value === 'sp') {
+    return effectiveProvider.value;
+  }
+  return null;
+});
+
+const currentStateName = computed(() => {
+  const state = screen.value?.states.find((s) => s.id === selectedStateId.value);
+  return state?.name || selectedStateId.value;
+});
+
+const captureDisabledReason = computed(() => {
+  if (!screen.value?.hasImplementation) {
+    return '実装画面がないため収集できません。';
+  }
+  if (!selectedStateId.value) {
+    return '状態が選択されていません。';
+  }
+  if (duplicateScreenDialogOpen.value || deleteScreenDialogOpen.value) {
+    return '画面操作が完了するまで収集できません。';
+  }
+  return '';
+});
+
+function screenDataUrl(screenId: string): string {
+  const base = import.meta.env.BASE_URL;
+  const entry = manifest?.value.screens.find((s) => s.id === screenId);
+  if (!entry) {
+    return `${base}data/screens/${screenId}.json`;
+  }
+  return `${base}data/${entry.dataFile}`;
+}
+
+async function reloadScreenData(): Promise<void> {
+  if (!screen.value || props.screenId === '_empty') {
+    return;
+  }
+  const base = import.meta.env.BASE_URL;
+  const entry = manifest?.value.screens.find((s) => s.id === props.screenId);
+  if (!entry) {
+    return;
+  }
+  try {
+    const screenRes = await fetch(`${base}data/${entry.dataFile}`, {
+      cache: 'no-store',
+    });
+    if (!screenRes.ok) {
+      return;
+    }
+    const data = (await screenRes.json()) as ScreenData;
+    const prevState = selectedStateId.value;
+    screen.value = data;
+    if (prevState && data.states.some((s) => s.id === prevState)) {
+      selectedStateId.value = prevState;
+    } else {
+      const firstVisible =
+        data.states.find((s) => s.viewer.visible) || data.states[0];
+      selectedStateId.value = firstVisible?.id ?? '';
+      if (selectedStateId.value) {
+        await loadSnapshot(selectedStateId.value);
+      }
+    }
+  } catch {
+    // ignore transient reload errors
+  }
+}
+
+const deviceCapture = useDeviceCapturePanel({
+  projectName: () => projectName.value,
+  screenId: () => props.screenId,
+  stateId: () => selectedStateId.value,
+  viewport: () => captureViewport.value,
+  screen: () => screen.value,
+  editable: () => Boolean(editor.editingEnabled),
+  reloadScreen: reloadScreenData,
+  screenDataUrl,
+});
+
+function onPreviewProviderChange(next: PreviewProvider): void {
+  // DESIGN_ONLY 表示中でも preferred は保持（タブ非表示時は呼ばれない想定）
+  preferredProvider.value = next;
+  writePreferredPreviewProvider(projectName.value, next);
+}
+
+function initPreferredProvider(): void {
+  preferredProvider.value = readPreferredPreviewProvider(projectName.value);
+}
+
+initPreferredProvider();
 
 /** Description ファイルがある DESIGN_ONLY / LINKED のみ削除 action を出す */
 const canDeleteScreenDescription = computed(() => {
@@ -685,18 +807,55 @@ watch(
     </nav>
 
     <div class="spec-page__workspace">
-      <aside id="section-preview" class="spec-page__preview-pane" aria-label="DOM プレビュー">
-        <h2 class="spec-page__section-title">Preview</h2>
-        <DomPreview
-          v-if="showPreview"
-          :html="snapshotHtml"
-          :item-order="displayItemOrder"
-          :selected-item-id="selectedItemId"
-          :stylesheets="stylesheets"
-          :preview-css="previewCss"
-          :document-context="currentDocumentContext"
-          @select="onSelectItem"
-        />
+      <aside id="section-preview" class="spec-page__preview-pane" aria-label="プレビュー">
+        <div class="spec-page__preview-header">
+          <h2 class="spec-page__section-title">Preview</h2>
+          <PreviewProviderTabs
+            v-if="canShowDeviceTabs"
+            :model-value="preferredProvider"
+            :id-prefix="previewTabsIdPrefix"
+            data-testid="preview-provider-tabs"
+            @update:model-value="onPreviewProviderChange"
+          />
+        </div>
+
+        <template v-if="canShowDeviceTabs">
+          <div
+            v-show="effectiveProvider === 'live'"
+            :id="`${previewTabsIdPrefix}-panel-live`"
+            role="tabpanel"
+            :aria-labelledby="`${previewTabsIdPrefix}-tab-live`"
+            data-testid="preview-panel-live"
+          >
+            <DomPreview
+              :html="snapshotHtml"
+              :item-order="displayItemOrder"
+              :selected-item-id="selectedItemId"
+              :stylesheets="stylesheets"
+              :preview-css="previewCss"
+              :document-context="currentDocumentContext"
+              @select="onSelectItem"
+            />
+          </div>
+          <DeviceCapturePanel
+            v-if="captureViewport"
+            :viewport="captureViewport"
+            :screen-name="displayName || screen.id"
+            :state-name="currentStateName"
+            :capture="deviceCapture.persistedCapture.value"
+            :runtime="deviceCapture.runtime.value"
+            :editable="editor.editingEnabled"
+            :collecting="deviceCapture.isCollecting.value"
+            :status-message="deviceCapture.statusMessage.value"
+            :error-message="deviceCapture.errorMessage.value"
+            :info-message="deviceCapture.infoMessage.value"
+            :image-base-url="viewerBaseUrl"
+            :panel-id="`${previewTabsIdPrefix}-panel-${captureViewport}`"
+            :labelled-by="`${previewTabsIdPrefix}-tab-${captureViewport}`"
+            :disabled-reason="captureDisabledReason"
+            @collect="deviceCapture.collectCurrent()"
+          />
+        </template>
         <div v-else class="spec-page__no-preview" data-testid="no-preview">
           <p>この画面はまだ実装画面と連携されていません。</p>
           <p>基本情報は先に編集できます。</p>

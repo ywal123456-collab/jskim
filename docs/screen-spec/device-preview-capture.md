@@ -733,16 +733,19 @@ no-op / 失敗時は build・reload なし
 
 実装: `scripts/lib/create-device-capture-api.js` + companion `device-capture/` + watcher/manifest
 
-### Phase 7C-1A-3
+### Phase 7C-1A-3（実装済み）
 
 ```text
 Viewer [Live][PC][SP]
-image renderer
-状態表示（未収集/最新/stale/中/失敗）
-現在 capture 再収集ボタン
-sessionStorage
-read-only 表示
+image renderer（fit-to-width、revision URL）
+状態表示（未収集/最新/更新が必要/データ破損 + collecting/failed）
+現在 screen/state/viewport の再収集（spec dev）
+project scope sessionStorage（preferred provider / pending revision）
+POST 後 manifest expected imageRevision 待ち（unchanged は即完了）
+read-only はタブ+画像のみ（再収集・runtime GET なし）
 ```
+
+実装: `jskim-screen-spec/src/viewer/preview/` + Preview タブ / DeviceCapturePanel
 
 ### Phase 7C-1B（任意）
 

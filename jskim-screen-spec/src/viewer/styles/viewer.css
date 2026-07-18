@@ -577,6 +577,99 @@ body,
   max-width: 100%;
 }
 
+.spec-page__preview-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.spec-page__preview-header .spec-page__section-title {
+  margin-bottom: 0;
+}
+
+.preview-provider-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.preview-provider-tabs__tab {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--spec-border);
+  border-radius: 0.375rem;
+  background: var(--spec-surface);
+  cursor: pointer;
+  font: inherit;
+}
+
+.preview-provider-tabs__tab:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+}
+
+.preview-provider-tabs__tab.is-active {
+  background: var(--spec-accent);
+  border-color: var(--spec-accent);
+  color: var(--spec-accent-text);
+  font-weight: 700;
+}
+
+.device-capture-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.device-capture-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.device-capture-panel__status {
+  margin: 0;
+  font-weight: 600;
+}
+
+.device-capture-panel__progress,
+.device-capture-panel__info,
+.device-capture-panel__error,
+.device-capture-panel__guidance {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.device-capture-panel__error {
+  color: var(--spec-danger, #b42318);
+}
+
+.device-capture-panel__info {
+  color: var(--spec-muted, #4b5563);
+}
+
+.device-capture-image {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.device-capture-image__img {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+}
+
+.device-capture-image__error {
+  margin: 0;
+  color: var(--spec-danger, #b42318);
+}
+
 .spec-page__preview-pane {
   position: sticky;
   top: 0.75rem;
