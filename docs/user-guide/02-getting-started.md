@@ -53,7 +53,7 @@ my-project/
       └─ pages/
 ```
 
-`package.json` は creator が生成します。engine dependency は `@ywal123456/jskim`（`^0.6.0`）です。
+`package.json` は creator が生成します。engine dependency は `@ywal123456/jskim`（`^0.7.0`）です。
 `src/sample/` には公式の静的 UI sample（Portal / Dashboard / CRUD / Wizard）が含まれます。
 
 ## Dependency のインストール

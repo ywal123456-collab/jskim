@@ -10,7 +10,7 @@ npx playwright install chromium
 npx jskim spec dev sample
 ```
 
-peer dependency: `@ywal123456/jskim` **^0.6.0** が必要です。
+peer dependency: `@ywal123456/jskim` **^0.7.0** が必要です。
 `npm pack` / `npm publish` 時は `prepack` が `dist` をビルドします。
 
 ## 役割

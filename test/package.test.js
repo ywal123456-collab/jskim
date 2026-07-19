@@ -106,11 +106,18 @@ describe('package pack and consumer', { timeout: 180000 }, () => {
       paths.some((p) => p.includes('docs/configuration.md')),
       'docs が含まれるべき'
     );
-    assert.ok(
-      paths.some((p) =>
-        p.includes(`docs/JSKim_User_Guide_v${PKG.version}.pdf`)
-      ),
-      `release PDF docs/JSKim_User_Guide_v${PKG.version}.pdf が含まれるべき`
+    const guidePdfPaths = paths.filter((p) =>
+      /(?:^|\/)docs\/JSKim_User_Guide_v[^/]+\.pdf$/.test(p)
+    );
+    assert.deepEqual(
+      guidePdfPaths,
+      [`docs/JSKim_User_Guide_v${PKG.version}.pdf`],
+      'tarball の User Guide PDF は現行 version の 1 件だけであるべき'
+    );
+    assert.equal(
+      guidePdfPaths.some((p) => p.includes('v0.6.0')),
+      false,
+      '旧版 docs/JSKim_User_Guide_v0.6.0.pdf を tarball に含めてはいけない'
     );
     assert.ok(
       paths.some((p) => p === 'package.json' || p.endsWith('package.json')),

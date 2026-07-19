@@ -24,10 +24,10 @@ describe('スクリーン仕様 companion package', () => {
     assert.ok(fs.existsSync(pkgPath), 'jskim-screen-spec/package.json が必要です');
     const pkg = readJson(pkgPath);
     assert.equal(pkg.name, '@ywal123456/jskim-screen-spec');
-    assert.equal(pkg.version, '0.1.0');
+    assert.equal(pkg.version, '0.2.0');
     assert.equal(Object.hasOwn(pkg, 'private'), false);
     assert.equal(pkg.publishConfig && pkg.publishConfig.access, 'public');
-    assert.equal(pkg.peerDependencies['@ywal123456/jskim'], '^0.6.0');
+    assert.equal(pkg.peerDependencies['@ywal123456/jskim'], '^0.7.0');
     assert.ok(Array.isArray(pkg.files));
     assert.ok(pkg.files.includes('dist'));
     assert.ok(pkg.files.includes('src/viewer'));

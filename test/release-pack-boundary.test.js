@@ -62,9 +62,9 @@ describe('Screen Spec release pack boundary', () => {
       )
     );
     assert.equal(Object.hasOwn(pkg, 'private'), false);
-    assert.equal(pkg.version, '0.1.0');
+    assert.equal(pkg.version, '0.2.0');
     assert.equal(pkg.publishConfig.access, 'public');
-    assert.equal(pkg.peerDependencies['@ywal123456/jskim'], '^0.6.0');
+    assert.equal(pkg.peerDependencies['@ywal123456/jskim'], '^0.7.0');
     assert.ok(pkg.scripts.prepack);
     assert.ok(!pkg.dependencies || !pkg.dependencies['@ywal123456/jskim']);
   });
@@ -82,11 +82,19 @@ describe('Screen Spec release pack boundary', () => {
         'utf8'
       )
     );
-    assert.equal(engine.version, '0.6.0');
-    assert.equal(creator.version, '0.6.0');
-    assert.equal(creator.jskimEngine.version, '^0.6.0');
-    assert.equal(companion.version, '0.1.0');
-    assert.equal(companion.peerDependencies['@ywal123456/jskim'], '^0.6.0');
+    assert.equal(engine.version, '0.7.0');
+    assert.equal(creator.version, '0.7.0');
+    assert.equal(creator.jskimEngine.version, '^0.7.0');
+    assert.equal(companion.version, '0.2.0');
+    assert.equal(companion.peerDependencies['@ywal123456/jskim'], '^0.7.0');
+    assert.equal(
+      creator.jskimEngine.version,
+      `^${engine.version}`
+    );
+    assert.match(
+      companion.peerDependencies['@ywal123456/jskim'],
+      new RegExp(`^\\^${engine.version.replace(/\./g, '\\.')}$`)
+    );
   });
 
   it('npm pack（companion）に禁止 path が含まれない', () => {
@@ -108,7 +116,7 @@ describe('Screen Spec release pack boundary', () => {
     const parsed = JSON.parse(result.stdout.trim());
     const info = Array.isArray(parsed) ? parsed[0] : parsed;
     assert.equal(info.name, '@ywal123456/jskim-screen-spec');
-    assert.equal(info.version, '0.1.0');
+    assert.equal(info.version, '0.2.0');
     assert.ok(info.filename);
 
     const tarPath = path.join(packDir, info.filename);
@@ -294,7 +302,7 @@ describe('Screen Spec release pack boundary', () => {
     const parsed = JSON.parse(result.stdout.trim());
     const info = Array.isArray(parsed) ? parsed[0] : parsed;
     assert.equal(info.name, '@ywal123456/jskim');
-    assert.equal(info.version, '0.6.0');
+    assert.equal(info.version, '0.7.0');
 
     const tarPath = path.join(packDir, info.filename);
     const list = spawnSync(
@@ -331,7 +339,7 @@ describe('Screen Spec release pack boundary', () => {
     const parsed = JSON.parse(result.stdout.trim());
     const info = Array.isArray(parsed) ? parsed[0] : parsed;
     assert.equal(info.name, 'create-jskim');
-    assert.equal(info.version, '0.6.0');
+    assert.equal(info.version, '0.7.0');
 
     const tarPath = path.join(packDir, info.filename);
     const list = spawnSync(

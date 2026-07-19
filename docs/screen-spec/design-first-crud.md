@@ -412,7 +412,7 @@ DescriptionDocument
 
 `plannedPath` / `designSources` / `archived` などは **現時点で追加しません**（Phase 7B-1 の範囲外）。
 
-npm package version（現行: companion `0.1.0`）と Description の `schemaVersion`（`1.0` / `1.1`）は **独立**に管理します。
+npm package version（現行: companion `0.2.0`）と Description の `schemaVersion`（`1.0` / `1.1`）は **独立**に管理します。
 
 ### 7.2 Viewer Manifest（実装済み）
 

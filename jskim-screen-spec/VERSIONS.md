@@ -21,6 +21,6 @@ Browsers are **not** downloaded on `npm install`. Run:
 npm --prefix jskim-screen-spec run install:browsers
 ```
 
-Public npm package (`publishConfig.access: public`). Peer: `@ywal123456/jskim` **^0.6.0**.
+Public npm package (`publishConfig.access: public`). Peer: `@ywal123456/jskim` **^0.7.0**.
 
 Root `@ywal123456/jskim` and `create-jskim` have no vue/vite/playwright/postcss deps.

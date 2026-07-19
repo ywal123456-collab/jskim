@@ -24,7 +24,7 @@ Screen Spec Generator は、次を行う **deterministic tool** です。
 
 | package | 役割 |
 |---------|------|
-| `@ywal123456/jskim` | 静的 HTML build / watch / serve / dev / `spec collect` / `spec build` / `spec dev`（0.6.0） |
+| `@ywal123456/jskim` | 静的 HTML build / watch / serve / dev / `spec collect` / `spec build` / `spec dev`（0.7.0） |
 | `@ywal123456/jskim-screen-spec` | 画面設計書 collect / viewer build（optional published companion） |
 
 原則:

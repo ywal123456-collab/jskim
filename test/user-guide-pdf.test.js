@@ -47,7 +47,7 @@ describe('user-guide-pdf', () => {
   it('package version と README 対象 version が一致し filename に使う', () => {
     const sources = loadGuideSources(REPO_ROOT);
     const version = getPackageVersion(REPO_ROOT);
-    assert.equal(version, '0.6.0');
+    assert.equal(version, '0.7.0');
     assert.equal(
       extractTargetVersionFromReadme(sources.readmeText),
       version
@@ -313,6 +313,14 @@ describe('user-guide-pdf', () => {
     const version = getPackageVersion(REPO_ROOT);
     const pdfPath = packagePdfOutputPath(REPO_ROOT, version);
     assert.ok(fs.existsSync(pdfPath), `release PDF がありません: ${pdfPath}`);
+    const guidePdfs = fs
+      .readdirSync(path.join(REPO_ROOT, 'docs'))
+      .filter((name) => /^JSKim_User_Guide_v.+\.pdf$/.test(name));
+    assert.deepEqual(
+      guidePdfs,
+      [`JSKim_User_Guide_v${version}.pdf`],
+      'docs/ の User Guide PDF は現行 version の 1 件だけであるべき'
+    );
     const buf = fs.readFileSync(pdfPath);
     assert.ok(buf.length > 0);
     assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-');
@@ -334,6 +342,7 @@ describe('user-guide-pdf', () => {
     }
     assert.equal(titleText, `JSKim ユーザーガイド v${version}`);
     assert.doesNotMatch(titleText, /v0\.5\.1/);
+    assert.doesNotMatch(titleText, /v0\.6\.0/);
   });
 
   it('HTML-only 生成で local path leak がない', async () => {

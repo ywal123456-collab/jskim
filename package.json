@@ -1,6 +1,6 @@
 {
   "name": "@ywal123456/jskim",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Nunjucks-based static HTML build environment with watch, serve, live reload, and optional Screen Spec",
   "keywords": [
     "nunjucks",

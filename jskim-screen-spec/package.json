@@ -1,6 +1,6 @@
 {
   "name": "@ywal123456/jskim-screen-spec",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "JSKim Screen Spec companion — 画面設計書の collect / viewer build",
   "keywords": [
     "jskim",
@@ -53,7 +53,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "peerDependencies": {
-    "@ywal123456/jskim": "^0.6.0"
+    "@ywal123456/jskim": "^0.7.0"
   },
   "peerDependenciesMeta": {
     "@ywal123456/jskim": {

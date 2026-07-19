@@ -241,7 +241,11 @@ describe('user-guide', () => {
 
   it('README の対象 version 表記がある', () => {
     const text = readGuideRel('docs/user-guide/README.md');
-    assert.match(text, /v0\.6\.0/);
+    const engineVersion = require(path.join(REPO_ROOT, 'package.json')).version;
+    assert.match(
+      text,
+      new RegExp(`v${engineVersion.replace(/\./g, '\\.')}`)
+    );
   });
 
   it('CLI / config の基本 contract が文書とずれていない', () => {

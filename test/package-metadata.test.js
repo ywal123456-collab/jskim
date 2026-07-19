@@ -8,6 +8,15 @@ const { REPO_ROOT } = require('./helpers/create-test-workspace');
 
 const ENGINE_PKG = require(path.join(REPO_ROOT, 'package.json'));
 const CREATE_PKG = require(path.join(REPO_ROOT, 'create-jskim/package.json'));
+const COMPANION_PKG = require(path.join(
+  REPO_ROOT,
+  'jskim-screen-spec/package.json'
+));
+const ENGINE_LOCK = require(path.join(REPO_ROOT, 'package-lock.json'));
+const COMPANION_LOCK = require(path.join(
+  REPO_ROOT,
+  'jskim-screen-spec/package-lock.json'
+));
 const ENGINE_LICENSE = path.join(REPO_ROOT, 'LICENSE');
 const CREATE_LICENSE = path.join(REPO_ROOT, 'create-jskim/LICENSE');
 
@@ -27,7 +36,7 @@ describe('package metadata', () => {
     assert.equal(ENGINE_PKG.name, EXPECTED.engineName);
     assert.equal(Object.hasOwn(ENGINE_PKG, 'private'), false);
     assert.equal(ENGINE_PKG.bin && ENGINE_PKG.bin.jskim, 'bin/jskim.js');
-    assert.equal(ENGINE_PKG.version, '0.6.0');
+    assert.equal(ENGINE_PKG.version, '0.7.0');
     assert.equal(ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.access, 'public');
     assert.equal(
       ENGINE_PKG.publishConfig && ENGINE_PKG.publishConfig.registry,
@@ -38,27 +47,44 @@ describe('package metadata', () => {
     assert.ok(ENGINE_PKG.files.includes('scripts/'));
     assert.ok(ENGINE_PKG.files.includes('docs/'));
     assert.ok(ENGINE_PKG.files.includes('LICENSE'));
-    const releasePdf = path.join(
-      REPO_ROOT,
-      'docs',
-      `JSKim_User_Guide_v${ENGINE_PKG.version}.pdf`
-    );
+    const releasePdfName = `JSKim_User_Guide_v${ENGINE_PKG.version}.pdf`;
+    const releasePdf = path.join(REPO_ROOT, 'docs', releasePdfName);
     assert.ok(
       fs.existsSync(releasePdf),
-      `release PDF が必要です: docs/JSKim_User_Guide_v${ENGINE_PKG.version}.pdf`
+      `release PDF が必要です: docs/${releasePdfName}`
+    );
+    const guidePdfs = fs
+      .readdirSync(path.join(REPO_ROOT, 'docs'))
+      .filter((name) => /^JSKim_User_Guide_v.+\.pdf$/.test(name))
+      .sort();
+    assert.deepEqual(
+      guidePdfs,
+      [releasePdfName],
+      'docs/ の User Guide PDF は現行 version の 1 件だけであるべき'
+    );
+    const readme = fs.readFileSync(path.join(REPO_ROOT, 'README.md'), 'utf8');
+    assert.match(
+      readme,
+      new RegExp(
+        `node_modules/@ywal123456/jskim/docs/${releasePdfName.replace(
+          /\./g,
+          '\\.'
+        )}`
+      ),
+      'README の PDF 経路が現行 release PDF と一致するべき'
     );
   });
 
   it('creator package は公開名 create-jskim である', () => {
     assert.equal(CREATE_PKG.name, 'create-jskim');
-    assert.equal(CREATE_PKG.version, '0.6.0');
+    assert.equal(CREATE_PKG.version, '0.7.0');
     assert.equal(Object.hasOwn(CREATE_PKG, 'private'), false);
     assert.equal(
       CREATE_PKG.bin && CREATE_PKG.bin['create-jskim'],
       'bin/create-jskim.js'
     );
     assert.equal(CREATE_PKG.jskimEngine.packageName, EXPECTED.engineName);
-    assert.equal(CREATE_PKG.jskimEngine.version, '^0.6.0');
+    assert.equal(CREATE_PKG.jskimEngine.version, '^0.7.0');
     assert.ok(CREATE_PKG.files.includes('LICENSE'));
   });
 
@@ -92,6 +118,61 @@ describe('package metadata', () => {
     assert.match(engineText, /Copyright \(c\) 2026 Jeongsub Kim/);
     assert.match(engineText, /THE SOFTWARE IS PROVIDED "AS IS"/);
     assert.equal(engineText, creatorText);
+  });
+
+  it('release version 契約が package / lockfile で一致する', () => {
+    assert.equal(ENGINE_PKG.version, '0.7.0');
+    assert.equal(CREATE_PKG.version, ENGINE_PKG.version);
+    assert.equal(
+      CREATE_PKG.jskimEngine.version,
+      `^${ENGINE_PKG.version}`
+    );
+    assert.equal(COMPANION_PKG.name, '@ywal123456/jskim-screen-spec');
+    assert.equal(COMPANION_PKG.version, '0.2.0');
+    assert.equal(
+      COMPANION_PKG.peerDependencies[EXPECTED.engineName],
+      `^${ENGINE_PKG.version}`
+    );
+
+    assert.equal(ENGINE_LOCK.version, ENGINE_PKG.version);
+    assert.equal(
+      ENGINE_LOCK.packages && ENGINE_LOCK.packages['']
+        ? ENGINE_LOCK.packages[''].version
+        : null,
+      ENGINE_PKG.version
+    );
+    assert.equal(COMPANION_LOCK.version, COMPANION_PKG.version);
+    assert.equal(
+      COMPANION_LOCK.packages && COMPANION_LOCK.packages['']
+        ? COMPANION_LOCK.packages[''].version
+        : null,
+      COMPANION_PKG.version
+    );
+
+    const depSources = [
+      ENGINE_PKG.dependencies,
+      ENGINE_PKG.devDependencies,
+      CREATE_PKG.dependencies,
+      CREATE_PKG.devDependencies,
+      COMPANION_PKG.dependencies,
+      COMPANION_PKG.devDependencies,
+      COMPANION_PKG.peerDependencies,
+    ];
+    for (const deps of depSources) {
+      if (!deps) continue;
+      for (const [name, spec] of Object.entries(deps)) {
+        assert.ok(
+          !String(spec).startsWith('file:'),
+          `${name} に file: dependency があります`
+        );
+        assert.ok(
+          !/^[A-Za-z]:[\\/]/.test(String(spec)) &&
+            !String(spec).startsWith('/') &&
+            !String(spec).startsWith('.'),
+          `${name} の dependency がローカル path です: ${spec}`
+        );
+      }
+    }
   });
 
   it('一時 package 名がソースに残っていない', () => {
