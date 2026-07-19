@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import DomPreview from '../src/viewer/components/DomPreview.vue';
+import {
+  setWrapperProps,
+  withRecordSetProps,
+} from './helpers/set-wrapper-props';
 
 const FIXTURE_HTML = `
   <div id="root-old">
@@ -144,7 +148,7 @@ describe('DomPreview', () => {
     });
     await nextTick();
 
-    await wrapper.setProps({
+    await setWrapperProps(withRecordSetProps(wrapper), {
       html: '<div id="root-new"><p data-jskim-spec-item="a">新</p></div>',
       itemOrder: ['a'],
     });

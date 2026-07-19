@@ -44,6 +44,10 @@ const screen: ScreenData = {
     },
   ],
   interactions: [],
+  status: 'linked',
+  hasDescription: true,
+  hasImplementation: true,
+  hasPreview: true,
 };
 
 const EditorHarness = defineComponent({

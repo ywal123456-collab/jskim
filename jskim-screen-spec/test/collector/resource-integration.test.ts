@@ -178,7 +178,7 @@ describe('resource collection integration', () => {
       const el = document.querySelector('.dom-preview') as HTMLElement | null;
       const shadow = el?.shadowRoot;
       if (!shadow) {
-        return { ok: false, reason: 'no-shadow' };
+        return { ok: false as const, reason: 'no-shadow' };
       }
       const links = [...shadow.querySelectorAll('link[rel="stylesheet"]')];
       await Promise.all(
@@ -211,7 +211,7 @@ describe('resource collection integration', () => {
       const panel = shadow.querySelector('.panel') as HTMLElement | null;
       const color = panel ? getComputedStyle(panel).color : '';
       return {
-        ok: true,
+        ok: true as const,
         imgWidth: decodedWidth,
         imgSrc,
         panelColor: color,
@@ -221,6 +221,9 @@ describe('resource collection integration', () => {
     });
 
     expect(checks.ok).toBe(true);
+    if (!checks.ok) {
+      throw new Error(`resource checks failed: ${checks.reason}`);
+    }
     expect(checks.hasToken).toBe(false);
     expect(checks.linkCount).toBeGreaterThanOrEqual(1);
     expect(checks.imgSrc).toContain('/spec/data/resources/files/');

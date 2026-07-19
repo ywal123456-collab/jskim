@@ -33,23 +33,30 @@ describe('pending-screen', () => {
 
   it('waitForScreenInManifest は screen が現れたら true を返す', async () => {
     let calls = 0;
-    const fetchFn = vi.fn(async () => {
-      calls += 1;
-      const screens = calls >= 2 ? [{ id: 'new-screen' }] : [];
-      return new Response(JSON.stringify({ screens }), { status: 200 });
-    });
+    const fetchFn = vi.fn(
+      async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ): Promise<Response> => {
+        calls += 1;
+        const screens = calls >= 2 ? [{ id: 'new-screen' }] : [];
+        return new Response(JSON.stringify({ screens }), { status: 200 });
+      },
+    );
 
     const found = await waitForScreenInManifest('new-screen', {
       manifestUrl: '/spec/data/manifest.json',
       intervalMs: 5,
       timeoutMs: 1000,
-      fetchFn: fetchFn as unknown as typeof fetch,
+      fetchFn,
     });
 
     expect(found).toBe(true);
     expect(calls).toBeGreaterThanOrEqual(2);
-    const firstCallUrl = fetchFn.mock.calls[0][0] as string;
-    expect(firstCallUrl).toContain('/spec/data/manifest.json');
+    expect(fetchFn).toHaveBeenCalled();
+    const firstCallUrl = fetchFn.mock.calls[0]?.[0];
+    expect(typeof firstCallUrl).toBe('string');
+    expect(String(firstCallUrl)).toContain('/spec/data/manifest.json');
   });
 
   it('timeout まで見つからなければ false を返す', async () => {

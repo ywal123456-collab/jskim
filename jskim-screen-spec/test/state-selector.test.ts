@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import StateSelector from '../src/viewer/components/StateSelector.vue';
 import type { ScreenState } from '../src/viewer/types';
+import {
+  setWrapperProps,
+  withRecordSetProps,
+} from './helpers/set-wrapper-props';
 
 const states: ScreenState[] = [
   {
@@ -56,7 +60,9 @@ describe('StateSelector', () => {
     expect(wrapper.emitted('select')).toBeTruthy();
     expect(wrapper.emitted('select')![0]).toEqual(['b']);
 
-    await wrapper.setProps({ selectedStateId: 'b' });
+    await setWrapperProps(withRecordSetProps(wrapper), {
+      selectedStateId: 'b',
+    });
     expect(buttons[0].classes()).not.toContain('is-active');
     expect(buttons[1].classes()).toContain('is-active');
   });

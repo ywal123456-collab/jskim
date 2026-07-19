@@ -3,12 +3,21 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import ReferenceImagePanel from '../../src/viewer/components/ReferenceImagePanel.vue';
 import type { ReferenceImageManifestEntry } from '../../src/viewer/types.js';
-import type { ReferenceImageRuntimeState } from '../../src/viewer/preview/reference-image-client.js';
+import type {
+  FigmaWidthMismatchConfirmation,
+  ReferenceImageRuntimeState,
+} from '../../src/viewer/preview/reference-image-client.js';
+import {
+  setWrapperProps,
+  withRecordSetProps,
+} from '../helpers/set-wrapper-props';
+
+type CurrentReferenceSource = NonNullable<
+  Extract<ReferenceImageManifestEntry, { status: 'current' }>['source']
+>;
 
 function currentEntry(
-  source?: ReferenceImageManifestEntry extends { status: 'current' }
-    ? Extract<ReferenceImageManifestEntry, { status: 'current' }>['source']
-    : never,
+  source?: CurrentReferenceSource,
 ): ReferenceImageManifestEntry {
   return {
     status: 'current',
@@ -35,7 +44,7 @@ type ReferenceImagePanelProps = {
   errorMessage: string;
   infoMessage: string;
   dialogError: string;
-  figmaConfirmation: null;
+  figmaConfirmation: FigmaWidthMismatchConfirmation | null;
   imageBaseUrl: string;
   panelId: string;
   labelledBy: string;
@@ -199,7 +208,7 @@ describe('ReferenceImagePanel', () => {
     expect(wrapper.get('[data-testid="reference-image-progress"]').text()).toContain(
       'アップロード中',
     );
-    expect(wrapper.get('img').exists()).toBe(true);
+    expect(wrapper.find('img').exists()).toBe(true);
     expect(
       wrapper.get('[data-testid="reference-image-replace"]').attributes('disabled'),
     ).toBeDefined();
@@ -358,15 +367,17 @@ describe('ReferenceImagePanel', () => {
     });
     await wrapper.get('[data-testid="reference-image-figma-import"]').trigger('click');
     await nextTick();
-    await wrapper.setProps({ editable: false });
+    await setWrapperProps(withRecordSetProps(wrapper), { editable: false });
     await nextTick();
     expect(
       wrapper.find('[data-testid="reference-image-figma-import"]').exists(),
     ).toBe(false);
+    const exposed = wrapper.vm as typeof wrapper.vm & {
+      closeFigma: () => void;
+    };
+    expect(typeof exposed.closeFigma).toBe('function');
     expect(() => {
-      (
-        wrapper.vm as unknown as { closeFigma: () => void }
-      ).closeFigma();
+      exposed.closeFigma();
     }).not.toThrow();
     await nextTick();
     await flushPromises();

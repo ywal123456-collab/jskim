@@ -6,6 +6,10 @@ import {
   reimportFigmaReferenceImage,
 } from '../../src/figma/import-reference.js';
 import { FigmaError } from '../../src/figma/errors.js';
+import type {
+  ImportFigmaReferenceImageResult,
+  ImportFigmaReferenceImageStoredResult,
+} from '../../src/figma/types.js';
 import { putReferenceImage } from '../../src/reference-image/put-reference-image.js';
 import { getReferenceImageStatus } from '../../src/reference-image/status.js';
 import { ReferenceImageError } from '../../src/reference-image/errors.js';
@@ -32,6 +36,17 @@ const TOKEN = 'unit-test-figma-token';
 const FILE_KEY = 'FileKeyABC';
 const NODE_ID = '1:3';
 const IMAGE_URL = 'https://images.example/export.png';
+
+/** confirmation-required 以外の stored 結果へ narrowing する */
+function expectStoredImportResult(
+  result: ImportFigmaReferenceImageResult,
+): ImportFigmaReferenceImageStoredResult {
+  expect(result.result).not.toBe('confirmation-required');
+  if (result.result === 'confirmation-required') {
+    throw new Error('stored Import/Reimport 結果を期待しました');
+  }
+  return result;
+}
 
 afterEach(() => {
   resetReferenceImageLocksForTest();
@@ -252,7 +267,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         imageBytes: buildPng(10, 10, 1),
       });
       const figmaPng = samplePng(50, 60);
-      const replaced = await importFigmaReferenceImage({
+      const replaced = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -262,7 +277,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         expectedImageRevision: uploaded.imageRevision,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png: figmaPng }),
-      });
+      }));
       expect(replaced.result).toBe('updated');
       expect(replaced.imageRevision).not.toBe(uploaded.imageRevision);
       const status = getReferenceImageStatus({
@@ -282,7 +297,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png = samplePng(40, 40);
-      const created = await importFigmaReferenceImage({
+      const created = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -291,7 +306,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         nodeId: NODE_ID,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png }),
-      });
+      }));
 
       await expect(
         importFigmaReferenceImage({
@@ -307,7 +322,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         }),
       ).rejects.toBeInstanceOf(ReferenceImageError);
 
-      const same = await importFigmaReferenceImage({
+      const same = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -317,7 +332,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         expectedImageRevision: created.imageRevision,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png, frameName: 'Hero' }),
-      });
+      }));
       expect(same.result).toBe('unchanged');
       expect(same.imageRevision).toBe(created.imageRevision);
 
@@ -335,7 +350,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png = samplePng(30, 30);
-      const created = await importFigmaReferenceImage({
+      const created = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -344,7 +359,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         nodeId: NODE_ID,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png }),
-      });
+      }));
       const metaBefore = fs.readFileSync(
         referenceMetaPath({
           rootDir: root,
@@ -411,7 +426,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png1 = samplePng(20, 20, 1);
-      const created = await importFigmaReferenceImage({
+      const created = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -420,9 +435,9 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         nodeId: NODE_ID,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png: png1, frameName: 'A' }),
-      });
+      }));
 
-      const same = await reimportFigmaReferenceImage({
+      const same = expectStoredImportResult(await reimportFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -430,11 +445,11 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         expectedImageRevision: created.imageRevision,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png: png1, frameName: 'A' }),
-      });
+      }));
       expect(same.result).toBe('unchanged');
 
       const png2 = samplePng(20, 20, 2);
-      const updated = await reimportFigmaReferenceImage({
+      const updated = expectStoredImportResult(await reimportFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -442,7 +457,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         expectedImageRevision: created.imageRevision,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png: png2, frameName: 'B' }),
-      });
+      }));
       expect(updated.result).toBe('updated');
       expect(updated.frame.frameName).toBe('B');
 
@@ -481,7 +496,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png = samplePng(15, 15);
-      const created = await importFigmaReferenceImage({
+      const created = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -490,7 +505,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         nodeId: NODE_ID,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png }),
-      });
+      }));
       const before = fs.readFileSync(
         path.join(referenceDir(root, 'inquiry-input', 'pc'), 'meta.json'),
         'utf8',
@@ -529,7 +544,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png1 = samplePng(11, 11, 1);
-      const created = await importFigmaReferenceImage({
+      const created = expectStoredImportResult(await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -538,7 +553,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         nodeId: NODE_ID,
         token: TOKEN,
         fetchImpl: figmaRoutes({ png: png1 }),
-      });
+      }));
       const before = fs.readFileSync(
         referenceMetaPath({
           rootDir: root,

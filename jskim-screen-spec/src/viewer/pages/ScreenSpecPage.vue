@@ -59,6 +59,7 @@ const referenceViewport = ref<ReferenceViewport>('pc');
 const referencePanelRef = ref<{
   closeUpload: () => void;
   closeDelete: () => void;
+  closeFigma: () => void;
 } | null>(null);
 const previewTabsIdPrefix = 'screen-preview';
 const createItemDialogOpen = ref(false);

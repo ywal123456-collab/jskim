@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import PreviewProviderTabs from '../../src/viewer/components/PreviewProviderTabs.vue';
+import {
+  setWrapperProps,
+  withRecordSetProps,
+} from '../helpers/set-wrapper-props';
 
 describe('PreviewProviderTabs', () => {
   it('Live/PC/SP と aria を持つ', () => {
@@ -22,17 +26,17 @@ describe('PreviewProviderTabs', () => {
     await wrapper.find('[data-provider="pc"]').trigger('click');
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['pc']);
 
-    await wrapper.setProps({ modelValue: 'pc' });
+    await setWrapperProps(withRecordSetProps(wrapper), { modelValue: 'pc' });
     await wrapper.find('[role="tablist"]').trigger('keydown', {
       key: 'ArrowRight',
     });
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['sp']);
 
-    await wrapper.setProps({ modelValue: 'sp' });
+    await setWrapperProps(withRecordSetProps(wrapper), { modelValue: 'sp' });
     await wrapper.find('[role="tablist"]').trigger('keydown', { key: 'Home' });
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['live']);
 
-    await wrapper.setProps({ modelValue: 'live' });
+    await setWrapperProps(withRecordSetProps(wrapper), { modelValue: 'live' });
     await wrapper.find('[role="tablist"]').trigger('keydown', { key: 'End' });
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['sp']);
   });

@@ -2,20 +2,40 @@ import { describe, expect, it } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import ReferenceImageFigmaImportDialog from '../../src/viewer/components/ReferenceImageFigmaImportDialog.vue';
+import type { FigmaWidthMismatchConfirmation } from '../../src/viewer/preview/reference-image-client';
+import {
+  setWrapperProps,
+  withRecordSetProps,
+} from '../helpers/set-wrapper-props';
 
-function mountImport(overrides: Record<string, unknown> = {}) {
+type DialogProps = {
+  mode: 'import' | 'reimport';
+  screenName: string;
+  viewport: 'pc' | 'sp';
+  hasExistingReference: boolean;
+  existingIsFigma: boolean;
+  submitting: boolean;
+  serverError: string;
+  confirmation: FigmaWidthMismatchConfirmation | null;
+};
+
+function createProps(overrides: Partial<DialogProps> = {}): DialogProps {
+  return {
+    mode: 'import',
+    screenName: '設計画面',
+    viewport: 'pc',
+    hasExistingReference: false,
+    existingIsFigma: false,
+    submitting: false,
+    serverError: '',
+    confirmation: null,
+    ...overrides,
+  };
+}
+
+function mountImport(overrides: Partial<DialogProps> = {}) {
   return mount(ReferenceImageFigmaImportDialog, {
-    props: {
-      mode: 'import',
-      screenName: '設計画面',
-      viewport: 'pc',
-      hasExistingReference: false,
-      existingIsFigma: false,
-      submitting: false,
-      serverError: '',
-      confirmation: null,
-      ...overrides,
-    },
+    props: createProps(overrides),
     attachTo: document.body,
   });
 }
@@ -59,7 +79,7 @@ describe('ReferenceImageFigmaImportDialog', () => {
     await wrapper
       .get('[data-testid="reference-image-figma-url"]')
       .setValue('https://www.figma.com/design/AAA/Name?node-id=1-2');
-    await wrapper.setProps({
+    await setWrapperProps(withRecordSetProps(wrapper), {
       confirmation: {
         code: 'SPEC_FIGMA_WIDTH_MISMATCH',
         frame: {

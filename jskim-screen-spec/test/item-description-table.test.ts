@@ -9,6 +9,10 @@ const screen: ScreenData = {
   name: '新規作成',
   description: '作成画面',
   path: '/crud/create.html',
+  status: 'linked',
+  hasDescription: true,
+  hasImplementation: true,
+  hasPreview: true,
   itemOrder: ['title', 'save', 'goto-list', 'open-help'],
   items: {
     title: {
