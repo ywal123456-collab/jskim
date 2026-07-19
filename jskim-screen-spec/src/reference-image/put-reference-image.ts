@@ -21,11 +21,31 @@ import type {
   PutReferenceImageOptions,
   PutReferenceImageResult,
   ReferenceImageMetadata,
+  ReferenceImageSource,
 } from './types.js';
 
 export type PutReferenceImageInternalHooks = PersistReferenceHooks & {
   now?: () => string;
 };
+
+function isSameSource(
+  a: ReferenceImageSource,
+  b: ReferenceImageSource,
+): boolean {
+  if (a.type === 'upload' && b.type === 'upload') {
+    return true;
+  }
+  if (a.type === 'figma' && b.type === 'figma') {
+    // importedAt は比較しない（同一 PNG + 同一 Frame 識別子なら unchanged）
+    return (
+      a.fileKey === b.fileKey &&
+      a.nodeId === b.nodeId &&
+      a.frameName === b.frameName &&
+      a.exportScale === b.exportScale
+    );
+  }
+  return false;
+}
 
 function isSameReferenceContent(
   existing: ReferenceImageMetadata,
@@ -42,8 +62,28 @@ function isSameReferenceContent(
     existing.imageHeight === next.imageHeight &&
     existing.schemaVersion === next.schemaVersion &&
     existing.screenId === next.screenId &&
-    existing.source.type === next.source.type
+    isSameSource(existing.source, next.source)
   );
+}
+
+function resolveSource(
+  options: PutReferenceImageOptions,
+  uploadedAt: string,
+): ReferenceImageSource {
+  if (!options.source) {
+    return { type: 'upload' };
+  }
+  if (options.source.type === 'upload') {
+    return { type: 'upload' };
+  }
+  return {
+    type: 'figma',
+    fileKey: options.source.fileKey,
+    nodeId: options.source.nodeId,
+    frameName: options.source.frameName,
+    importedAt: options.source.importedAt || uploadedAt,
+    exportScale: 1,
+  };
 }
 
 async function putReferenceImageOwned(
@@ -74,6 +114,10 @@ async function putReferenceImageOwned(
       '参照画像の metadata または画像が破損しているため更新できません。',
     );
   }
+
+  const uploadedAt =
+    options.hooks?.now?.() || new Date().toISOString();
+  const source = resolveSource(options, uploadedAt);
 
   if (statusResult.status === 'missing') {
     if (
@@ -118,7 +162,7 @@ async function putReferenceImageOwned(
       imageRevision,
       imageWidth: dims.width,
       imageHeight: dims.height,
-      source: { type: 'upload' },
+      source,
     };
 
     if (isSameReferenceContent(statusResult.metadata!, nextWithoutDate)) {
@@ -134,9 +178,6 @@ async function putReferenceImageOwned(
     }
   }
 
-  const uploadedAt =
-    options.hooks?.now?.() || new Date().toISOString();
-
   const metadata: ReferenceImageMetadata = {
     schemaVersion: '1.0',
     screenId: options.screenId,
@@ -151,7 +192,7 @@ async function putReferenceImageOwned(
     imageWidth: dims.width,
     imageHeight: dims.height,
     uploadedAt,
-    source: { type: 'upload' },
+    source,
   };
 
   const referenceDir = referenceViewportDir(options);

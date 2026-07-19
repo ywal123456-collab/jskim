@@ -106,10 +106,24 @@ export type {
   DeleteReferenceImageOptions,
   DeleteReferenceImageResult,
   ReferenceImageMetadata,
+  ReferenceImageSource,
+  ReferenceImageSourceFigma,
   ReferenceImageStatus,
   ReferenceImagePublicInfo,
   ViewerReferenceImages,
 } from './reference-image/index.js';
+export {
+  importFigmaReferenceImage,
+  reimportFigmaReferenceImage,
+  FigmaError,
+} from './figma/index.js';
+export type {
+  ImportFigmaReferenceImageOptions,
+  ReimportFigmaReferenceImageOptions,
+  ImportFigmaReferenceImageResult,
+  FigmaFrameInfo,
+  FigmaErrorCode,
+} from './figma/index.js';
 export {
   rewriteResourceTokens,
   toResourceToken,

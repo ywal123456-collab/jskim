@@ -23,7 +23,15 @@ const KNOWN_KEYS = new Set([
   'source',
 ]);
 
-const SOURCE_KNOWN_KEYS = new Set(['type']);
+const SOURCE_UPLOAD_KEYS = new Set(['type']);
+const SOURCE_FIGMA_KEYS = new Set([
+  'type',
+  'fileKey',
+  'nodeId',
+  'frameName',
+  'importedAt',
+  'exportScale',
+]);
 
 export type ValidateMetadataResult =
   | { ok: true; metadata: ReferenceImageMetadata }
@@ -129,14 +137,10 @@ export function parseReferenceImageMetadata(
   if (!obj.source || typeof obj.source !== 'object' || Array.isArray(obj.source)) {
     return { ok: false, reason: 'source が不正です。' };
   }
-  const source = obj.source as Record<string, unknown>;
-  for (const key of Object.keys(source)) {
-    if (!SOURCE_KNOWN_KEYS.has(key)) {
-      return { ok: false, reason: `source に未知のフィールドがあります: ${key}` };
-    }
-  }
-  if (source.type !== 'upload') {
-    return { ok: false, reason: 'source.type が不正です。' };
+  const sourceRaw = obj.source as Record<string, unknown>;
+  const parsedSource = parseReferenceImageSource(sourceRaw);
+  if (!parsedSource.ok) {
+    return { ok: false, reason: parsedSource.reason };
   }
 
   const expectedFile = `reference-${obj.imageRevision.slice('sha256:'.length)}.png`;
@@ -163,9 +167,77 @@ export function parseReferenceImageMetadata(
       imageWidth: obj.imageWidth,
       imageHeight: obj.imageHeight,
       uploadedAt: obj.uploadedAt,
-      source: { type: 'upload' },
+      source: parsedSource.source,
     },
   };
+}
+
+function parseReferenceImageSource(
+  source: Record<string, unknown>,
+):
+  | { ok: true; source: ReferenceImageMetadata['source'] }
+  | { ok: false; reason: string } {
+  if (source.type === 'upload') {
+    for (const key of Object.keys(source)) {
+      if (!SOURCE_UPLOAD_KEYS.has(key)) {
+        return {
+          ok: false,
+          reason: `source に未知のフィールドがあります: ${key}`,
+        };
+      }
+    }
+    return { ok: true, source: { type: 'upload' } };
+  }
+
+  if (source.type === 'figma') {
+    for (const key of Object.keys(source)) {
+      if (!SOURCE_FIGMA_KEYS.has(key)) {
+        return {
+          ok: false,
+          reason: `source に未知のフィールドがあります: ${key}`,
+        };
+      }
+    }
+    if (typeof source.fileKey !== 'string' || !source.fileKey.trim()) {
+      return { ok: false, reason: 'source.fileKey が不正です。' };
+    }
+    if (
+      typeof source.nodeId !== 'string' ||
+      !/^\d+:\d+$/.test(source.nodeId)
+    ) {
+      return { ok: false, reason: 'source.nodeId が不正です。' };
+    }
+    if (typeof source.frameName !== 'string' || !source.frameName.trim()) {
+      return { ok: false, reason: 'source.frameName が不正です。' };
+    }
+    if (!isIsoDate(source.importedAt)) {
+      return { ok: false, reason: 'source.importedAt が不正です。' };
+    }
+    if (source.exportScale !== 1) {
+      return { ok: false, reason: 'source.exportScale が不正です。' };
+    }
+    // path injection 防止（basename 相当の安全文字のみを強制しないが separator は拒否）
+    if (
+      source.fileKey.includes('/') ||
+      source.fileKey.includes('\\') ||
+      source.fileKey.includes('..')
+    ) {
+      return { ok: false, reason: 'source.fileKey が不正です。' };
+    }
+    return {
+      ok: true,
+      source: {
+        type: 'figma',
+        fileKey: source.fileKey,
+        nodeId: source.nodeId,
+        frameName: source.frameName,
+        importedAt: source.importedAt,
+        exportScale: 1,
+      },
+    };
+  }
+
+  return { ok: false, reason: 'source.type が不正です。' };
 }
 
 export function readReferenceImageMetadataFile(
@@ -259,9 +331,17 @@ export function serializeReferenceImageMetadata(
     imageWidth: metadata.imageWidth,
     imageHeight: metadata.imageHeight,
     uploadedAt: metadata.uploadedAt,
-    source: {
-      type: metadata.source.type,
-    },
+    source:
+      metadata.source.type === 'upload'
+        ? { type: 'upload' }
+        : {
+            type: 'figma',
+            fileKey: metadata.source.fileKey,
+            nodeId: metadata.source.nodeId,
+            frameName: metadata.source.frameName,
+            importedAt: metadata.source.importedAt,
+            exportScale: metadata.source.exportScale,
+          },
   };
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }

@@ -2,7 +2,9 @@
 
 調査日: 2026-07-19（公式根拠・利用者決定の反映補正を含む）  
 対象ベース: `630b207` 時点の実装調査 + Phase 7D-0 設計  
-本書は **調査と設計のみ**。production 実装は含まない。
+**Phase 7D-1**: companion core（`jskim-screen-spec/src/figma/`）を実装済み。
+entry: `importFigmaReferenceImage` / `reimportFigmaReferenceImage`。
+spec dev API（7D-2）と Viewer（7D-3）は未実装。
 
 凡例:
 
@@ -891,16 +893,15 @@ API は build を直接呼ばない（既存 Reference と同じ）。
 
 ## 17. 実装フェーズ
 
-### Phase 7D-1 — core（Figma client + storage 統合）
+### Phase 7D-1 — core（Figma client + storage 統合）✅ 実装済み
 
 | 項目 | 内容 |
 |------|------|
 | 目標 | URL parser、token 読取、Figma API client、export+download、`source: figma` 対応の put 拡張、unit/integration（mock） |
-| 修正想定 | `jskim-screen-spec/src/reference-image/*`、新規 `figma/` または `reference-image/figma-*`、`types` / `validate-metadata`、テスト |
-| 禁止 | Viewer UI、HTTP route、version、publish、実 token をリポジトリへ |
-| テスト | companion の vitest（該当ファイル） |
-| 完了基準 | mock で Import 相当が既存 references パスへ保存され、upload meta と共存検証済み |
-| リスク | validator 拡張の後方互換、一時 URL host 方針の未確認 |
+| 実装 | `jskim-screen-spec/src/figma/*`、`reference-image` の source union / put 拡張、`test/figma/*` |
+| entry | `importFigmaReferenceImage` / `reimportFigmaReferenceImage` |
+| 禁止（継続） | Viewer UI、HTTP route、version、publish、実 token をリポジトリへ |
+| 完了基準 | mock で Import/Reimport が既存 references パスへ保存され、upload meta と共存検証済み |
 
 ### Phase 7D-2 — spec dev API
 

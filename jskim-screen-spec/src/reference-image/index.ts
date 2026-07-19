@@ -27,6 +27,8 @@ export type {
   PutReferenceImageResult,
   ReferenceImageMetadata,
   ReferenceImageSource,
+  ReferenceImageSourceFigma,
+  ReferenceImageSourceUpload,
   ReferenceImageStatus,
   ReferenceImageViewportMeta,
 } from './types.js';

@@ -20,6 +20,7 @@
     "src/collector/**/*.ts",
     "src/device-capture/**/*.ts",
     "src/reference-image/**/*.ts",
+    "src/figma/**/*.ts",
     "src/editing/**/*.ts",
     "src/util/**/*.ts",
     "src/watch/**/*.ts"

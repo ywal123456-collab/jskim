@@ -6,9 +6,22 @@ export type ReferenceImageViewportMeta = {
   height: number;
 };
 
-export type ReferenceImageSource = {
+export type ReferenceImageSourceUpload = {
   type: 'upload';
 };
+
+export type ReferenceImageSourceFigma = {
+  type: 'figma';
+  fileKey: string;
+  nodeId: string;
+  frameName: string;
+  importedAt: string;
+  exportScale: 1;
+};
+
+export type ReferenceImageSource =
+  | ReferenceImageSourceUpload
+  | ReferenceImageSourceFigma;
 
 export type ReferenceImageMetadata = {
   schemaVersion: '1.0';
@@ -51,6 +64,11 @@ export type PutReferenceImageOptions = {
   imageBytes: Buffer;
   /** missing 時のみ省略 / null。current 時は必須 */
   expectedImageRevision?: string | null;
+  /**
+   * 省略時は upload。Figma Import は type: figma を渡す。
+   * manual upload の既定動作は変わらない。
+   */
+  source?: ReferenceImageSource;
 };
 
 export type DeleteReferenceImageOptions = {

@@ -34,6 +34,42 @@ describe('Reference Image metadata 検証', () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it('source.type=figma を受理し upload と共存する', () => {
+    const png = buildPng(10, 20);
+    const base = validMeta(png);
+    const figma = {
+      ...base,
+      source: {
+        type: 'figma' as const,
+        fileKey: 'AbCd',
+        nodeId: '1:3',
+        frameName: 'Hero',
+        importedAt: '2026-07-19T00:00:00.000Z',
+        exportScale: 1 as const,
+      },
+    };
+    const parsed = parseReferenceImageMetadata(figma);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.metadata.source.type).toBe('figma');
+      const serialized = serializeReferenceImageMetadata(parsed.metadata);
+      expect(serialized).toContain('"type": "figma"');
+      expect(serialized).not.toContain('token');
+    }
+    expect(parseReferenceImageMetadata(validMeta(png)).ok).toBe(true);
+  });
+
+  it('不完全な figma source を拒否する', () => {
+    const png = buildPng(10, 20);
+    const base = validMeta(png);
+    expect(
+      parseReferenceImageMetadata({
+        ...base,
+        source: { type: 'figma', fileKey: 'A', nodeId: '1-3' },
+      }).ok,
+    ).toBe(false);
+  });
+
   it('unknown field を拒否する', () => {
     const png = buildPng(10, 20);
     const raw = { ...validMeta(png), extra: 1 };

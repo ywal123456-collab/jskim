@@ -861,7 +861,9 @@ token / cookie は保存しない。
 
 `file version` / `etag` 等は Phase 7D で必要なら追加。初期 upload metadata に空の Figma フィールドを強制しない。
 
-**詳細設計（調査・API・段階分割）**: [figma-frame-import.md](./figma-frame-import.md)（Phase 7D-0）。現行コードの `source` は `upload` のみ受理する。
+**詳細設計**: [figma-frame-import.md](./figma-frame-import.md)。
+
+**Phase 7D-1（core 実装済み）**: companion の `importFigmaReferenceImage` / `reimportFigmaReferenceImage` が既存 `putReferenceImage` へ委譲する。server-side `source.type = "figma"`（fileKey / nodeId / frameName / importedAt / exportScale）を meta.json に保存する。`schemaVersion` は `1.0` のまま。spec dev API / Viewer UI / manifest projection は未実装（7D-2 / 7D-3）。
 
 ---
 
