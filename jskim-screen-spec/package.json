@@ -39,6 +39,7 @@
   "files": [
     "dist",
     "src/viewer",
+    "src/editing/exclude-description-item.ts",
     "vite.config.ts",
     "index.html",
     "README.md",

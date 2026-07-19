@@ -24,6 +24,8 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 
 詳細は [docs/screen-spec/README.md](docs/screen-spec/README.md) を参照してください。companion `@ywal123456/jskim-screen-spec` は **optional** の公開 npm package です。利用時は engine とあわせてインストールし、Chromium（Playwright）の用意が必要です。Vite HMR や screen 単位の incremental collect はありません（full-page reload / ローカル利用）。
 
+`jskim spec dev` では、Figma の Frame を参照画像（Reference Image）として **Import / Reimport** できます（PAT + 環境変数 `JSKIM_FIGMA_TOKEN`。OAuth 未対応。`serve` / 読み取り専用 Viewer では不可）。手順・セキュリティ注意は companion の [jskim-screen-spec/README.md](jskim-screen-spec/README.md) を参照してください。
+
 Screen Spec（optional）の開発用流れ:
 
 ```bash

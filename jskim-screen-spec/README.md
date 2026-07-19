@@ -435,6 +435,79 @@ spec/{project}/src/references/{screenId}/{viewport}/
 └─ meta.json
 ```
 
+## Figma Frame Import / Reimport（Phase 7D）
+
+Figma 上の **Frame** を PNG として取得し、既存の Reference Image として保存・再取得できます。専用の画像ストアは作りません（Device Capture とも別パスです）。
+
+利用可能なモード:
+
+| モード | Import / Reimport |
+|--------|-------------------|
+| `jskim spec dev` | 可（参照タブ） |
+| `jskim serve` / 通常の `jskim dev`（読み取り専用 Viewer） | **不可**（ボタン非表示・API なし） |
+
+### 準備
+
+1. Figma で Personal Access Token（PAT）を発行する
+2. 必要な scope: **`file_content:read`**
+3. サーバー側の環境変数だけに設定する（名前: **`JSKIM_FIGMA_TOKEN`**）
+
+注意:
+
+- トークンを `jskim.config.js` / Description / meta.json / manifest / HTTP リクエスト body に書かない
+- Viewer やログに token / `fileKey` / `nodeId` を表示しない
+- OAuth は未対応（PAT のみ）
+- PAT は期限切れ・撤回後に再発行し、環境変数を更新する
+
+PowerShell（現在の process にだけ設定。平文をコマンド履歴へ残さない）:
+
+```powershell
+$secure = Read-Host -AsSecureString "JSKIM_FIGMA_TOKEN"
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $env:JSKIM_FIGMA_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+}
+# 終了後:
+Remove-Item Env:JSKIM_FIGMA_TOKEN -ErrorAction SilentlyContinue
+```
+
+POSIX 系では、実際のトークン値をシェル履歴に残さない方法で `JSKIM_FIGMA_TOKEN` を設定してください（例: 対話入力や secret manager。ドキュメントに実トークンを貼らない）。
+
+### Viewer での Import
+
+1. `jskim spec dev <project>` を起動する
+2. `/spec/` で対象画面を開き、Preview の **参照** タブを選ぶ
+3. 参照タブ内で viewport（**PC** / **SP**）を選ぶ（自動判定しない）
+4. **Figmaから取込** を開き、`node-id` 付きの Figma Frame URL を入力する
+5. **取り込む** を実行する
+
+URL 例（形式のみ。実ファイルの URL は各自の Figma を使う）:
+
+```text
+https://www.figma.com/design/<fileKey>/<name>?node-id=1-2
+```
+
+対象は **FRAME** のみです。幅が選択中 viewport（PC=1440 / SP=375）と異なる場合は確認ダイアログが出ます。内容を理解したうえで取り込めます。同じ画像なら `unchanged` となりメタ更新しません。
+
+### Viewer での Reimport
+
+1. 参照画像のソースが **Figma** のとき **Figmaから再取込** が表示される
+2. 再取込は browser が `fileKey` / `nodeId` を送らず、サーバーが保存済み source から再 export する
+3. Figma 側で Frame 内容を更新したあと再取込すると、画像と `imageRevision` が更新される
+
+手動 upload で置き換えると source は upload に戻り、Figma 再取込はできなくなります。
+
+### エラーと制限
+
+- `JSKIM_FIGMA_TOKEN` 未設定: 設定案内のエラー（外部 Figma へは送らない）
+- 429 / rate limit: 利用上限メッセージ（Retry-After がある場合は待機目安を含む）
+- read-only Viewer / `serve`: Import・Reimport UI なし
+- 実 Figma の手動確認は開発時に **1 Frame / 1 viewport** で実施済み。全 plan の網羅検証ではない
+
+契約の詳細は [docs/screen-spec/figma-frame-import.md](../docs/screen-spec/figma-frame-import.md) と [docs/screen-spec/reference-image.md](../docs/screen-spec/reference-image.md) を参照してください。
+
 ## CSS / アセット自動収集（Phase 5B）
 
 `jskim spec collect` は各 state で stylesheet（`link` / `style`）と HTML 内リソース（`img` / `srcset` / `style` url など）を収集し、次へ書き込みます。

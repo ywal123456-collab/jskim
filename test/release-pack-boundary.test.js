@@ -21,6 +21,28 @@ const FORBIDDEN_TAR_FRAGMENTS = [
   'playwright/.local-browsers',
 ];
 
+/**
+ * @param {string} src
+ * @param {string} dest
+ * @param {{ skipDirNames?: Set<string> }} [options]
+ */
+function copyDirSync(src, dest, options = {}) {
+  const skip = options.skipDirNames || new Set();
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (skip.has(entry.name) || entry.name.startsWith('.resources.tmp')) {
+        continue;
+      }
+      copyDirSync(path.join(src, entry.name), path.join(dest, entry.name), options);
+      continue;
+    }
+    if (entry.isFile()) {
+      fs.copyFileSync(path.join(src, entry.name), path.join(dest, entry.name));
+    }
+  }
+}
+
 describe('Screen Spec release pack boundary', () => {
   /** @type {string[]} */
   const tempDirs = [];
@@ -102,6 +124,17 @@ describe('Screen Spec release pack boundary', () => {
 
     assert.ok(files.some((f) => f.includes('package/dist/index.js')));
     assert.ok(files.some((f) => f.includes('package/src/viewer/')));
+    assert.ok(
+      files.some((f) =>
+        f.includes('package/src/editing/exclude-description-item.ts')
+      ),
+      'Viewer が参照する exclude-description-item を同梱すること'
+    );
+    assert.equal(
+      files.some((f) => f.includes('package/src/editing/validate-description')),
+      false,
+      'editing 全体を不用意に同梱しない'
+    );
     assert.ok(files.some((f) => f.includes('package/vite.config.ts')));
     assert.equal(
       files.some((f) => f.includes('package/vitest.config.ts')),
@@ -126,6 +159,121 @@ describe('Screen Spec release pack boundary', () => {
         `local absolute path らしきエントリ: ${file}`
       );
     }
+  });
+
+  it('packed companion + engine だけで jskim spec build sample が成功する', () => {
+    const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-pack-build-'));
+    tempDirs.push(workRoot);
+    const packDir = path.join(workRoot, 'packs');
+    const consumer = path.join(workRoot, 'consumer');
+    fs.mkdirSync(packDir);
+    fs.mkdirSync(consumer);
+
+    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const companionPack = spawnSync(
+      npm,
+      ['pack', '--json', '--pack-destination', packDir],
+      {
+        cwd: path.join(REPO_ROOT, 'jskim-screen-spec'),
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        timeout: 120000,
+      }
+    );
+    assert.equal(companionPack.status, 0, companionPack.stderr || companionPack.stdout);
+    const companionInfo = JSON.parse(companionPack.stdout.trim());
+    const companionMeta = Array.isArray(companionInfo)
+      ? companionInfo[0]
+      : companionInfo;
+
+    const enginePack = spawnSync(
+      npm,
+      ['pack', '--json', '--pack-destination', packDir],
+      {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        timeout: 60000,
+      }
+    );
+    assert.equal(enginePack.status, 0, enginePack.stderr || enginePack.stdout);
+    const engineInfo = JSON.parse(enginePack.stdout.trim());
+    const engineMeta = Array.isArray(engineInfo) ? engineInfo[0] : engineInfo;
+
+    const companionTgz = path.join(packDir, companionMeta.filename);
+    const engineTgz = path.join(packDir, engineMeta.filename);
+    assert.ok(fs.existsSync(companionTgz));
+    assert.ok(fs.existsSync(engineTgz));
+
+    // repository source を偶然 resolve しないよう、consumer は TEMP のみ
+    fs.writeFileSync(
+      path.join(consumer, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'jskim-pack-boundary-consumer',
+          private: true,
+          devDependencies: {
+            '@ywal123456/jskim': `file:${engineTgz.replace(/\\/g, '/')}`,
+            '@ywal123456/jskim-screen-spec': `file:${companionTgz.replace(/\\/g, '/')}`,
+          },
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'jskim.config.js'),
+      path.join(consumer, 'jskim.config.js')
+    );
+    copyDirSync(
+      path.join(REPO_ROOT, 'src', 'sample'),
+      path.join(consumer, 'src', 'sample')
+    );
+    copyDirSync(
+      path.join(REPO_ROOT, 'spec', 'sample'),
+      path.join(consumer, 'spec', 'sample'),
+      { skipDirNames: new Set(['dist']) }
+    );
+
+    const install = spawnSync(npm, ['install'], {
+      cwd: consumer,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      timeout: 180000,
+    });
+    assert.equal(install.status, 0, install.stderr || install.stdout);
+
+    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    const specBuild = spawnSync(npx, ['jskim', 'spec', 'build', 'sample'], {
+      cwd: consumer,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      timeout: 180000,
+      env: {
+        ...process.env,
+        // repository の local companion を優先しない
+        NODE_PATH: '',
+      },
+    });
+    assert.equal(
+      specBuild.status,
+      0,
+      `packed consumer spec build failed:\n${specBuild.stderr}\n${specBuild.stdout}`
+    );
+    assert.ok(
+      fs.existsSync(path.join(consumer, 'spec', 'sample', 'dist', 'index.html')),
+      'Viewer dist/index.html が生成されること'
+    );
+    const viewerAssets = fs.readdirSync(
+      path.join(consumer, 'spec', 'sample', 'dist'),
+      { withFileTypes: true }
+    );
+    assert.ok(
+      viewerAssets.some((e) => e.isFile() && /\.(js|css)$/.test(e.name)) ||
+        fs.existsSync(path.join(consumer, 'spec', 'sample', 'dist', 'assets')),
+      'Viewer production asset が出力されること'
+    );
   });
 
   it('npm pack（engine）に Screen Spec CLI があり companion 本体は含まない', () => {
