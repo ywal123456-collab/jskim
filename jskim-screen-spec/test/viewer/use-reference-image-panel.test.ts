@@ -483,4 +483,104 @@ describe('useReferenceImagePanel', () => {
     expect(api.runtime.value.status).toBe('idle');
     wrapper.unmount();
   });
+
+  it('古い Figma 応答は abort 後の新しい UI 状態を上書きしない', async () => {
+    let resolveFirst!: (value: Response) => void;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let importCalls = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'POST' && url.includes('figma:import')) {
+        importCalls += 1;
+        if (importCalls === 1) {
+          // AbortSignal を無視し、後から解決する stale 応答を再現する
+          return firstResponse;
+        }
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'unchanged',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+            source: {
+              type: 'figma',
+              frameName: 'LatestFrame',
+              importedAt: '2026-07-18T12:00:00.000Z',
+            },
+          },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+    });
+    await flushPromises();
+
+    const first = api.importFromFigma({
+      figmaUrl: 'https://www.figma.com/design/AAA/Name?node-id=1-2',
+      expectedImageRevision: null,
+      confirmWidthMismatch: false,
+    });
+    await flushPromises();
+    expect(api.runtime.value.status).toBe('importing');
+
+    api.abortFigmaDialogRequest();
+    await flushPromises();
+    expect(api.runtime.value.status).toBe('idle');
+    expect(api.dialogError.value).toBe('');
+    expect(api.localPending.value).toBe(false);
+
+    const second = api.importFromFigma({
+      figmaUrl: 'https://www.figma.com/design/BBB/Name?node-id=3-4',
+      expectedImageRevision: null,
+      confirmWidthMismatch: false,
+    });
+    await flushPromises();
+    await second;
+    expect(api.infoMessage.value).toContain('同じ参照画像');
+    expect(api.runtime.value.status).toBe('idle');
+    expect(api.dialogError.value).toBe('');
+    expect(api.errorMessage.value).toBe('');
+
+    resolveFirst(
+      new Response(
+        JSON.stringify({
+          code: 'SPEC_FIGMA_BAD_REQUEST',
+          message: '古いリクエストのエラーです。この文言は表示されてはいけません。',
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    await first;
+    await flushPromises();
+
+    expect(api.dialogError.value).toBe('');
+    expect(api.errorMessage.value).not.toContain('古いリクエスト');
+    expect(api.infoMessage.value).toContain('同じ参照画像');
+    expect(api.runtime.value.status).toBe('idle');
+    expect(api.localPending.value).toBe(false);
+    expect(api.figmaConfirmation.value).toBeNull();
+    wrapper.unmount();
+  });
 });

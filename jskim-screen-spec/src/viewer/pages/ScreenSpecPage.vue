@@ -270,6 +270,36 @@ async function onReferenceDelete(expectedImageRevision: string): Promise<void> {
   await referenceImage.deleteCurrent(expectedImageRevision);
 }
 
+async function onReferenceFigmaImport(payload: {
+  figmaUrl: string;
+  expectedImageRevision: string | null;
+  confirmWidthMismatch: boolean;
+}): Promise<void> {
+  const result = await referenceImage.importFromFigma(payload);
+  if (result.ok) {
+    referencePanelRef.value?.closeFigma();
+  } else if (result.confirmation) {
+    // dialog を維持して幅確認 UI を表示
+    return;
+  } else if (!result.keepDialog) {
+    referencePanelRef.value?.closeFigma();
+  }
+}
+
+async function onReferenceFigmaReimport(payload: {
+  expectedImageRevision: string;
+  confirmWidthMismatch: boolean;
+}): Promise<void> {
+  const result = await referenceImage.reimportFromFigma(payload);
+  if (result.ok) {
+    referencePanelRef.value?.closeFigma();
+  } else if (result.confirmation) {
+    return;
+  } else if (!result.keepDialog) {
+    referencePanelRef.value?.closeFigma();
+  }
+}
+
 initPreferredProvider();
 initReferenceViewport();
 
@@ -976,13 +1006,18 @@ watch(
             :error-message="referenceImage.errorMessage.value"
             :info-message="referenceImage.infoMessage.value"
             :dialog-error="referenceImage.dialogError.value"
+            :figma-confirmation="referenceImage.figmaConfirmation.value"
             :image-base-url="viewerBaseUrl"
             :panel-id="`${previewTabsIdPrefix}-panel-reference`"
             :labelled-by="`${previewTabsIdPrefix}-tab-reference`"
             @update:viewport="onReferenceViewportChange"
             @upload="onReferenceUpload"
             @delete="onReferenceDelete"
+            @figma-import="onReferenceFigmaImport"
+            @figma-reimport="onReferenceFigmaReimport"
             @clear-dialog-error="referenceImage.clearDialogError()"
+            @abort-figma="referenceImage.abortFigmaDialogRequest()"
+            @clear-figma-confirmation="referenceImage.clearFigmaConfirmation()"
           />
         </template>
         <div v-else-if="showNoPreview" class="spec-page__no-preview" data-testid="no-preview">

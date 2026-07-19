@@ -641,6 +641,31 @@ describe('createReferenceImageApi Figma endpoints', () => {
     });
   });
 
+  it('confirmWidthMismatch=false で幅不一致なら confirmation-required', async () => {
+    await withServer((port) => createApi(port), async (port) => {
+      importImpl = async (opts) => {
+        importCalls.push(opts);
+        assert.equal(opts.confirmWidthMismatch, false);
+        return {
+          result: 'confirmation-required',
+          confirmation: {
+            code: 'SPEC_FIGMA_WIDTH_MISMATCH',
+            frame: { frameName: 'Wide', width: 1600, height: 900 },
+            viewport: { width: 1440, height: 900 },
+          },
+        };
+      };
+      const res = await postJson(port, importPath('design', 'pc'), {
+        fileKey: 'AAA',
+        nodeId: '1:2',
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.json.result, 'confirmation-required');
+      assert.equal(res.json.confirmation.frame.width, 1600);
+      assert.doesNotMatch(JSON.stringify(res.json), /"fileKey"/);
+    });
+  });
+
   it('status に importing を返す', async () => {
     await withServer((port) => createApi(port), async (port) => {
       let release;

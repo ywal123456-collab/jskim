@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  resolveBrowserSafeReferenceSource,
+  type BrowserSafeReferenceSource,
+} from './browser-safe-source.js';
 import { referenceMetaPath } from './paths.js';
 import type { ViewportId } from './presets.js';
 import { getReferenceImageStatus } from './status.js';
@@ -16,7 +20,11 @@ export type ReferenceImagePublicInfo = {
   viewportWidth?: number;
   viewportHeight?: number;
   reason?: string;
+  /** browser-safe。fileKey/nodeId は含めない */
+  source?: BrowserSafeReferenceSource;
 };
+
+export type { BrowserSafeReferenceSource };
 
 /**
  * manifest 向けの安全な Reference Image 公開情報。
@@ -59,6 +67,7 @@ export function getReferenceImagePublicInfo(options: {
     imageFile: metadata.imageFile,
     viewportWidth: metadata.viewport.width,
     viewportHeight: metadata.viewport.height,
+    source: resolveBrowserSafeReferenceSource(metadata.source),
   };
 }
 

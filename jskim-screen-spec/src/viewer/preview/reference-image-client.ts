@@ -23,11 +23,71 @@ export type ReferenceImageRuntimeState =
       startedAt?: string;
     }
   | {
+      status: 'importing';
+      requestId?: string;
+      startedAt?: string;
+    }
+  | {
       status: 'failed';
-      operation: 'upload' | 'delete';
+      operation: 'upload' | 'delete' | 'import' | 'reimport';
       failedAt?: string;
       error?: { code: string; message: string };
     };
+
+export type FigmaWidthMismatchConfirmation = {
+  code: 'SPEC_FIGMA_WIDTH_MISMATCH';
+  frame: {
+    frameName: string;
+    width: number;
+    height: number;
+  };
+  viewport: {
+    width: number;
+    height: number;
+  };
+};
+
+export type FigmaImportApiResponse =
+  | {
+      result: 'created' | 'updated' | 'unchanged';
+      screenId: string;
+      viewport: ReferenceViewport;
+      referenceImage: {
+        status: 'current';
+        imageRevision: string;
+        imageWidth: number;
+        imageHeight: number;
+        uploadedAt: string;
+        source?: {
+          type: 'figma';
+          frameName: string;
+          importedAt: string;
+        };
+      };
+      frame: { frameName: string; width: number; height: number };
+      source: { type: 'figma'; frameName: string; importedAt: string };
+      warnings?: Array<{
+        code: string;
+        message: string;
+        frameWidth: number;
+        frameHeight: number;
+        viewportWidth: number;
+        viewportHeight: number;
+      }>;
+    }
+  | {
+      result: 'confirmation-required';
+      screenId: string;
+      viewport: ReferenceViewport;
+      confirmation: FigmaWidthMismatchConfirmation;
+    };
+
+export type FigmaImportApiError = ReferenceImageApiError & {
+  retryAfterSeconds?: number;
+  planTier?: string;
+  rateLimitType?: string;
+  upgradeLink?: string;
+};
 
 export type ReferenceImageStatusResponse = {
   screenId: string;
@@ -69,11 +129,43 @@ export type ReferenceImageApiError = {
 function parseError(
   status: number,
   body: unknown,
-): ReferenceImageApiError {
+): FigmaImportApiError {
   if (body && typeof body === 'object') {
-    const o = body as { code?: unknown; message?: unknown };
+    const o = body as {
+      code?: unknown;
+      message?: unknown;
+      retryAfterSeconds?: unknown;
+      planTier?: unknown;
+      rateLimitType?: unknown;
+      upgradeLink?: unknown;
+    };
     if (typeof o.code === 'string' && typeof o.message === 'string') {
-      return { code: o.code, message: o.message, status };
+      /** @type {FigmaImportApiError} */
+      const err: FigmaImportApiError = {
+        code: o.code,
+        message: o.message,
+        status,
+      };
+      if (
+        typeof o.retryAfterSeconds === 'number' &&
+        Number.isFinite(o.retryAfterSeconds) &&
+        o.retryAfterSeconds >= 0
+      ) {
+        err.retryAfterSeconds = Math.floor(o.retryAfterSeconds);
+      }
+      if (typeof o.planTier === 'string') {
+        err.planTier = o.planTier;
+      }
+      if (typeof o.rateLimitType === 'string') {
+        err.rateLimitType = o.rateLimitType;
+      }
+      if (
+        typeof o.upgradeLink === 'string' &&
+        /^https:\/\/(www\.)?figma\.com\//i.test(o.upgradeLink)
+      ) {
+        err.upgradeLink = o.upgradeLink;
+      }
+      return err;
     }
   }
   return {
@@ -81,6 +173,89 @@ function parseError(
     message: '参照画像の要求に失敗しました。',
     status,
   };
+}
+
+export function figmaImportPath(
+  screenId: string,
+  viewport: ReferenceViewport,
+): string {
+  return `${referenceImageResourcePath(screenId, viewport)}/figma:import`;
+}
+
+export function figmaReimportPath(
+  screenId: string,
+  viewport: ReferenceViewport,
+): string {
+  return `${referenceImageResourcePath(screenId, viewport)}/figma:reimport`;
+}
+
+/**
+ * Figma API エラーコードを Viewer 向け日本語メッセージへ変換する。
+ */
+export function formatFigmaViewerError(error: FigmaImportApiError): string {
+  switch (error.code) {
+    case 'SPEC_FIGMA_INPUT_INVALID':
+      return 'Figma URL の形式が正しくありません。';
+    case 'SPEC_FIGMA_TOKEN_MISSING':
+      return 'サーバーに JSKIM_FIGMA_TOKEN が設定されていません。';
+    case 'SPEC_FIGMA_UNAUTHORIZED':
+      return 'Figma トークンが無効、または期限切れです。';
+    case 'SPEC_FIGMA_FORBIDDEN':
+      return 'この Figma ファイルへのアクセス権限がありません。';
+    case 'SPEC_FIGMA_FILE_NOT_FOUND':
+      return 'Figma ファイルが見つかりません。';
+    case 'SPEC_FIGMA_NODE_NOT_FOUND':
+      return '指定した Frame が見つかりません。';
+    case 'SPEC_FIGMA_NODE_NOT_FRAME':
+      return '指定したノードは Frame ではありません。';
+    case 'SPEC_FIGMA_RATE_LIMITED': {
+      const wait =
+        error.retryAfterSeconds != null
+          ? `（約 ${error.retryAfterSeconds} 秒後に再試行できます）`
+          : '';
+      return `Figma API の利用上限に達しました。${wait}`;
+    }
+    case 'SPEC_FIGMA_TIMEOUT':
+      return 'Figma との通信がタイムアウトしました。';
+    case 'SPEC_FIGMA_EXPORT_FAILED':
+      return 'Figma からの画像エクスポートに失敗しました。';
+    case 'SPEC_FIGMA_DOWNLOAD_FAILED':
+      return 'Figma 画像のダウンロードに失敗しました。';
+    case 'SPEC_FIGMA_IMAGE_TOO_LARGE':
+      return '参照画像のサイズが上限（20 MiB）を超えています。';
+    case 'SPEC_FIGMA_SOURCE_MISSING':
+      return 'Figma から再取り込みできない参照画像です。';
+    case 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT':
+      return '参照画像が別の操作で更新されました。最新の状態を確認してから再度実行してください。';
+    case 'SPEC_REFERENCE_IMAGE_IN_PROGRESS':
+      return '同じ参照画像を更新または削除しています。完了後に再度実行してください。';
+    case 'SPEC_REFERENCE_IMAGE_NETWORK':
+    case 'SPEC_FIGMA_NETWORK':
+      return 'ネットワークエラーが発生しました。';
+    default:
+      return error.message || 'Figma 参照画像の処理に失敗しました。';
+  }
+}
+
+export function formatReferenceSourceImportedAt(iso: string): string {
+  if (!iso || !iso.trim()) {
+    return '—';
+  }
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) {
+    return '—';
+  }
+  try {
+    return new Date(t).toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
 }
 
 async function readJson(res: Response): Promise<unknown> {
@@ -280,6 +455,132 @@ export async function waitForReferenceImageManifest(options: {
     });
   }
   return false;
+}
+
+export async function importFigmaReferenceImageRequest(options: {
+  screenId: string;
+  viewport: ReferenceViewport;
+  figmaUrl: string;
+  expectedImageRevision?: string | null;
+  confirmWidthMismatch?: boolean;
+  signal?: AbortSignal;
+  fetchFn?: typeof fetch;
+}): Promise<
+  | { ok: true; data: FigmaImportApiResponse }
+  | { ok: false; error: FigmaImportApiError; aborted?: boolean }
+> {
+  const fetchFn = options.fetchFn ?? fetch;
+  /** @type {Record<string, unknown>} */
+  const body: Record<string, unknown> = {
+    figmaUrl: options.figmaUrl,
+    confirmWidthMismatch: options.confirmWidthMismatch === true,
+  };
+  if (options.expectedImageRevision !== undefined) {
+    body.expectedImageRevision = options.expectedImageRevision;
+  }
+  try {
+    const res = await fetchFn(
+      figmaImportPath(options.screenId, options.viewport),
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+        signal: options.signal,
+      },
+    );
+    const parsed = await readJson(res);
+    if (!res.ok) {
+      return { ok: false, error: parseError(res.status, parsed) };
+    }
+    return { ok: true, data: parsed as FigmaImportApiResponse };
+  } catch (err) {
+    if (
+      options.signal?.aborted ||
+      (err && typeof err === 'object' && (err as { name?: string }).name === 'AbortError')
+    ) {
+      return {
+        ok: false,
+        aborted: true,
+        error: {
+          code: 'SPEC_FIGMA_ABORTED',
+          message: 'キャンセルされました。',
+          status: 0,
+        },
+      };
+    }
+    return {
+      ok: false,
+      error: {
+        code: 'SPEC_REFERENCE_IMAGE_NETWORK',
+        message: 'Figma 取り込みに失敗しました。',
+        status: 0,
+      },
+    };
+  }
+}
+
+export async function reimportFigmaReferenceImageRequest(options: {
+  screenId: string;
+  viewport: ReferenceViewport;
+  expectedImageRevision: string;
+  confirmWidthMismatch?: boolean;
+  signal?: AbortSignal;
+  fetchFn?: typeof fetch;
+}): Promise<
+  | { ok: true; data: FigmaImportApiResponse }
+  | { ok: false; error: FigmaImportApiError; aborted?: boolean }
+> {
+  const fetchFn = options.fetchFn ?? fetch;
+  try {
+    const res = await fetchFn(
+      figmaReimportPath(options.screenId, options.viewport),
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          expectedImageRevision: options.expectedImageRevision,
+          confirmWidthMismatch: options.confirmWidthMismatch === true,
+        }),
+        signal: options.signal,
+      },
+    );
+    const parsed = await readJson(res);
+    if (!res.ok) {
+      return { ok: false, error: parseError(res.status, parsed) };
+    }
+    return { ok: true, data: parsed as FigmaImportApiResponse };
+  } catch (err) {
+    if (
+      options.signal?.aborted ||
+      (err && typeof err === 'object' && (err as { name?: string }).name === 'AbortError')
+    ) {
+      return {
+        ok: false,
+        aborted: true,
+        error: {
+          code: 'SPEC_FIGMA_ABORTED',
+          message: 'キャンセルされました。',
+          status: 0,
+        },
+      };
+    }
+    return {
+      ok: false,
+      error: {
+        code: 'SPEC_REFERENCE_IMAGE_NETWORK',
+        message: 'Figma 再取り込みに失敗しました。',
+        status: 0,
+      },
+    };
+  }
 }
 
 /** client UX 用。server 検証が最終基準。 */

@@ -5,7 +5,8 @@
 **Phase 7D-1**: companion core（`jskim-screen-spec/src/figma/`）を実装済み。
 entry: `importFigmaReferenceImage` / `reimportFigmaReferenceImage`。
 **Phase 7D-2**: `jskim spec dev` の Figma Import / Reimport HTTP API を実装済み（本節 §14）。
-Viewer UI（7D-3）は未実装。
+**Phase 7D-3**: Viewer Import/Reimport UI・`confirmWidthMismatch`・manifest/status の browser-safe `source` を実装済み。
+実 Figma / 実 PAT の live smoke は未検証（mock のみ）。
 
 凡例:
 
@@ -826,41 +827,39 @@ runtime: `idle` / `uploading` / `deleting` / **`importing`** / `failed`。Import
 
 - client 切断時は `AbortSignal` を core へ渡し、lock を解放する。
 - API は build を直接呼ばない（`meta.json` watcher → BUILD_ONLY。既存 Reference と同じ）。
-- Viewer UI / manifest への Figma source projection は **7D-3**（本 Phase では未実装）。
+- Viewer UI / manifest / GET status の browser-safe `source` は **7D-3 で実装済み**。
+
+### 14-4. confirmWidthMismatch（7D-3）
+
+| 項目 | 契約 |
+|------|------|
+| request field | `confirmWidthMismatch`（boolean、省略時 `false`） |
+| 幅不一致 + `false` | Frame 取得のみ。export/download/保存なし。`result: "confirmation-required"` |
+| 幅不一致 + `true` | 通常どおり Import/Reimport |
+| 幅一致 | `false` でも即保存 |
+| 高さのみ不一致 | 確認不要（long page） |
+
+confirmation-required に fileKey / nodeId / URL / token は含めない。
 
 ---
 
-## 15. Viewer UI 案
+## 15. Viewer UI（Phase 7D-3 実装）
 
-現行 Preview（Live / PC / SP / 参照）を壊さない。参照タブ内に最小追加。
+現行 Preview（Live / PC / SP / 参照）を維持し、参照タブに最小追加。
 
-### Phase 7D-2（runtime/API）で必要なもの
+実装済み:
 
-- Import / Reimport endpoint
-- status に `source` 要約（または GET status 拡張）
-- runtime `importing` / エラー code
-- read-only では endpoint 非公開
+- 「Figmaから取込」/「Figmaから再取込」（editable のみ。URL 入力のみ、token 入力なし）
+- 既存 Reference 置き換え警告 / 幅不一致確認（`confirmWidthMismatch`）
+- browser-safe source 表示、loading / 日本語エラー / dialog Abort
+- manifest / GET status の `source` projection
+- read-only では mutation 不可
 
-### Phase 7D-3（UI）
-
-最小:
-
-- 「Figma から取り込み」ボタン（editable + 参照タブ）
-- URL 入力（または fileKey/nodeId 高度モードは後回し可）
-- 対象 viewport は現在の参照 PC/SP 選択を流用（明示選択）
-- 幅不一致時は Frame 幅と viewport 幅を示して確認（§5-3）
-- 既存 Reference があるときの置換確認
-- manifest の `source.type === 'figma'` のとき Reimport ボタン（fileKey/nodeId は持たない）
-- Frame 名・最終 import 時刻の表示（manifest projection のみ）
-- loading / エラー（認証・429・URL 不正・PAT 期限切れ案内）の日本語表示
-- `X-Figma-Upgrade-Link` は無検証でリンク化しない（7D-3 で方針決定）
-
-やらない（初期）:
+やらない（継続）:
 
 - Viewer 全体レイアウト刷新
-- Figma ファイルブラウザ埋め込み
-- OAuth ログイン UI
-- strict mode（寸法不一致で import 拒否）
+- Figma ファイルブラウザ / OAuth / token 入力 UI
+- strict mode / 実 Figma live smoke
 
 ---
 

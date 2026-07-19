@@ -5,7 +5,9 @@ import { parseFigmaInput } from './parse-input.js';
 import { resolveFigmaToken } from './token.js';
 import {
   FIGMA_DEFAULT_EXPORT_SCALE,
+  type FigmaFrameInfo,
   type FigmaViewportSizeMismatch,
+  type FigmaWidthMismatchConfirmation,
   type ImportFigmaReferenceImageOptions,
   type ImportFigmaReferenceImageResult,
   type ReimportFigmaReferenceImageOptions,
@@ -34,10 +36,31 @@ function buildSizeMismatch(
   };
 }
 
-async function fetchFigmaPngAndFrame(options: {
+function buildWidthMismatchConfirmation(
+  frame: FigmaFrameInfo,
+  viewport: 'pc' | 'sp',
+): FigmaWidthMismatchConfirmation {
+  const preset = getViewportPreset(viewport);
+  return {
+    code: 'SPEC_FIGMA_WIDTH_MISMATCH',
+    frame: {
+      frameName: frame.frameName,
+      width: frame.width,
+      height: frame.height,
+    },
+    viewport: {
+      width: preset.width,
+      height: preset.height,
+    },
+  };
+}
+
+type FetchTransport = {
   fileKey: string;
   nodeId: string;
   token: string;
+  viewport: 'pc' | 'sp';
+  confirmWidthMismatch?: boolean;
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
   nowMs?: () => number;
@@ -46,11 +69,26 @@ async function fetchFigmaPngAndFrame(options: {
   requestTimeoutMs?: number;
   downloadTimeoutMs?: number;
   apiBaseUrl?: string;
-}): Promise<{
-  frame: Awaited<ReturnType<ReturnType<typeof createFigmaApiClient>['getFrame']>>;
-  pngBytes: Buffer;
-  exportScale: typeof FIGMA_DEFAULT_EXPORT_SCALE;
-}> {
+};
+
+type FetchOutcome =
+  | {
+      kind: 'confirmation-required';
+      confirmation: FigmaWidthMismatchConfirmation;
+    }
+  | {
+      kind: 'ready';
+      frame: FigmaFrameInfo;
+      pngBytes: Buffer;
+      exportScale: typeof FIGMA_DEFAULT_EXPORT_SCALE;
+    };
+
+/**
+ * Frame 取得後、幅不一致かつ未確認なら export/download せず confirmation を返す。
+ */
+async function fetchFigmaPngAndFrame(
+  options: FetchTransport,
+): Promise<FetchOutcome> {
   const startedAt = (options.nowMs ?? Date.now)();
   const client = createFigmaApiClient({
     token: options.token,
@@ -65,6 +103,15 @@ async function fetchFigmaPngAndFrame(options: {
   });
 
   const frame = await client.getFrame(options.fileKey, options.nodeId);
+  const preset = getViewportPreset(options.viewport);
+  const confirmed = options.confirmWidthMismatch === true;
+  if (!confirmed && frame.width !== preset.width) {
+    return {
+      kind: 'confirmation-required',
+      confirmation: buildWidthMismatchConfirmation(frame, options.viewport),
+    };
+  }
+
   const exported = await client.getPngExportUrl(options.fileKey, options.nodeId);
   const pngBytes = await downloadFigmaPng({
     imageUrl: exported.imageUrl,
@@ -77,6 +124,7 @@ async function fetchFigmaPngAndFrame(options: {
   });
 
   return {
+    kind: 'ready',
     frame,
     pngBytes,
     exportScale: exported.exportScale,
@@ -110,10 +158,12 @@ export async function importFigmaReferenceImage(
     env: options.env,
   });
 
-  const { frame, pngBytes, exportScale } = await fetchFigmaPngAndFrame({
+  const fetched = await fetchFigmaPngAndFrame({
     fileKey: parsed.fileKey,
     nodeId: parsed.nodeId,
     token,
+    viewport: options.viewport,
+    confirmWidthMismatch: options.confirmWidthMismatch,
     signal: options.signal,
     fetchImpl: options.fetchImpl,
     nowMs: options.nowMs,
@@ -124,6 +174,14 @@ export async function importFigmaReferenceImage(
     apiBaseUrl: options.apiBaseUrl,
   });
 
+  if (fetched.kind === 'confirmation-required') {
+    return {
+      result: 'confirmation-required',
+      confirmation: fetched.confirmation,
+    };
+  }
+
+  const { frame, pngBytes, exportScale } = fetched;
   const importedAt = options.nowIso?.() ?? new Date().toISOString();
   const source: ReferenceImageSourceFigma = {
     type: 'figma',
@@ -209,10 +267,12 @@ export async function reimportFigmaReferenceImage(
     env: options.env,
   });
 
-  const { frame, pngBytes, exportScale } = await fetchFigmaPngAndFrame({
+  const fetched = await fetchFigmaPngAndFrame({
     fileKey: source.fileKey,
     nodeId: source.nodeId,
     token,
+    viewport: options.viewport,
+    confirmWidthMismatch: options.confirmWidthMismatch,
     signal: options.signal,
     fetchImpl: options.fetchImpl,
     nowMs: options.nowMs,
@@ -223,6 +283,14 @@ export async function reimportFigmaReferenceImage(
     apiBaseUrl: options.apiBaseUrl,
   });
 
+  if (fetched.kind === 'confirmation-required') {
+    return {
+      result: 'confirmation-required',
+      confirmation: fetched.confirmation,
+    };
+  }
+
+  const { frame, pngBytes, exportScale } = fetched;
   const importedAt = options.nowIso?.() ?? new Date().toISOString();
   const nextSource: ReferenceImageSourceFigma = {
     type: 'figma',

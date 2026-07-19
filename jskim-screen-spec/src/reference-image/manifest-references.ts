@@ -1,3 +1,4 @@
+import type { BrowserSafeReferenceSource } from './browser-safe-source.js';
 import type { ViewportId } from './presets.js';
 import {
   getReferenceImagePublicInfo,
@@ -17,6 +18,7 @@ export type ViewerReferenceImageEntry =
       viewportWidth: number;
       viewportHeight: number;
       uploadedAt: string;
+      source: BrowserSafeReferenceSource;
     };
 
 export type ViewerReferenceImages = {
@@ -100,6 +102,7 @@ function buildEntry(options: {
       viewportWidth: info.viewportWidth,
       viewportHeight: info.viewportHeight,
       uploadedAt: info.uploadedAt,
+      source: info.source ?? { type: 'upload' },
     },
     outputFile: {
       relativePath: imagePath,

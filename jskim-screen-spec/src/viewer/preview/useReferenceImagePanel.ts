@@ -25,9 +25,13 @@ import type { ReferenceViewport } from './preview-provider.js';
 import {
   deleteReferenceImageRequest,
   fetchReferenceImageStatus,
+  formatFigmaViewerError,
+  importFigmaReferenceImageRequest,
   putReferenceImageMultipart,
+  reimportFigmaReferenceImageRequest,
   validateReferenceImageFile,
   waitForReferenceImageManifest,
+  type FigmaWidthMismatchConfirmation,
   type ReferenceImageRuntimeState,
 } from './reference-image-client.js';
 
@@ -65,10 +69,13 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
   const infoMessage = ref('');
   const activeRequestKey = ref<string | null>(null);
   const dialogError = ref('');
+  const figmaConfirmation = ref<FigmaWidthMismatchConfirmation | null>(null);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let waitAbort: AbortController | null = null;
+  let figmaAbort: AbortController | null = null;
   let disposed = false;
+  let figmaRequestSeq = 0;
 
   const currentKey = computed(() => {
     const vp = resolve(options.viewport);
@@ -92,7 +99,8 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       localPending.value ||
       awaitingManifest.value ||
       runtime.value.status === 'uploading' ||
-      runtime.value.status === 'deleting',
+      runtime.value.status === 'deleting' ||
+      runtime.value.status === 'importing',
   );
 
   const actionsDisabled = computed(
@@ -117,11 +125,22 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     }
   }
 
+  function stopFigmaRequest(): void {
+    if (figmaAbort) {
+      figmaAbort.abort();
+      figmaAbort = null;
+    }
+  }
+
   function clearUiMessages(): void {
     statusMessage.value = '';
     errorMessage.value = '';
     infoMessage.value = '';
     dialogError.value = '';
+  }
+
+  function clearFigmaConfirmation(): void {
+    figmaConfirmation.value = null;
   }
 
   async function refreshStatus(): Promise<void> {
@@ -379,6 +398,206 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     return { ok: true, result: result.data.result };
   }
 
+  type FigmaMutationResult =
+    | { ok: true; result: string }
+    | { ok: false; keepDialog: boolean; confirmation?: boolean };
+
+  async function runFigmaMutation(optionsMut: {
+    mode: 'import' | 'reimport';
+    figmaUrl?: string;
+    expectedImageRevision: string | null;
+    confirmWidthMismatch: boolean;
+  }): Promise<FigmaMutationResult> {
+    if (!resolve(options.editable) || actionsDisabled.value) {
+      return { ok: false, keepDialog: true };
+    }
+    const vp = resolve(options.viewport);
+    if (!vp) {
+      return { ok: false, keepDialog: true };
+    }
+
+    if (optionsMut.mode === 'import') {
+      const url = (optionsMut.figmaUrl || '').trim();
+      if (!url) {
+        dialogError.value = 'Figma Frame URL を入力してください。';
+        return { ok: false, keepDialog: true };
+      }
+    } else if (!optionsMut.expectedImageRevision) {
+      dialogError.value = '再取り込みに必要な revision がありません。';
+      return { ok: false, keepDialog: true };
+    }
+
+    clearUiMessages();
+    if (!optionsMut.confirmWidthMismatch) {
+      figmaConfirmation.value = null;
+    }
+
+    const reqKey = referenceImageKey(resolve(options.screenId), vp);
+    const seq = ++figmaRequestSeq;
+    activeRequestKey.value = reqKey;
+    localPending.value = true;
+    statusMessage.value =
+      optionsMut.mode === 'reimport' ? 'Figma 再取り込み中…' : 'Figma 取り込み中…';
+    runtime.value = { status: 'importing' };
+
+    stopFigmaRequest();
+    figmaAbort = new AbortController();
+    const signal = figmaAbort.signal;
+
+    const result =
+      optionsMut.mode === 'import'
+        ? await importFigmaReferenceImageRequest({
+            screenId: resolve(options.screenId),
+            viewport: vp,
+            figmaUrl: (optionsMut.figmaUrl || '').trim(),
+            expectedImageRevision: optionsMut.expectedImageRevision,
+            confirmWidthMismatch: optionsMut.confirmWidthMismatch,
+            signal,
+            fetchFn: options.fetchFn,
+          })
+        : await reimportFigmaReferenceImageRequest({
+            screenId: resolve(options.screenId),
+            viewport: vp,
+            expectedImageRevision: optionsMut.expectedImageRevision!,
+            confirmWidthMismatch: optionsMut.confirmWidthMismatch,
+            signal,
+            fetchFn: options.fetchFn,
+          });
+
+    if (
+      disposed ||
+      seq !== figmaRequestSeq ||
+      activeRequestKey.value !== reqKey
+    ) {
+      return { ok: false, keepDialog: false };
+    }
+
+    if (!result.ok) {
+      localPending.value = false;
+      activeRequestKey.value = null;
+      statusMessage.value = '';
+      figmaAbort = null;
+      if (result.aborted) {
+        runtime.value = { status: 'idle' };
+        return { ok: false, keepDialog: false };
+      }
+      const message = formatFigmaViewerError(result.error);
+      if (result.error.code === 'SPEC_REFERENCE_IMAGE_IN_PROGRESS') {
+        statusMessage.value = message;
+        await refreshStatus();
+        return { ok: false, keepDialog: false };
+      }
+      if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
+        errorMessage.value = message;
+        runtime.value = { status: 'idle' };
+        await options.reloadScreen();
+        await refreshStatus();
+        return { ok: false, keepDialog: false };
+      }
+      if (
+        result.error.status === 400 ||
+        result.error.status === 401 ||
+        result.error.status === 403 ||
+        result.error.status === 404 ||
+        result.error.status === 413 ||
+        result.error.status === 429 ||
+        result.error.status === 502 ||
+        result.error.status === 504 ||
+        result.error.status === 500
+      ) {
+        dialogError.value = message;
+        runtime.value = { status: 'idle' };
+        return { ok: false, keepDialog: true };
+      }
+      errorMessage.value = message;
+      runtime.value = {
+        status: 'failed',
+        operation: optionsMut.mode === 'reimport' ? 'reimport' : 'import',
+        error: { code: result.error.code, message },
+      };
+      return { ok: false, keepDialog: false };
+    }
+
+    figmaAbort = null;
+
+    if (result.data.result === 'confirmation-required') {
+      localPending.value = false;
+      activeRequestKey.value = null;
+      statusMessage.value = '';
+      runtime.value = { status: 'idle' };
+      figmaConfirmation.value = result.data.confirmation;
+      return { ok: false, keepDialog: true, confirmation: true };
+    }
+
+    if (result.data.result === 'unchanged') {
+      localPending.value = false;
+      activeRequestKey.value = null;
+      awaitingManifest.value = false;
+      clearPendingReferenceImage(resolve(options.projectName));
+      figmaConfirmation.value = null;
+      statusMessage.value = '';
+      infoMessage.value = '同じ参照画像が登録されています。';
+      runtime.value = { status: 'idle' };
+      return { ok: true, result: 'unchanged' };
+    }
+
+    const imageRevision = result.data.referenceImage.imageRevision;
+    const pending: PendingReferenceImage = {
+      operation: 'upload',
+      screenId: result.data.screenId,
+      viewport: result.data.viewport,
+      expectedImageRevision: optionsMut.expectedImageRevision,
+      resultImageRevision: imageRevision,
+    };
+    setPendingReferenceImage(resolve(options.projectName), pending);
+    figmaConfirmation.value = null;
+    awaitingManifest.value = true;
+    statusMessage.value = '取り込み結果を反映しています…';
+    infoMessage.value =
+      optionsMut.mode === 'reimport'
+        ? 'Figma から再取り込みしました。'
+        : 'Figma から取り込みました。';
+    await waitForPending(pending);
+    return { ok: true, result: result.data.result };
+  }
+
+  async function importFromFigma(optionsImport: {
+    figmaUrl: string;
+    expectedImageRevision: string | null;
+    confirmWidthMismatch: boolean;
+  }): Promise<FigmaMutationResult> {
+    return runFigmaMutation({
+      mode: 'import',
+      figmaUrl: optionsImport.figmaUrl,
+      expectedImageRevision: optionsImport.expectedImageRevision,
+      confirmWidthMismatch: optionsImport.confirmWidthMismatch,
+    });
+  }
+
+  async function reimportFromFigma(optionsReimport: {
+    expectedImageRevision: string;
+    confirmWidthMismatch: boolean;
+  }): Promise<FigmaMutationResult> {
+    return runFigmaMutation({
+      mode: 'reimport',
+      expectedImageRevision: optionsReimport.expectedImageRevision,
+      confirmWidthMismatch: optionsReimport.confirmWidthMismatch,
+    });
+  }
+
+  function abortFigmaDialogRequest(): void {
+    figmaRequestSeq += 1;
+    stopFigmaRequest();
+    if (localPending.value && runtime.value.status === 'importing') {
+      localPending.value = false;
+      activeRequestKey.value = null;
+      statusMessage.value = '';
+      runtime.value = { status: 'idle' };
+    }
+    figmaConfirmation.value = null;
+    dialogError.value = '';
+  }
+
   async function deleteCurrent(expectedImageRevision: string): Promise<boolean> {
     if (!resolve(options.editable) || actionsDisabled.value) {
       return false;
@@ -462,9 +681,12 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     () => {
       stopPolling();
       stopWait();
+      stopFigmaRequest();
+      figmaRequestSeq += 1;
       localPending.value = false;
       awaitingManifest.value = false;
       activeRequestKey.value = null;
+      figmaConfirmation.value = null;
       clearUiMessages();
       runtime.value = { status: 'idle' };
       if (
@@ -482,6 +704,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     disposed = true;
     stopPolling();
     stopWait();
+    stopFigmaRequest();
   });
 
   return {
@@ -495,9 +718,14 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     errorMessage,
     infoMessage,
     dialogError,
+    figmaConfirmation,
     refreshStatus,
     uploadOrReplace,
     deleteCurrent,
+    importFromFigma,
+    reimportFromFigma,
+    abortFigmaDialogRequest,
+    clearFigmaConfirmation,
     resumePendingIfNeeded,
     stopPolling,
     clearDialogError: () => {

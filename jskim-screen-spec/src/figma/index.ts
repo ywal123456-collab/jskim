@@ -48,7 +48,10 @@ export {
   type FigmaExportImage,
   type FigmaParseInput,
   type FigmaViewportSizeMismatch,
+  type FigmaWidthMismatchConfirmation,
   type ImportFigmaReferenceImageOptions,
   type ReimportFigmaReferenceImageOptions,
   type ImportFigmaReferenceImageResult,
+  type ImportFigmaReferenceImageStoredResult,
+  type ImportFigmaReferenceImageConfirmationResult,
 } from './types.js';

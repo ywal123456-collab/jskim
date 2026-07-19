@@ -1,5 +1,11 @@
 export type ScreenSpecStatus = 'design-only' | 'implementation-only' | 'linked';
 
+/** Viewer 公開用 source（fileKey/nodeId なし） */
+export type BrowserSafeReferenceSource =
+  | { type: 'upload' }
+  | { type: 'figma'; frameName: string; importedAt: string }
+  | { type: 'unknown' };
+
 export type ReferenceImageManifestEntry =
   | { status: 'missing' }
   | { status: 'invalid'; diagnosticCode?: string }
@@ -12,6 +18,8 @@ export type ReferenceImageManifestEntry =
       viewportWidth: number;
       viewportHeight: number;
       uploadedAt: string;
+      /** 旧 manifest 互換のため optional */
+      source?: BrowserSafeReferenceSource;
     };
 
 export type ManifestScreen = {

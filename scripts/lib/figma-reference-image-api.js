@@ -53,6 +53,7 @@ function parseFigmaImportBody(body) {
     'fileKey',
     'nodeId',
     'expectedImageRevision',
+    'confirmWidthMismatch',
   ]);
   for (const key of keys) {
     if (!allowed.has(key)) {
@@ -91,8 +92,8 @@ function parseFigmaImportBody(body) {
     };
   }
 
-  /** @type {{ figmaUrl?: string, fileKey?: string, nodeId?: string, expectedImageRevision?: string|null, hasExpected: boolean }} */
-  const out = { hasExpected: false };
+  /** @type {{ figmaUrl?: string, fileKey?: string, nodeId?: string, expectedImageRevision?: string|null, hasExpected: boolean, confirmWidthMismatch: boolean }} */
+  const out = { hasExpected: false, confirmWidthMismatch: false };
 
   if (hasUrl) {
     if (typeof obj.figmaUrl !== 'string' || !obj.figmaUrl.trim()) {
@@ -130,6 +131,17 @@ function parseFigmaImportBody(body) {
         message: 'expectedImageRevision の形式が不正です。',
       };
     }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(obj, 'confirmWidthMismatch')) {
+    if (typeof obj.confirmWidthMismatch !== 'boolean') {
+      return {
+        ok: false,
+        code: 'SPEC_FIGMA_INPUT_INVALID',
+        message: 'confirmWidthMismatch は boolean である必要があります。',
+      };
+    }
+    out.confirmWidthMismatch = obj.confirmWidthMismatch;
   }
 
   return { ok: true, ...out };
@@ -171,11 +183,11 @@ function parseFigmaReimportBody(body) {
       ok: false,
       code: 'SPEC_FIGMA_INPUT_INVALID',
       message:
-        'Reimport では Figma 入力やトークンを指定できません。expectedImageRevision のみ指定してください。',
+        'Reimport では Figma 入力やトークンを指定できません。expectedImageRevision と confirmWidthMismatch のみ指定してください。',
     };
   }
 
-  const allowed = new Set(['expectedImageRevision']);
+  const allowed = new Set(['expectedImageRevision', 'confirmWidthMismatch']);
   for (const key of Object.keys(obj)) {
     if (!allowed.has(key)) {
       return {
@@ -201,7 +213,20 @@ function parseFigmaReimportBody(body) {
       message: 'expectedImageRevision の形式が不正です。',
     };
   }
-  return { ok: true, expectedImageRevision: revision };
+
+  let confirmWidthMismatch = false;
+  if (Object.prototype.hasOwnProperty.call(obj, 'confirmWidthMismatch')) {
+    if (typeof obj.confirmWidthMismatch !== 'boolean') {
+      return {
+        ok: false,
+        code: 'SPEC_FIGMA_INPUT_INVALID',
+        message: 'confirmWidthMismatch は boolean である必要があります。',
+      };
+    }
+    confirmWidthMismatch = obj.confirmWidthMismatch;
+  }
+
+  return { ok: true, expectedImageRevision: revision, confirmWidthMismatch };
 }
 
 /**
@@ -374,10 +399,33 @@ function mapFigmaApiError(err, mapReferenceError) {
 }
 
 /**
- * Import/Reimport 成功時の browser-safe projection。
+ * Import/Reimport の HTTP 成功 / confirmation-required projection。
  * @param {object} result companion ImportFigmaReferenceImageResult
  */
 function toFigmaSuccessResponse(screenId, viewport, result) {
+  if (result && result.result === 'confirmation-required') {
+    const confirmation = result.confirmation || {};
+    const frame = confirmation.frame || {};
+    const vp = confirmation.viewport || {};
+    return {
+      screenId,
+      viewport,
+      result: 'confirmation-required',
+      confirmation: {
+        code: confirmation.code || 'SPEC_FIGMA_WIDTH_MISMATCH',
+        frame: {
+          frameName: frame.frameName || frame.name || '',
+          width: frame.width,
+          height: frame.height,
+        },
+        viewport: {
+          width: vp.width,
+          height: vp.height,
+        },
+      },
+    };
+  }
+
   /** @type {object} */
   const payload = {
     screenId,
@@ -389,6 +437,11 @@ function toFigmaSuccessResponse(screenId, viewport, result) {
       imageWidth: result.imageWidth,
       imageHeight: result.imageHeight,
       uploadedAt: result.uploadedAt,
+      source: {
+        type: 'figma',
+        frameName: result.frame.frameName,
+        importedAt: result.uploadedAt,
+      },
     },
     frame: {
       frameName: result.frame.frameName,

@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import type { ReferenceImageManifestEntry } from '../types';
-import type { ReferenceImageRuntimeState } from '../preview/reference-image-client';
+import type {
+  FigmaWidthMismatchConfirmation,
+  ReferenceImageRuntimeState,
+} from '../preview/reference-image-client';
+import { formatReferenceSourceImportedAt } from '../preview/reference-image-client';
 import type { ReferenceViewport } from '../preview/preview-provider';
 import PreviewImage from './PreviewImage.vue';
 import ReferenceViewportTabs from './ReferenceViewportTabs.vue';
 import ReferenceImageUploadDialog from './ReferenceImageUploadDialog.vue';
 import ReferenceImageDeleteDialog from './ReferenceImageDeleteDialog.vue';
+import ReferenceImageFigmaImportDialog from './ReferenceImageFigmaImportDialog.vue';
 
 const props = defineProps<{
   viewport: ReferenceViewport;
@@ -20,6 +25,7 @@ const props = defineProps<{
   errorMessage: string;
   infoMessage: string;
   dialogError: string;
+  figmaConfirmation: FigmaWidthMismatchConfirmation | null;
   imageBaseUrl: string;
   panelId: string;
   labelledBy: string;
@@ -29,7 +35,22 @@ const emit = defineEmits<{
   'update:viewport': [ReferenceViewport];
   upload: [payload: { file: File; expectedImageRevision: string | null }];
   delete: [expectedImageRevision: string];
+  'figma-import': [
+    payload: {
+      figmaUrl: string;
+      expectedImageRevision: string | null;
+      confirmWidthMismatch: boolean;
+    },
+  ];
+  'figma-reimport': [
+    payload: {
+      expectedImageRevision: string;
+      confirmWidthMismatch: boolean;
+    },
+  ];
   'clear-dialog-error': [];
+  'abort-figma': [];
+  'clear-figma-confirmation': [];
 }>();
 
 const uploadDialogOpen = ref(false);
@@ -37,6 +58,14 @@ const uploadMode = ref<'upload' | 'replace'>('upload');
 const capturedExpectedRevision = ref<string | null>(null);
 const deleteDialogOpen = ref(false);
 const deleteExpectedRevision = ref('');
+const figmaDialogOpen = ref(false);
+const figmaDialogMode = ref<'import' | 'reimport'>('import');
+const figmaExpectedRevision = ref<string | null>(null);
+/** dialog を開いた trigger（Import / Reimport）。close 後に focus を戻す */
+const figmaTriggerEl = ref<HTMLElement | null>(null);
+/** viewport 切替など focus 復帰を抑止するとき false */
+let restoreFigmaFocusOnClose = true;
+let panelDisposed = false;
 
 const persistedStatus = computed(
   () => props.reference?.status ?? 'missing',
@@ -89,6 +118,33 @@ const metaLine = computed(() => {
   return `${r.imageWidth} × ${r.imageHeight}`;
 });
 
+const sourceLines = computed(() => {
+  const r = props.reference;
+  if (!r || r.status !== 'current') {
+    return [] as string[];
+  }
+  const source = r.source;
+  if (!source || source.type === 'upload') {
+    return ['参照画像：アップロード'];
+  }
+  if (source.type === 'figma') {
+    return [
+      '参照画像：Figma',
+      `Frame：${source.frameName || '（名称不明）'}`,
+      `取込日時：${formatReferenceSourceImportedAt(source.importedAt)}`,
+    ];
+  }
+  return ['参照画像：不明なソース'];
+});
+
+const isFigmaSource = computed(() => {
+  const r = props.reference;
+  return (
+    r?.status === 'current' &&
+    r.source?.type === 'figma'
+  );
+});
+
 const showAdd = computed(
   () =>
     props.editable &&
@@ -98,6 +154,18 @@ const showAdd = computed(
 
 const showReplaceDelete = computed(
   () => props.editable && persistedStatus.value === 'current',
+);
+
+const showFigmaImport = computed(
+  () =>
+    props.editable &&
+    (persistedStatus.value === 'missing' ||
+      persistedStatus.value === 'current') &&
+    (props.runtime.status === 'idle' || props.runtime.status === 'failed'),
+);
+
+const showFigmaReimport = computed(
+  () => props.editable && isFigmaSource.value,
 );
 
 const guidance = computed(() => {
@@ -124,6 +192,9 @@ const progressText = computed(() => {
   if (props.runtime.status === 'deleting') {
     return '削除中…';
   }
+  if (props.runtime.status === 'importing') {
+    return 'Figma 取り込み中…';
+  }
   return '';
 });
 
@@ -136,9 +207,16 @@ const failedText = computed(() => {
     return props.errorMessage;
   }
   if (props.runtime.status === 'failed') {
-    return props.runtime.operation === 'delete'
-      ? '前回の削除に失敗しました。'
-      : '前回のアップロードに失敗しました。';
+    if (props.runtime.operation === 'delete') {
+      return '前回の削除に失敗しました。';
+    }
+    if (
+      props.runtime.operation === 'import' ||
+      props.runtime.operation === 'reimport'
+    ) {
+      return '前回の Figma 取り込みに失敗しました。';
+    }
+    return '前回のアップロードに失敗しました。';
   }
   return '';
 });
@@ -148,8 +226,50 @@ watch(
   () => {
     uploadDialogOpen.value = false;
     deleteDialogOpen.value = false;
+    // viewport 切替は navigation 相当のため trigger へ focus しない
+    restoreFigmaFocusOnClose = false;
+    figmaTriggerEl.value = null;
+    if (figmaDialogOpen.value) {
+      emit('abort-figma');
+    }
+    figmaDialogOpen.value = false;
   },
 );
+
+onBeforeUnmount(() => {
+  panelDisposed = true;
+  restoreFigmaFocusOnClose = false;
+  figmaTriggerEl.value = null;
+});
+
+function rememberFigmaTrigger(event?: Event): void {
+  const target = event?.currentTarget;
+  figmaTriggerEl.value = target instanceof HTMLElement ? target : null;
+  restoreFigmaFocusOnClose = true;
+}
+
+/** close 後に開いた trigger へ focus。要素が消えていれば何もしない */
+function restoreFigmaTriggerFocus(): void {
+  if (panelDisposed || !restoreFigmaFocusOnClose) {
+    figmaTriggerEl.value = null;
+    return;
+  }
+  const el = figmaTriggerEl.value;
+  figmaTriggerEl.value = null;
+  if (!el || !el.isConnected) {
+    return;
+  }
+  void nextTick(() => {
+    if (panelDisposed || !el.isConnected) {
+      return;
+    }
+    try {
+      el.focus();
+    } catch {
+      // focus 失敗は機能エラーに伝播させない
+    }
+  });
+}
 
 function openUpload(): void {
   uploadMode.value = 'upload';
@@ -179,6 +299,30 @@ function openDelete(): void {
   deleteDialogOpen.value = true;
 }
 
+function openFigmaImport(event?: Event): void {
+  rememberFigmaTrigger(event);
+  const r = props.reference;
+  figmaDialogMode.value = 'import';
+  figmaExpectedRevision.value =
+    r?.status === 'current' ? r.imageRevision : null;
+  emit('clear-dialog-error');
+  emit('clear-figma-confirmation');
+  figmaDialogOpen.value = true;
+}
+
+function openFigmaReimport(event?: Event): void {
+  const r = props.reference;
+  if (!r || r.status !== 'current' || r.source?.type !== 'figma') {
+    return;
+  }
+  rememberFigmaTrigger(event);
+  figmaDialogMode.value = 'reimport';
+  figmaExpectedRevision.value = r.imageRevision;
+  emit('clear-dialog-error');
+  emit('clear-figma-confirmation');
+  figmaDialogOpen.value = true;
+}
+
 function onUploadSubmit(file: File): void {
   emit('upload', {
     file,
@@ -190,6 +334,30 @@ function onDeleteConfirm(): void {
   emit('delete', deleteExpectedRevision.value);
 }
 
+function onFigmaImportSubmit(payload: {
+  figmaUrl: string;
+  confirmWidthMismatch: boolean;
+}): void {
+  emit('figma-import', {
+    figmaUrl: payload.figmaUrl,
+    expectedImageRevision: figmaExpectedRevision.value,
+    confirmWidthMismatch: payload.confirmWidthMismatch,
+  });
+}
+
+function onFigmaReimportSubmit(payload: {
+  confirmWidthMismatch: boolean;
+}): void {
+  const rev = figmaExpectedRevision.value;
+  if (!rev) {
+    return;
+  }
+  emit('figma-reimport', {
+    expectedImageRevision: rev,
+    confirmWidthMismatch: payload.confirmWidthMismatch,
+  });
+}
+
 function closeUpload(): void {
   uploadDialogOpen.value = false;
 }
@@ -198,12 +366,21 @@ function closeDelete(): void {
   deleteDialogOpen.value = false;
 }
 
+function closeFigma(): void {
+  emit('abort-figma');
+  figmaDialogOpen.value = false;
+  restoreFigmaTriggerFocus();
+}
+
 /** 親から unchanged / validation keep を制御できるように公開 */
 defineExpose({
   closeUpload,
   closeDelete,
+  closeFigma,
   openUpload,
   openReplace,
+  openFigmaImport,
+  openFigmaReimport,
 });
 </script>
 
@@ -241,6 +418,26 @@ defineExpose({
           @click="openUpload"
         >
           参照画像を追加
+        </button>
+        <button
+          v-if="showFigmaImport"
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="reference-image-figma-import"
+          :disabled="actionsDisabled"
+          @click="openFigmaImport"
+        >
+          Figmaから取込
+        </button>
+        <button
+          v-if="showFigmaReimport"
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="reference-image-figma-reimport"
+          :disabled="actionsDisabled"
+          @click="openFigmaReimport"
+        >
+          Figmaから再取込
         </button>
         <button
           v-if="showReplaceDelete"
@@ -296,6 +493,19 @@ defineExpose({
     >
       {{ guidance }}
     </p>
+    <div
+      v-if="sourceLines.length"
+      class="reference-image-panel__source"
+      data-testid="reference-image-source"
+    >
+      <p
+        v-for="(line, index) in sourceLines"
+        :key="index"
+        class="reference-image-panel__source-line"
+      >
+        {{ line }}
+      </p>
+    </div>
     <p
       v-if="metaLine"
       class="reference-image-panel__meta"
@@ -332,5 +542,39 @@ defineExpose({
       @close="closeDelete"
       @confirm="onDeleteConfirm"
     />
+
+    <ReferenceImageFigmaImportDialog
+      v-if="figmaDialogOpen"
+      :mode="figmaDialogMode"
+      :screen-name="screenName"
+      :viewport="viewport"
+      :has-existing-reference="persistedStatus === 'current'"
+      :existing-is-figma="isFigmaSource"
+      :submitting="busy"
+      :server-error="dialogError"
+      :confirmation="figmaConfirmation"
+      @close="closeFigma"
+      @submit="onFigmaImportSubmit"
+      @submit-reimport="onFigmaReimportSubmit"
+      @url-change="emit('clear-figma-confirmation')"
+    />
   </div>
 </template>
+
+<style scoped>
+.reference-image-panel__source {
+  margin: 0.35rem 0;
+}
+
+.reference-image-panel__source-line {
+  margin: 0.15rem 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.reference-image-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+</style>

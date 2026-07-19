@@ -878,7 +878,7 @@ token / cookie は保存しない。
 - 同一 screenId+viewport の upload/delete/Figma は `SPEC_REFERENCE_IMAGE_IN_PROGRESS` で共有。
 - 成功後の manifest 更新は既存 watcher（API は build 非呼び出し）。
 - 詳細契約: [figma-frame-import.md](./figma-frame-import.md) §14。
-- Viewer UI / manifest の Figma source 表示は **7D-3**。
+- Viewer UI / manifest / GET status の browser-safe `source` 表示は **7D-3 実装済み**（`confirmWidthMismatch` 含む）。実 Figma live smoke は未検証。
 
 ---
 

@@ -95,7 +95,7 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
     try {
       writeDesignOnlyScreen(root, 'inquiry-input');
       const png = samplePng(120, 240);
-      const result = await importFigmaReferenceImage({
+      const pending = await importFigmaReferenceImage({
         rootDir: root,
         projectName: PROJECT,
         screenId: 'inquiry-input',
@@ -105,13 +105,32 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
         fetchImpl: figmaRoutes({ png, width: 1600, height: 3000 }),
         nowIso: () => '2026-07-19T00:00:00.000Z',
       });
-      expect(result.result).toBe('created');
-      expect(result.frame.frameName).toBe('Hero');
-      expect(result.sizeMismatch).toMatchObject({
-        code: 'SPEC_FIGMA_VIEWPORT_SIZE_MISMATCH',
-        frameWidth: 1600,
-        viewportWidth: 1440,
+      expect(pending.result).toBe('confirmation-required');
+      if (pending.result === 'confirmation-required') {
+        expect(pending.confirmation.code).toBe('SPEC_FIGMA_WIDTH_MISMATCH');
+        expect(pending.confirmation.frame.width).toBe(1600);
+      }
+
+      const result = await importFigmaReferenceImage({
+        rootDir: root,
+        projectName: PROJECT,
+        screenId: 'inquiry-input',
+        viewport: 'pc',
+        figmaUrl: `https://www.figma.com/design/${FILE_KEY}/Name?node-id=1-3`,
+        token: TOKEN,
+        confirmWidthMismatch: true,
+        fetchImpl: figmaRoutes({ png, width: 1600, height: 3000 }),
+        nowIso: () => '2026-07-19T00:00:00.000Z',
       });
+      expect(result.result).toBe('created');
+      if (result.result !== 'confirmation-required') {
+        expect(result.frame.frameName).toBe('Hero');
+        expect(result.sizeMismatch).toMatchObject({
+          code: 'SPEC_FIGMA_VIEWPORT_SIZE_MISMATCH',
+          frameWidth: 1600,
+          viewportWidth: 1440,
+        });
+      }
 
       const meta = readReferenceImageMetadataFile(
         referenceMetaPath({
@@ -131,6 +150,90 @@ describe('importFigmaReferenceImage / reimportFigmaReferenceImage', () => {
           importedAt: '2026-07-19T00:00:00.000Z',
           exportScale: 1,
         });
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('幅不一致で confirmWidthMismatch=false のとき export しない', async () => {
+    const root = makeTempRoot('jskim-figma-');
+    try {
+      writeDesignOnlyScreen(root, 'inquiry-input');
+      let imagesCalled = 0;
+      let downloadCalled = 0;
+      const fetchImpl = createMockFetch([
+        {
+          match: (u) => u.includes('/nodes'),
+          handle: () =>
+            jsonResponse(
+              defaultFrameNodesBody({
+                nodeId: NODE_ID,
+                name: 'Wide',
+                width: 1600,
+                height: 900,
+              }),
+            ),
+        },
+        {
+          match: (u) => u.includes('/images/'),
+          handle: () => {
+            imagesCalled += 1;
+            return jsonResponse(defaultImagesBody(NODE_ID, IMAGE_URL));
+          },
+        },
+        {
+          match: (u) => u.startsWith(IMAGE_URL),
+          handle: () => {
+            downloadCalled += 1;
+            return pngResponse(samplePng(10, 10));
+          },
+        },
+      ]);
+      const result = await importFigmaReferenceImage({
+        rootDir: root,
+        projectName: PROJECT,
+        screenId: 'inquiry-input',
+        viewport: 'pc',
+        fileKey: FILE_KEY,
+        nodeId: NODE_ID,
+        token: TOKEN,
+        fetchImpl,
+      });
+      expect(result.result).toBe('confirmation-required');
+      expect(imagesCalled).toBe(0);
+      expect(downloadCalled).toBe(0);
+      const metaPath = referenceMetaPath({
+        rootDir: root,
+        projectName: PROJECT,
+        screenId: 'inquiry-input',
+        viewport: 'pc',
+      });
+      expect(fs.existsSync(metaPath)).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('高さのみ不一致なら確認なしで保存する', async () => {
+    const root = makeTempRoot('jskim-figma-');
+    try {
+      writeDesignOnlyScreen(root, 'inquiry-input');
+      const png = samplePng(100, 200);
+      const result = await importFigmaReferenceImage({
+        rootDir: root,
+        projectName: PROJECT,
+        screenId: 'inquiry-input',
+        viewport: 'pc',
+        fileKey: FILE_KEY,
+        nodeId: NODE_ID,
+        token: TOKEN,
+        fetchImpl: figmaRoutes({ png, width: 1440, height: 3000 }),
+        nowIso: () => '2026-07-19T00:00:00.000Z',
+      });
+      expect(result.result).toBe('created');
+      if (result.result !== 'confirmation-required') {
+        expect(result.sizeMismatch?.frameHeight).toBe(3000);
       }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

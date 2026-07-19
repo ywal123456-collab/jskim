@@ -52,7 +52,13 @@ export {
   getReferenceImagePublicInfo,
   viewerReferenceImagePath,
   type ReferenceImagePublicInfo,
+  type BrowserSafeReferenceSource,
 } from './public-info.js';
+
+export {
+  toBrowserSafeReferenceSource,
+  resolveBrowserSafeReferenceSource,
+} from './browser-safe-source.js';
 
 export {
   resolveViewerReferenceImages,

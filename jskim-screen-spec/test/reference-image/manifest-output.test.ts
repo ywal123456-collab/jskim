@@ -103,6 +103,10 @@ describe('Reference Image manifest / output', () => {
         expect(d1.referenceImages.pc.imagePath).toMatch(
           /^reference-images\/d1\/pc\/reference-[0-9a-f]{64}\.png$/,
         );
+        expect(d1.referenceImages.pc.source).toEqual({ type: 'upload' });
+        const serialized = JSON.stringify(d1.referenceImages.pc);
+        expect(serialized).not.toMatch(/fileKey/);
+        expect(serialized).not.toMatch(/nodeId/);
       }
 
       const i1 = payload.screens.find((s) => s.id === 'i1')!;

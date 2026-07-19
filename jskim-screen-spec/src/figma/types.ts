@@ -49,6 +49,20 @@ export type FigmaViewportSizeMismatch = {
   viewportHeight: number;
 };
 
+/** 幅不一致の確認要求（fileKey/nodeId は含めない） */
+export type FigmaWidthMismatchConfirmation = {
+  code: 'SPEC_FIGMA_WIDTH_MISMATCH';
+  frame: {
+    frameName: string;
+    width: number;
+    height: number;
+  };
+  viewport: {
+    width: number;
+    height: number;
+  };
+};
+
 export type ImportFigmaReferenceImageOptions = {
   rootDir: string;
   projectName: string;
@@ -59,6 +73,11 @@ export type ImportFigmaReferenceImageOptions = {
   figmaUrl?: string;
   fileKey?: string;
   nodeId?: string;
+  /**
+   * Frame 幅が viewport 幅と異なるとき、false（既定）なら export 前に confirmation-required。
+   * true なら幅不一致でも保存を続行する。
+   */
+  confirmWidthMismatch?: boolean;
   /** 未指定時は process.env / env から解決 */
   token?: string;
   env?: NodeJS.ProcessEnv;
@@ -82,6 +101,7 @@ export type ReimportFigmaReferenceImageOptions = {
   screenId: string;
   viewport: ViewportId;
   expectedImageRevision: string;
+  confirmWidthMismatch?: boolean;
   token?: string;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
@@ -95,8 +115,17 @@ export type ReimportFigmaReferenceImageOptions = {
   nowIso?: () => string;
 };
 
-export type ImportFigmaReferenceImageResult = PutReferenceImageResult & {
+export type ImportFigmaReferenceImageStoredResult = PutReferenceImageResult & {
   frame: FigmaFrameInfo;
   sizeMismatch?: FigmaViewportSizeMismatch;
   rateLimit?: FigmaErrorDetails;
 };
+
+export type ImportFigmaReferenceImageConfirmationResult = {
+  result: 'confirmation-required';
+  confirmation: FigmaWidthMismatchConfirmation;
+};
+
+export type ImportFigmaReferenceImageResult =
+  | ImportFigmaReferenceImageStoredResult
+  | ImportFigmaReferenceImageConfirmationResult;

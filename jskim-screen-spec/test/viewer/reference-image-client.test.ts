@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   MAX_REFERENCE_IMAGE_UPLOAD_BYTES,
+  formatFigmaViewerError,
   validateReferenceImageFile,
   waitForReferenceImageManifest,
 } from '../../src/viewer/preview/reference-image-client.js';
@@ -186,5 +187,19 @@ describe('waitForReferenceImageManifest', () => {
     controller.abort();
     const ok = await promise;
     expect(ok).toBe(false);
+  });
+});
+
+describe('formatFigmaViewerError', () => {
+  it('429 は Retry-After 秒数を日本語メッセージに含める', () => {
+    const message = formatFigmaViewerError({
+      code: 'SPEC_FIGMA_RATE_LIMITED',
+      message: 'rate',
+      status: 429,
+      retryAfterSeconds: 12,
+    });
+    expect(message).toContain('利用上限');
+    expect(message).toContain('12');
+    expect(message).not.toContain('token');
   });
 });

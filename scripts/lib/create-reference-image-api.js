@@ -246,6 +246,7 @@ function createReferenceImageApi(options) {
         if (parsed.hasExpected) {
           opts.expectedImageRevision = parsed.expectedImageRevision;
         }
+        opts.confirmWidthMismatch = parsed.confirmWidthMismatch === true;
         return importFigmaReferenceImage(opts);
       },
     });
@@ -311,6 +312,7 @@ function createReferenceImageApi(options) {
           screenId: idCheck.screenId,
           viewport: idCheck.viewport,
           expectedImageRevision: parsed.expectedImageRevision,
+          confirmWidthMismatch: parsed.confirmWidthMismatch === true,
           signal,
           env: hooks.env,
           fetchImpl: hooks.fetchImpl,
@@ -1016,13 +1018,46 @@ function toReferenceResponse(info) {
       diagnosticCode: 'SPEC_REFERENCE_IMAGE_INVALID',
     };
   }
-  return {
+  /** @type {Record<string, unknown>} */
+  const out = {
     status: 'current',
     imageRevision: info.imageRevision,
     imageWidth: info.imageWidth,
     imageHeight: info.imageHeight,
     uploadedAt: info.uploadedAt,
   };
+  if (info.source && typeof info.source === 'object') {
+    out.source = projectBrowserSafeSource(info.source);
+  }
+  return out;
+}
+
+/**
+ * GET status / 成功レスポンス用。fileKey/nodeId を落とす。
+ * @param {unknown} source
+ */
+function projectBrowserSafeSource(source) {
+  if (!source || typeof source !== 'object') {
+    return { type: 'upload' };
+  }
+  const s = /** @type {Record<string, unknown>} */ (source);
+  if (s.type === 'upload') {
+    return { type: 'upload' };
+  }
+  if (s.type === 'figma') {
+    return {
+      type: 'figma',
+      frameName:
+        typeof s.frameName === 'string' && s.frameName.trim()
+          ? s.frameName.trim()
+          : '（名称不明）',
+      importedAt: typeof s.importedAt === 'string' ? s.importedAt : '',
+    };
+  }
+  if (s.type === 'unknown') {
+    return { type: 'unknown' };
+  }
+  return { type: 'upload' };
 }
 
 function toRuntimeResponse(runtime) {
