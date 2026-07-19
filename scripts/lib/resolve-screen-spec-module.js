@@ -170,6 +170,20 @@ async function resolveScreenSpecModule(options = {}) {
           'companion を最新の dist に rebuild してください。'
       );
     }
+    if (typeof mod.importFigmaReferenceImage !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に importFigmaReferenceImage がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
+    if (typeof mod.reimportFigmaReferenceImage !== 'function') {
+      throw new Error(
+        `[JSKim] ${COMPANION_PACKAGE_NAME} に reimportFigmaReferenceImage がありません。\n` +
+          `entry: ${entryPath}\n` +
+          'companion を最新の dist に rebuild してください。'
+      );
+    }
   }
 
   return {
@@ -188,6 +202,8 @@ async function resolveScreenSpecModule(options = {}) {
     deleteReferenceImage: mod.deleteReferenceImage,
     getReferenceImagePublicInfo: mod.getReferenceImagePublicInfo,
     getReferenceImageStatus: mod.getReferenceImageStatus,
+    importFigmaReferenceImage: mod.importFigmaReferenceImage,
+    reimportFigmaReferenceImage: mod.reimportFigmaReferenceImage,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };

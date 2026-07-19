@@ -68,6 +68,17 @@ describe('resolve-screen-spec-module', () => {
     assert.equal(path.normalize(mod.entryPath), path.normalize(COMPANION_DIST));
   });
 
+  it('requireReferenceImage で Figma Import API 用 entry を解決できる', async () => {
+    const mod = await resolveScreenSpecModule({
+      projectRoot: REPO_ROOT,
+      modulePath: COMPANION_DIST,
+      requireReferenceImage: true,
+    });
+    assert.equal(typeof mod.putReferenceImage, 'function');
+    assert.equal(typeof mod.importFigmaReferenceImage, 'function');
+    assert.equal(typeof mod.reimportFigmaReferenceImage, 'function');
+  });
+
   it('package 名解決（node_modules 経由）で companion を読み込める', async () => {
     const tempRoot = await fsp.mkdtemp(
       path.join(os.tmpdir(), 'jskim-linked-spec-')

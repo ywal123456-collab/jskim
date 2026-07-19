@@ -67,6 +67,8 @@ function createSpecDevRuntime(options = {}) {
     let putReferenceImage = options.putReferenceImage;
     let deleteReferenceImage = options.deleteReferenceImage;
     let getReferenceImagePublicInfo = options.getReferenceImagePublicInfo;
+    let importFigmaReferenceImage = options.importFigmaReferenceImage;
+    let reimportFigmaReferenceImage = options.reimportFigmaReferenceImage;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -120,6 +122,10 @@ function createSpecDevRuntime(options = {}) {
         deleteReferenceImage || companion.deleteReferenceImage;
       getReferenceImagePublicInfo =
         getReferenceImagePublicInfo || companion.getReferenceImagePublicInfo;
+      importFigmaReferenceImage =
+        importFigmaReferenceImage || companion.importFigmaReferenceImage;
+      reimportFigmaReferenceImage =
+        reimportFigmaReferenceImage || companion.reimportFigmaReferenceImage;
     }
 
     // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
@@ -149,6 +155,20 @@ function createSpecDevRuntime(options = {}) {
     }
     if (typeof getReferenceImagePublicInfo !== 'function') {
       getReferenceImagePublicInfo = () => ({ status: 'missing' });
+    }
+    if (typeof importFigmaReferenceImage !== 'function') {
+      importFigmaReferenceImage = async () => {
+        const err = new Error('Figma Import が利用できません。');
+        err.code = 'SPEC_FIGMA_INPUT_INVALID';
+        throw err;
+      };
+    }
+    if (typeof reimportFigmaReferenceImage !== 'function') {
+      reimportFigmaReferenceImage = async () => {
+        const err = new Error('Figma Reimport が利用できません。');
+        err.code = 'SPEC_FIGMA_INPUT_INVALID';
+        throw err;
+      };
     }
 
     if (options.skipInitialCollect !== true) {
@@ -224,9 +244,12 @@ function createSpecDevRuntime(options = {}) {
       putReferenceImage,
       deleteReferenceImage,
       getReferenceImagePublicInfo,
+      importFigmaReferenceImage,
+      reimportFigmaReferenceImage,
       loadScreenSpecProject,
       getPutHooks: options.getReferenceImagePutHooks,
       getDeleteHooks: options.getReferenceImageDeleteHooks,
+      getFigmaHooks: options.getFigmaHooks,
     });
 
     runtime = createWatchRuntime({

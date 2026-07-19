@@ -7,10 +7,19 @@ const {
   parseMultipartFormData,
   readRawBody,
 } = require('./parse-multipart-form-data');
+const {
+  parseFigmaImportBody,
+  parseFigmaReimportBody,
+  mapFigmaApiError,
+  toFigmaSuccessResponse,
+  assertNoSensitiveFigmaFields,
+} = require('./figma-reference-image-api');
 
 const REFERENCE_IMAGE_STATUS_PATH = '/_jskim/spec/reference-images/status';
 const REFERENCE_IMAGE_PATH_RE =
   /^\/_jskim\/spec\/reference-images\/([^/]+)\/([^/]+)\/?$/;
+const REFERENCE_IMAGE_FIGMA_PATH_RE =
+  /^\/_jskim\/spec\/reference-images\/([^/]+)\/([^/]+)\/(figma:import|figma:reimport)\/?$/;
 
 /** core の 20 MiB + multipart overhead */
 const MAX_REFERENCE_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -27,10 +36,12 @@ const REVISION_RE = /^sha256:[0-9a-f]{64}$/;
  *
  * PUT    /_jskim/spec/reference-images/{screenId}/{viewport}
  * DELETE /_jskim/spec/reference-images/{screenId}/{viewport}
+ * POST   /_jskim/spec/reference-images/{screenId}/{viewport}/figma:import
+ * POST   /_jskim/spec/reference-images/{screenId}/{viewport}/figma:reimport
  * GET    /_jskim/spec/reference-images/status?screenId=&viewport=
  *
- * 保存は companion core（put/delete）に委譲。API に別 queue は持たない。
- * 同一 key の重複は runtime registry で 409。
+ * 保存は companion core（put/delete / Figma import）に委譲。API に別 queue は持たない。
+ * 同一 key の重複は runtime registry で 409（upload / delete / Figma 共有）。
  *
  * @param {object} options
  */
@@ -41,11 +52,17 @@ function createReferenceImageApi(options) {
   const deleteReferenceImage = options.deleteReferenceImage;
   const getReferenceImagePublicInfo = options.getReferenceImagePublicInfo;
   const loadScreenSpecProject = options.loadScreenSpecProject;
+  const importFigmaReferenceImage = options.importFigmaReferenceImage;
+  const reimportFigmaReferenceImage = options.reimportFigmaReferenceImage;
   const getPutHooks =
     typeof options.getPutHooks === 'function' ? options.getPutHooks : () => undefined;
   const getDeleteHooks =
     typeof options.getDeleteHooks === 'function'
       ? options.getDeleteHooks
+      : () => undefined;
+  const getFigmaHooks =
+    typeof options.getFigmaHooks === 'function'
+      ? options.getFigmaHooks
       : () => undefined;
 
   /** @type {Map<string, object>} */
@@ -86,6 +103,34 @@ function createReferenceImageApi(options) {
       return handleStatus(req, res, method);
     }
 
+    const figmaMatch = pathname.match(REFERENCE_IMAGE_FIGMA_PATH_RE);
+    if (figmaMatch) {
+      let screenId;
+      let viewport;
+      try {
+        screenId = decodeURIComponent(figmaMatch[1]);
+        viewport = decodeURIComponent(figmaMatch[2]);
+      } catch {
+        sendJson(res, 400, {
+          code: 'SPEC_REFERENCE_IMAGE_INVALID_PATH',
+          message: 'パスが不正です。',
+        });
+        return true;
+      }
+      const action = figmaMatch[3];
+      if (method !== 'POST') {
+        sendJson(res, 405, {
+          code: 'SPEC_REFERENCE_IMAGE_METHOD_NOT_ALLOWED',
+          message: 'このHTTPメソッドは使用できません。',
+        });
+        return true;
+      }
+      if (action === 'figma:import') {
+        return handleFigmaImport(req, res, screenId, viewport);
+      }
+      return handleFigmaReimport(req, res, screenId, viewport);
+    }
+
     const pathMatch = pathname.match(REFERENCE_IMAGE_PATH_RE);
     if (!pathMatch) {
       return false;
@@ -115,6 +160,257 @@ function createReferenceImageApi(options) {
       code: 'SPEC_REFERENCE_IMAGE_METHOD_NOT_ALLOWED',
       message: 'このHTTPメソッドは使用できません。',
     });
+    return true;
+  }
+
+  /**
+   * Figma Import。read-only では API 自体が未登録（spec dev 以外）。
+   */
+  async function handleFigmaImport(req, res, screenId, viewport) {
+    if (typeof importFigmaReferenceImage !== 'function') {
+      sendJson(res, 500, {
+        code: 'SPEC_REFERENCE_IMAGE_FAILED',
+        message: 'Figma Import が利用できません。',
+      });
+      return true;
+    }
+
+    const body = await readSameOriginJsonBody(req, res);
+    if (body === undefined) {
+      return true;
+    }
+
+    const idCheck = parseScreenAndViewport(screenId, viewport);
+    if (!idCheck.ok) {
+      sendJson(res, 400, {
+        code: idCheck.code,
+        message: idCheck.message,
+      });
+      return true;
+    }
+
+    const resolved = resolveScreen(idCheck.screenId);
+    if (!resolved.ok) {
+      sendJson(res, resolved.statusCode, {
+        code: resolved.code,
+        message: resolved.message,
+      });
+      return true;
+    }
+
+    const parsed = parseFigmaImportBody(body);
+    if (!parsed.ok) {
+      sendJson(res, 400, {
+        code: parsed.code,
+        message: parsed.message,
+      });
+      return true;
+    }
+
+    return runFigmaMutation(req, res, {
+      screenId: idCheck.screenId,
+      viewport: idCheck.viewport,
+      operation: 'import',
+      run: async (signal) => {
+        const hooks = getFigmaHooks({
+          screenId: idCheck.screenId,
+          viewport: idCheck.viewport,
+          operation: 'import',
+        }) || {};
+        if (typeof hooks.awaitBarrier === 'function') {
+          await hooks.awaitBarrier();
+        }
+        /** @type {Record<string, unknown>} */
+        const opts = {
+          rootDir,
+          projectName,
+          screenId: idCheck.screenId,
+          viewport: idCheck.viewport,
+          signal,
+          env: hooks.env,
+          fetchImpl: hooks.fetchImpl,
+          sleep: hooks.sleep,
+          nowMs: hooks.nowMs,
+          nowIso: hooks.nowIso,
+          apiBaseUrl: hooks.apiBaseUrl,
+          operationDeadlineMs: hooks.operationDeadlineMs,
+          requestTimeoutMs: hooks.requestTimeoutMs,
+          downloadTimeoutMs: hooks.downloadTimeoutMs,
+        };
+        if (parsed.figmaUrl) {
+          opts.figmaUrl = parsed.figmaUrl;
+        } else {
+          opts.fileKey = parsed.fileKey;
+          opts.nodeId = parsed.nodeId;
+        }
+        if (parsed.hasExpected) {
+          opts.expectedImageRevision = parsed.expectedImageRevision;
+        }
+        return importFigmaReferenceImage(opts);
+      },
+    });
+  }
+
+  async function handleFigmaReimport(req, res, screenId, viewport) {
+    if (typeof reimportFigmaReferenceImage !== 'function') {
+      sendJson(res, 500, {
+        code: 'SPEC_REFERENCE_IMAGE_FAILED',
+        message: 'Figma Reimport が利用できません。',
+      });
+      return true;
+    }
+
+    const body = await readSameOriginJsonBody(req, res);
+    if (body === undefined) {
+      return true;
+    }
+
+    const idCheck = parseScreenAndViewport(screenId, viewport);
+    if (!idCheck.ok) {
+      sendJson(res, 400, {
+        code: idCheck.code,
+        message: idCheck.message,
+      });
+      return true;
+    }
+
+    const resolved = resolveScreen(idCheck.screenId);
+    if (!resolved.ok) {
+      sendJson(res, resolved.statusCode, {
+        code: resolved.code,
+        message: resolved.message,
+      });
+      return true;
+    }
+
+    const parsed = parseFigmaReimportBody(body);
+    if (!parsed.ok) {
+      sendJson(res, 400, {
+        code: parsed.code,
+        message: parsed.message,
+      });
+      return true;
+    }
+
+    return runFigmaMutation(req, res, {
+      screenId: idCheck.screenId,
+      viewport: idCheck.viewport,
+      operation: 'reimport',
+      run: async (signal) => {
+        const hooks = getFigmaHooks({
+          screenId: idCheck.screenId,
+          viewport: idCheck.viewport,
+          operation: 'reimport',
+        }) || {};
+        if (typeof hooks.awaitBarrier === 'function') {
+          await hooks.awaitBarrier();
+        }
+        return reimportFigmaReferenceImage({
+          rootDir,
+          projectName,
+          screenId: idCheck.screenId,
+          viewport: idCheck.viewport,
+          expectedImageRevision: parsed.expectedImageRevision,
+          signal,
+          env: hooks.env,
+          fetchImpl: hooks.fetchImpl,
+          sleep: hooks.sleep,
+          nowMs: hooks.nowMs,
+          nowIso: hooks.nowIso,
+          apiBaseUrl: hooks.apiBaseUrl,
+          operationDeadlineMs: hooks.operationDeadlineMs,
+          requestTimeoutMs: hooks.requestTimeoutMs,
+          downloadTimeoutMs: hooks.downloadTimeoutMs,
+        });
+      },
+    });
+  }
+
+  /**
+   * 同一 target の in-progress 共有・Abort・成功 projection。
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @param {{ screenId: string, viewport: string, operation: 'import'|'reimport', run: (signal: AbortSignal) => Promise<object> }} args
+   */
+  async function runFigmaMutation(req, res, args) {
+    const key = refKey(args.screenId, args.viewport);
+    if (inProgressKeys.has(key)) {
+      sendJson(res, 409, {
+        code: 'SPEC_REFERENCE_IMAGE_IN_PROGRESS',
+        message:
+          '同じ参照画像を更新または削除しています。完了後に再度実行してください。',
+      });
+      return true;
+    }
+
+    const requestId = crypto.randomBytes(8).toString('hex');
+    const startedAt = new Date().toISOString();
+    inProgressKeys.add(key);
+    runtimeByKey.set(key, {
+      status: 'importing',
+      requestId,
+      startedAt,
+      operation: args.operation,
+    });
+
+    const abortBridge = attachClientAbort(req, res);
+    let responded = false;
+
+    try {
+      const result = await args.run(abortBridge.signal);
+      if (abortBridge.signal.aborted || res.writableEnded) {
+        runtimeByKey.set(key, { status: 'idle' });
+        return true;
+      }
+
+      const payload = toFigmaSuccessResponse(
+        args.screenId,
+        args.viewport,
+        result,
+      );
+      assertNoSensitiveFigmaFields(payload);
+      runtimeByKey.set(key, { status: 'idle' });
+      responded = true;
+      sendJson(res, 200, payload);
+    } catch (err) {
+      if (
+        abortBridge.signal.aborted ||
+        (err &&
+          (err.code === 'SPEC_FIGMA_ABORTED' ||
+            err.name === 'AbortError')) ||
+        res.writableEnded
+      ) {
+        runtimeByKey.set(key, { status: 'idle' });
+        return true;
+      }
+
+      const mapped = mapFigmaApiError(err, mapReferenceError);
+      runtimeByKey.set(key, {
+        status: 'failed',
+        operation: args.operation,
+        failedAt: new Date().toISOString(),
+        error: {
+          code: mapped.code,
+          message: mapped.message,
+        },
+      });
+      if (!res.writableEnded && !res.headersSent) {
+        responded = true;
+        /** @type {Record<string, unknown>} */
+        const body = {
+          code: mapped.code,
+          message: mapped.message,
+        };
+        if (mapped.bodyExtra) {
+          Object.assign(body, mapped.bodyExtra);
+        }
+        sendJson(res, mapped.statusCode, body, mapped.headers);
+      }
+    } finally {
+      abortBridge.dispose(responded);
+      inProgressKeys.delete(key);
+    }
+
     return true;
   }
 
@@ -733,7 +1029,11 @@ function toRuntimeResponse(runtime) {
   if (!runtime || runtime.status === 'idle') {
     return { status: 'idle' };
   }
-  if (runtime.status === 'uploading' || runtime.status === 'deleting') {
+  if (
+    runtime.status === 'uploading' ||
+    runtime.status === 'deleting' ||
+    runtime.status === 'importing'
+  ) {
     return {
       status: runtime.status,
       requestId: runtime.requestId,
@@ -749,6 +1049,44 @@ function toRuntimeResponse(runtime) {
     };
   }
   return { status: 'idle' };
+}
+
+/**
+ * client 切断時に AbortSignal を立てる。正常応答後は abort しない。
+ * req の close は本文受信完了でも発火しうるため、res.close かつ未完了のみを見る。
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+function attachClientAbort(req, res) {
+  const controller = new AbortController();
+  let disposed = false;
+
+  function onClientGone() {
+    if (disposed || res.writableEnded) {
+      return;
+    }
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  }
+
+  req.on('aborted', onClientGone);
+  res.on('close', onClientGone);
+
+  return {
+    signal: controller.signal,
+    /**
+     * @param {boolean} [_responded]
+     */
+    dispose(_responded) {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      req.off('aborted', onClientGone);
+      res.off('close', onClientGone);
+    },
+  };
 }
 
 function mapReferenceError(err) {
@@ -948,12 +1286,30 @@ function readJsonBody(req, maxBytes) {
   });
 }
 
-function sendJson(res, statusCode, body) {
+/**
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} statusCode
+ * @param {object} body
+ * @param {Record<string, string>|undefined} [headers]
+ */
+function sendJson(res, statusCode, body, headers) {
   const payload = Buffer.from(JSON.stringify(body), 'utf8');
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Length', String(payload.length));
   res.setHeader('Cache-Control', 'no-store');
+  if (headers && typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers)) {
+      if (
+        typeof name === 'string' &&
+        typeof value === 'string' &&
+        /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name) &&
+        !/[\r\n]/.test(value)
+      ) {
+        res.setHeader(name, value);
+      }
+    }
+  }
   res.end(payload);
 }
 

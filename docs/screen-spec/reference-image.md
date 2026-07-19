@@ -863,7 +863,22 @@ token / cookie は保存しない。
 
 **詳細設計**: [figma-frame-import.md](./figma-frame-import.md)。
 
-**Phase 7D-1（core 実装済み）**: companion の `importFigmaReferenceImage` / `reimportFigmaReferenceImage` が既存 `putReferenceImage` へ委譲する。server-side `source.type = "figma"`（fileKey / nodeId / frameName / importedAt / exportScale）を meta.json に保存する。`schemaVersion` は `1.0` のまま。spec dev API / Viewer UI / manifest projection は未実装（7D-2 / 7D-3）。
+**Phase 7D-1（core 実装済み）**: companion の `importFigmaReferenceImage` / `reimportFigmaReferenceImage` が既存 `putReferenceImage` へ委譲する。server-side `source.type = "figma"`（fileKey / nodeId / frameName / importedAt / exportScale）を meta.json に保存する。`schemaVersion` は `1.0` のまま。
+
+**Phase 7D-2（spec dev API 実装済み）**:
+
+| Method | Path |
+|--------|------|
+| POST | `/_jskim/spec/reference-images/{screenId}/{viewport}/figma:import` |
+| POST | `/_jskim/spec/reference-images/{screenId}/{viewport}/figma:reimport` |
+
+- Import: JSON で `figmaUrl` **xor** `fileKey`+`nodeId`、任意/必須の `expectedImageRevision`（既存 PUT と同契約）。`token` フィールドは拒否。トークンは `JSKIM_FIGMA_TOKEN` のみ。
+- Reimport: `expectedImageRevision` のみ。server-side figma source を再 export。
+- read-only / serve: 既存どおり API 未登録。
+- 同一 screenId+viewport の upload/delete/Figma は `SPEC_REFERENCE_IMAGE_IN_PROGRESS` で共有。
+- 成功後の manifest 更新は既存 watcher（API は build 非呼び出し）。
+- 詳細契約: [figma-frame-import.md](./figma-frame-import.md) §14。
+- Viewer UI / manifest の Figma source 表示は **7D-3**。
 
 ---
 

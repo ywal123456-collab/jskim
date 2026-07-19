@@ -4,7 +4,8 @@
 対象ベース: `630b207` 時点の実装調査 + Phase 7D-0 設計  
 **Phase 7D-1**: companion core（`jskim-screen-spec/src/figma/`）を実装済み。
 entry: `importFigmaReferenceImage` / `reimportFigmaReferenceImage`。
-spec dev API（7D-2）と Viewer（7D-3）は未実装。
+**Phase 7D-2**: `jskim spec dev` の Figma Import / Reimport HTTP API を実装済み（本節 §14）。
+Viewer UI（7D-3）は未実装。
 
 凡例:
 
@@ -720,9 +721,12 @@ SPEC_FIGMA_RATE_LIMITED   … 分次 / 月次制限、Retry-After 超過
 
 ---
 
-## 14. API 案
+## 14. API（Phase 7D-2 実装）
 
-既存パス慣習: `/_jskim/spec/reference-images/...` および device-captures の `:collect` サフィックス（実装確認）。
+実装: `scripts/lib/create-reference-image-api.js` + `scripts/lib/figma-reference-image-api.js`。
+core は companion の `importFigmaReferenceImage` / `reimportFigmaReferenceImage` に委譲する。
+
+既存パス慣習（`:collect` と同様のアクションサフィックス）に合わせた最終 endpoint:
 
 ### 14-1. Import
 
@@ -730,13 +734,12 @@ SPEC_FIGMA_RATE_LIMITED   … 分次 / 月次制限、Retry-After 超過
 POST /_jskim/spec/reference-images/{screenId}/{viewport}/figma:import
 ```
 
-Request JSON 例:
+Request JSON（`figmaUrl` **xor** `fileKey`+`nodeId`）:
 
 ```json
 {
   "figmaUrl": "https://www.figma.com/design/AAA/Name?node-id=1-2",
-  "expectedImageRevision": "sha256:...",
-  "exportScale": 1
+  "expectedImageRevision": "sha256:..."
 }
 ```
 
@@ -746,25 +749,31 @@ Request JSON 例:
 {
   "fileKey": "AAA",
   "nodeId": "1:2",
-  "expectedImageRevision": null,
-  "exportScale": 1
+  "expectedImageRevision": null
 }
 ```
 
-- `missing`: `expectedImageRevision` 省略可。
-- `current`: 必須（既存 PUT と同契約）。
+- `missing`: `expectedImageRevision` 省略可（既存 PUT と同契約）。
+- `current`: 置換時は必須。
+- **拒否**: `token` / `JSKIM_FIGMA_TOKEN`、URL と直接入力の同時指定、`exportScale` / `frameName` / `importedAt` の client 指定。
+- トークンは **環境変数 `JSKIM_FIGMA_TOKEN` のみ**（request body / query 不可）。
+- `exportScale` は server 固定（core 既定値）。request では受け取らない。
 
-Success（browser 向け `source` は Viewer projection と同型。fileKey/nodeId を返さない）:
+Success（既存 PUT と同様に `referenceImage` をネスト。browser-safe `source` のみ）:
 
 ```json
 {
-  "result": "created" | "updated" | "unchanged",
+  "result": "created",
   "screenId": "...",
   "viewport": "pc",
-  "imageRevision": "sha256:...",
-  "imageWidth": 1440,
-  "imageHeight": 2000,
-  "uploadedAt": "...",
+  "referenceImage": {
+    "status": "current",
+    "imageRevision": "sha256:...",
+    "imageWidth": 1440,
+    "imageHeight": 2000,
+    "uploadedAt": "..."
+  },
+  "frame": { "frameName": "...", "width": 1440, "height": 2000 },
   "source": { "type": "figma", "frameName": "...", "importedAt": "..." },
   "warnings": [
     {
@@ -779,6 +788,8 @@ Success（browser 向け `source` は Viewer projection と同型。fileKey/node
 }
 ```
 
+レスポンスに含めない: `fileKey` / `nodeId` / 元 URL / token / signed download URL / 絶対パス / raw Figma body。
+
 ### 14-2. Reimport
 
 ```text
@@ -791,25 +802,31 @@ POST /_jskim/spec/reference-images/{screenId}/{viewport}/figma:reimport
 }
 ```
 
-- browser は fileKey/nodeId/URL を送らない。
+- browser は fileKey/nodeId/URL/`exportScale`/`frameName`/token を送らない（送ると 400）。
 - server が `meta.json` の `source.type === 'figma'` から fileKey/nodeId/exportScale を読む。
-- `source.type !== 'figma'` のときはエラー（例: `SPEC_FIGMA_SOURCE_MISSING` — コード名は実装時確定）。
+- `source.type !== 'figma'` または未登録: `SPEC_FIGMA_SOURCE_MISSING`（400）。
 
 ### 14-3. 共通
 
 | 状況 | HTTP |
 |------|------|
-| success | 200 |
-| unchanged | 200 + `result: "unchanged"` |
-| validation / token | 400 等（既存 JSON `{ code, message }` に合わせる。401/403 は原因固定しない） |
+| success / unchanged | 200 |
+| 入力不正 / token field | 400 `SPEC_FIGMA_INPUT_INVALID` 等 |
+| token 未設定 | 500 `SPEC_FIGMA_TOKEN_MISSING` |
+| unauthorized / forbidden | 401 / 403 |
+| file/node なし | 404 |
 | revision conflict | 409 `SPEC_REFERENCE_IMAGE_REVISION_CONFLICT` |
-| in progress | 409 `SPEC_REFERENCE_IMAGE_IN_PROGRESS` |
-| rate limit | 429 + `retryAfterSeconds` 等（§13） |
-| read-only（API 未登録） | 404 または既存の無効化方針に合わせる |
+| 同一 target 進行中 | 409 `SPEC_REFERENCE_IMAGE_IN_PROGRESS`（upload/delete と共有 lock） |
+| rate limit | 429 + 検証済み `Retry-After` / `retryAfterSeconds` / `planTier` / `rateLimitType` / HTTPS Figma `upgradeLink` |
+| timeout | 504 `SPEC_FIGMA_TIMEOUT` |
+| export/download 失敗 | 502 |
+| read-only（`jskim serve` 等） | Reference API 未登録のため endpoint 自体なし（既存方針） |
 
-runtime 状態（設計提案）: `idle` | `importing` | `failed`（既存 uploading と共有キーでもよい）。
+runtime: `idle` / `uploading` / `deleting` / **`importing`** / `failed`。Import と Reimport は同一 key。
 
-API は build を直接呼ばない（既存 Reference と同じ）。
+- client 切断時は `AbortSignal` を core へ渡し、lock を解放する。
+- API は build を直接呼ばない（`meta.json` watcher → BUILD_ONLY。既存 Reference と同じ）。
+- Viewer UI / manifest への Figma source projection は **7D-3**（本 Phase では未実装）。
 
 ---
 
