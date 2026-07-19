@@ -861,6 +861,8 @@ token / cookie は保存しない。
 
 `file version` / `etag` 等は Phase 7D で必要なら追加。初期 upload metadata に空の Figma フィールドを強制しない。
 
+**詳細設計（調査・API・段階分割）**: [figma-frame-import.md](./figma-frame-import.md)（Phase 7D-0）。現行コードの `source` は `upload` のみ受理する。
+
 ---
 
 ## 36. Device Capture 比較
