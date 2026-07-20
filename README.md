@@ -26,6 +26,8 @@ Nunjucks を使った汎用の静的 HTML ビルド環境です。
 
 `jskim spec dev` では、Figma の Frame を参照画像（Reference Image）として **Import / Reimport** できます（PAT + 環境変数 `JSKIM_FIGMA_TOKEN`。OAuth 未対応。`serve` / 読み取り専用 Viewer では不可）。手順・セキュリティ注意は companion の [jskim-screen-spec/README.md](jskim-screen-spec/README.md) を参照してください。
 
+`jskim spec dev` の Viewer では **機能（Feature Group）** の作成・編集・画面の所属変更ができます（working tree の `features.json` のみ更新。自動 stage/commit はしません。版管理へ反映するには `jskim spec version add` / `commit` が必要です）。`jskim spec build` / `serve` では hierarchy 表示のみで管理 UI はありません。
+
 Screen Spec（optional）の開発用流れ:
 
 ```bash

@@ -28,9 +28,27 @@ export type PersistScreenFeaturesOptions = {
   projectName: string;
   document: ScreenFeatureFile;
   knownScreenIds: readonly string[];
+  /** 指定時は optimistic concurrency を適用する（null = ファイル未存在） */
+  expectedRevision?: string | null;
 };
 
 export type PersistScreenFeaturesResult = {
   status: 'created' | 'updated' | 'unchanged';
   relativePath: string;
+  revision: string | null;
+};
+
+export type FeatureMutationStatus =
+  | 'created'
+  | 'updated'
+  | 'deleted'
+  | 'unchanged';
+
+export type FeatureMutationResult = {
+  status: FeatureMutationStatus;
+  revision: string | null;
+  features: ScreenFeature[];
+  ungroupedScreenIds: string[];
+  /** delete 時: Ungrouped へ移動した screenId */
+  movedScreenIds?: string[];
 };

@@ -49,6 +49,10 @@ describe('classifyScreenSpecWatchPath', () => {
     expect(classify('spec/sample/src/theme/preview.css')).toBe('BUILD_ONLY');
   });
 
+  it('features.json は BUILD_ONLY', () => {
+    expect(classify('spec/sample/src/features.json')).toBe('BUILD_ONLY');
+  });
+
   it('snapshots / resources / dist は IGNORE、captures/references meta.json は BUILD_ONLY', () => {
     expect(classify('spec/sample/src/snapshots/crud-create/default.html')).toBe(
       'IGNORE',

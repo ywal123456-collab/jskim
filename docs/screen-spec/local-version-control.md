@@ -1029,8 +1029,9 @@ hash は golden bytes を検討。Excel は semantic assertion 優先。
 
 | 項目 | 内容 |
 |------|------|
-| 範囲 | Project→Feature→Screen、移動/reorder |
-| 除外 | Excel、Remote、merge |
+| 範囲 | Project→Feature→Screen sidebar、`/_jskim/spec/features` mutation API（spec dev のみ）、`機能管理` dialog、optimistic concurrency + project lock |
+| 契約 | Feature 変更は working tree のみ。自動 stage/commit なし。Feature 削除は Screen 削除ではない |
+| 除外 | Excel、Remote、merge、Viewer 版 mutation UI |
 
 ### Phase 7E-6 — local merge + conflict / abort / continue
 

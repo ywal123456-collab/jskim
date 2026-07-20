@@ -4,3 +4,5 @@ spec/*/dist/
 
 # Screen Spec ローカル版管理リポジトリ（利用者 Git には含めない）
 spec/*/.jskim/version/
+# Screen Spec Feature mutation lock（利用者 Git には含めない）
+spec/*/.jskim/features.lock

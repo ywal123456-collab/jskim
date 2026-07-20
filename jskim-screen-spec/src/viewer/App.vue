@@ -4,7 +4,9 @@ import { RouterView } from 'vue-router';
 import SpecHeader from './components/SpecHeader.vue';
 import SpecSidebar from './components/SpecSidebar.vue';
 import CreateScreenDialog from './components/CreateScreenDialog.vue';
+import FeatureManagementDialog from './components/FeatureManagementDialog.vue';
 import { getSpecEditBootstrap } from './editing/types';
+import { useFeatureManagement } from './features/use-feature-management';
 import type { ViewerManifest } from './types';
 
 const props = defineProps<{
@@ -15,6 +17,7 @@ provide('manifest', computed(() => props.manifest));
 
 const editingEnabled = Boolean(getSpecEditBootstrap());
 const createDialogOpen = ref(false);
+const featureManagement = useFeatureManagement();
 
 function openCreateScreen(): void {
   if (!editingEnabled) {
@@ -27,8 +30,17 @@ function closeCreateScreen(): void {
   createDialogOpen.value = false;
 }
 
+async function openFeatureManagement(): Promise<void> {
+  await featureManagement.openDialog();
+}
+
+function closeFeatureManagement(): void {
+  featureManagement.closeDialog();
+}
+
 provide('editingEnabled', editingEnabled);
 provide('openCreateScreen', openCreateScreen);
+provide('openFeatureManagement', openFeatureManagement);
 </script>
 
 <template>
@@ -41,5 +53,11 @@ provide('openCreateScreen', openCreateScreen);
       </main>
     </div>
     <CreateScreenDialog v-if="createDialogOpen" @close="closeCreateScreen" />
+    <FeatureManagementDialog
+      v-if="featureManagement.open.value"
+      :management="featureManagement"
+      :screens="manifest.screens"
+      @close="closeFeatureManagement"
+    />
   </div>
 </template>

@@ -341,6 +341,15 @@ describe('Version History Viewer E2E', () => {
       listBrowserVersionFeatures: companion.listBrowserVersionFeatures,
       listBrowserVersionBranches: companion.listBrowserVersionBranches,
       listBrowserVersionTags: companion.listBrowserVersionTags,
+      getScreenFeatureWorkingState: companion.getScreenFeatureWorkingState,
+      createScreenFeature: companion.createScreenFeature,
+      updateScreenFeature: companion.updateScreenFeature,
+      deleteScreenFeature: companion.deleteScreenFeature,
+      reorderScreenFeatures: companion.reorderScreenFeatures,
+      moveScreenToFeature: companion.moveScreenToFeature,
+      reorderFeatureScreens: companion.reorderFeatureScreens,
+      moveFeatureDirection: companion.moveFeatureDirection,
+      moveScreenFeatureDirection: companion.moveScreenFeatureDirection,
     });
     await runtime.start();
     await companion.buildScreenSpecViewer({

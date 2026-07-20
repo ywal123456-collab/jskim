@@ -74,7 +74,8 @@ export function classifyScreenSpecWatchPath(
       underSpec === 'src/data' ||
       underSpec.startsWith('src/data/') ||
       underSpec === 'src/theme' ||
-      underSpec.startsWith('src/theme/')
+      underSpec.startsWith('src/theme/') ||
+      underSpec === 'src/features.json'
     ) {
       return 'BUILD_ONLY';
     }

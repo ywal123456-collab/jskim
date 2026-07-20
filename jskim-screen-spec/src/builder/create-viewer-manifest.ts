@@ -26,6 +26,8 @@ import {
   type ReferenceImageOutputFile,
   type ViewerReferenceImages,
 } from '../reference-image/manifest-references.js';
+import type { BrowserSafeFeatureManifest } from '../features/browser-safe-features.js';
+import { projectBrowserSafeFeatureManifest } from '../features/browser-safe-features.js';
 
 export type ViewerInteraction = {
   itemId: string;
@@ -92,6 +94,13 @@ export type ViewerScreenData = {
   referenceImages?: ViewerReferenceImages;
 };
 
+export type ViewerManifestFeature = {
+  featureId: string;
+  name: string;
+  displayOrder: number;
+  screenIds: string[];
+};
+
 export type ViewerManifest = {
   schemaVersion: string;
   projectName: string;
@@ -108,6 +117,10 @@ export type ViewerManifest = {
     hasReferenceImage: boolean;
     hasAnyPreview: boolean;
   }>;
+  /** Feature が 1 件以上ある場合のみ付与 */
+  features?: ViewerManifestFeature[];
+  /** Feature hierarchy 表示時のみ付与 */
+  ungroupedScreenIds?: string[];
 };
 
 export type CreatedViewerPayload = {
@@ -360,6 +373,8 @@ export function createViewerManifest(options: {
   resourceFiles?: Map<string, LoadedResourceFile>;
   /** Device Capture 解決用。未指定時は deviceCaptures を付けない */
   rootDir?: string;
+  /** Feature hierarchy（browser-safe）。空配列の場合は manifest に含めない */
+  featureManifest?: BrowserSafeFeatureManifest | null;
 }): CreatedViewerPayload {
   const {
     projectName,
@@ -507,6 +522,13 @@ export function createViewerManifest(options: {
       hasReferenceImage: screen.hasReferenceImage,
       hasAnyPreview: screen.hasAnyPreview,
     })),
+    ...(options.featureManifest &&
+    options.featureManifest.features.length > 0
+      ? {
+          features: options.featureManifest.features,
+          ungroupedScreenIds: options.featureManifest.ungroupedScreenIds,
+        }
+      : {}),
   };
 
   return {

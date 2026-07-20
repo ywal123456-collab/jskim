@@ -313,7 +313,6 @@ describe('version-history-api integration', () => {
           `/_jskim/spec/version/diff?to=${ctx.second.commitHash}`,
           '/_jskim/spec/version/branches',
           '/_jskim/spec/version/tags',
-          '/_jskim/spec/features',
         ];
 
         const bodies = [];

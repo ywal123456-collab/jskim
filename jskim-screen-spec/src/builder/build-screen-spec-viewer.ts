@@ -4,6 +4,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build as viteBuild } from 'vite';
 import { loadScreenSpecProject } from './load-screen-spec-project.js';
 import { createViewerManifest } from './create-viewer-manifest.js';
+import { loadScreenFeatures } from '../features/load-features.js';
+import { projectBrowserSafeFeatureManifest } from '../features/browser-safe-features.js';
 
 export type BuildScreenSpecViewerOptions = {
   rootDir: string;
@@ -33,6 +35,19 @@ export async function buildScreenSpecViewer(
 
   // 0 画面（Description/Source ともに無い）でも viewer は空 manifest として build する。
   const registeredScreenIds = new Set(project.screens.map((s) => s.screenId));
+  const knownScreenIds = project.screens.map((s) => s.screenId);
+  const loadedFeatures = loadScreenFeatures({
+    rootDir,
+    projectName,
+    knownScreenIds,
+  });
+  const featureManifest =
+    loadedFeatures.features.length > 0
+      ? projectBrowserSafeFeatureManifest({
+          features: loadedFeatures.features,
+          ungroupedScreenIds: loadedFeatures.ungroupedScreenIds,
+        })
+      : null;
   const payload = createViewerManifest({
     projectName,
     base,
@@ -40,6 +55,7 @@ export async function buildScreenSpecViewer(
     registeredScreenIds,
     resourceFiles: project.resources?.files,
     rootDir,
+    featureManifest,
   });
 
   const pkgRoot = packageRootDir();

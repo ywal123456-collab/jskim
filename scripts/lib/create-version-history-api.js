@@ -37,7 +37,6 @@ function createVersionHistoryApi(options) {
     'listBrowserVersionRevisions',
     'getBrowserVersionRevisionDetail',
     'getBrowserVersionRevisionDiff',
-    'listBrowserVersionFeatures',
     'listBrowserVersionBranches',
     'listBrowserVersionTags',
   ];
@@ -56,13 +55,6 @@ function createVersionHistoryApi(options) {
   async function handleRequest(req, res, meta) {
     const pathname = meta.pathname || '';
     const method = (meta.method || req.method || 'GET').toUpperCase();
-
-    if (pathname === FEATURES_API_PATH) {
-      if (method !== 'GET') {
-        return sendMethodNotAllowed(res);
-      }
-      return handleFeatures(res);
-    }
 
     if (!pathname.startsWith(VERSION_API_PREFIX)) {
       return false;
@@ -132,16 +124,6 @@ function createVersionHistoryApi(options) {
   function handleStatus(res) {
     try {
       const body = facade.getBrowserVersionStatus({ rootDir, projectName });
-      sendJson(res, 200, body);
-    } catch (err) {
-      sendMappedError(res, err);
-    }
-    return true;
-  }
-
-  function handleFeatures(res) {
-    try {
-      const body = facade.listBrowserVersionFeatures({ rootDir, projectName });
       sendJson(res, 200, body);
     } catch (err) {
       sendMappedError(res, err);

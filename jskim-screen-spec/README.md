@@ -592,19 +592,23 @@ spec/sample/dist/
    └─ theme/preview.css
 ```
 
-## Feature Group / ローカル版管理（Phase 7E-1〜7E-3）
+## Feature Group / ローカル版管理（Phase 7E-1〜7E-5）
 
-domain API のみ実装済みです（**ユーザー向け CLI / Viewer UI / Revision API は未提供**）。
+`spec dev` では Feature Group の **閲覧・編集**（`機能管理` dialog）と、static build では **hierarchy 表示のみ** を提供します。Feature 変更は working tree のみで、`jskim spec version add --features` / `commit` が必要です。
 
 | API | 役割 |
 |-----|------|
 | `loadScreenFeatures` / `persistScreenFeatures` / `validateScreenFeatureFile` | `spec/{project}/src/features.json` |
+| `getScreenFeatureWorkingState` / `createScreenFeature` / … | mutation domain（revision + lock） |
+| `GET/POST/PATCH/DELETE /_jskim/spec/features` | spec dev mutation API |
 | `initVersionRepository` | `spec/{project}/.jskim/version/` の metadata 初期化（commit なし） |
 | object / snapshot / status / stage | 7E-1 / 7E-2 |
 | author / commit / log / branch / tag / checkout / revert / fsck / recovery | 7E-3 |
+| read-only Revision API / Viewer 改訂履歴 modal | 7E-4B |
 
-未実装: Viewer mutation UI、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
-author email / Figma `fileKey` / `nodeId` は Revision API・Viewer に露出しません（CLI/repository には保持）。
+未実装: Viewer 版 mutation UI、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
+author email / Figma `fileKey` / `nodeId` は Revision/Feature API・Viewer に露出しません（CLI/repository には保持）。
+Feature mutation lock は `spec/{project}/.jskim/features.lock`（gitignore 対象）。
 
 詳細契約は `docs/screen-spec/local-version-control.md` を参照してください。
 

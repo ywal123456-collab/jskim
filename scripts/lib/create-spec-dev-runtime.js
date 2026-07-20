@@ -14,6 +14,7 @@ const { createDescriptionEditApi } = require('./create-description-edit-api');
 const { createDeviceCaptureApi } = require('./create-device-capture-api');
 const { createReferenceImageApi } = require('./create-reference-image-api');
 const { createVersionHistoryApi } = require('./create-version-history-api');
+const { createFeatureApi } = require('./create-feature-api');
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -78,6 +79,15 @@ function createSpecDevRuntime(options = {}) {
     let listBrowserVersionFeatures = options.listBrowserVersionFeatures;
     let listBrowserVersionBranches = options.listBrowserVersionBranches;
     let listBrowserVersionTags = options.listBrowserVersionTags;
+    let getScreenFeatureWorkingState = options.getScreenFeatureWorkingState;
+    let createScreenFeature = options.createScreenFeature;
+    let updateScreenFeature = options.updateScreenFeature;
+    let deleteScreenFeature = options.deleteScreenFeature;
+    let reorderScreenFeatures = options.reorderScreenFeatures;
+    let moveScreenToFeature = options.moveScreenToFeature;
+    let reorderFeatureScreens = options.reorderFeatureScreens;
+    let moveFeatureDirection = options.moveFeatureDirection;
+    let moveScreenFeatureDirection = options.moveScreenFeatureDirection;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -151,6 +161,24 @@ function createSpecDevRuntime(options = {}) {
         listBrowserVersionBranches || companion.listBrowserVersionBranches;
       listBrowserVersionTags =
         listBrowserVersionTags || companion.listBrowserVersionTags;
+      getScreenFeatureWorkingState =
+        getScreenFeatureWorkingState || companion.getScreenFeatureWorkingState;
+      createScreenFeature =
+        createScreenFeature || companion.createScreenFeature;
+      updateScreenFeature =
+        updateScreenFeature || companion.updateScreenFeature;
+      deleteScreenFeature =
+        deleteScreenFeature || companion.deleteScreenFeature;
+      reorderScreenFeatures =
+        reorderScreenFeatures || companion.reorderScreenFeatures;
+      moveScreenToFeature =
+        moveScreenToFeature || companion.moveScreenToFeature;
+      reorderFeatureScreens =
+        reorderFeatureScreens || companion.reorderFeatureScreens;
+      moveFeatureDirection =
+        moveFeatureDirection || companion.moveFeatureDirection;
+      moveScreenFeatureDirection =
+        moveScreenFeatureDirection || companion.moveScreenFeatureDirection;
     }
 
     // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
@@ -302,6 +330,40 @@ function createSpecDevRuntime(options = {}) {
           })
         : null;
 
+    const featureEditApi =
+      typeof getScreenFeatureWorkingState === 'function' &&
+      typeof createScreenFeature === 'function' &&
+      typeof updateScreenFeature === 'function' &&
+      typeof deleteScreenFeature === 'function' &&
+      typeof reorderScreenFeatures === 'function' &&
+      typeof moveScreenToFeature === 'function' &&
+      typeof reorderFeatureScreens === 'function'
+        ? createFeatureApi({
+            rootDir: workspaceRoot,
+            projectName,
+            host,
+            port,
+            listScreenIds: () => {
+              const loaded = loadScreenSpecProject({
+                rootDir: workspaceRoot,
+                projectName,
+              });
+              return loaded.screens.map((s) => s.screenId);
+            },
+            facade: {
+              getScreenFeatureWorkingState,
+              createScreenFeature,
+              updateScreenFeature,
+              deleteScreenFeature,
+              reorderScreenFeatures,
+              moveScreenToFeature,
+              reorderFeatureScreens,
+              moveFeatureDirection,
+              moveScreenFeatureDirection,
+            },
+          })
+        : null;
+
     runtime = createWatchRuntime({
       mode: 'dev',
       workspaceRoot,
@@ -319,10 +381,12 @@ function createSpecDevRuntime(options = {}) {
       injectSpecLiveReload: options.injectSpecLiveReload !== false,
       injectDescriptionEditing: options.injectDescriptionEditing !== false,
       injectVersionHistory: options.injectVersionHistory !== false,
+      injectFeatureEditing: options.injectFeatureEditing !== false,
       descriptionEditApi,
       deviceCaptureApi,
       referenceImageApi,
       versionHistoryApi,
+      featureEditApi,
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);

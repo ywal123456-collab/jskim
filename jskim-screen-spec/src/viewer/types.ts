@@ -22,6 +22,13 @@ export type ReferenceImageManifestEntry =
       source?: BrowserSafeReferenceSource;
     };
 
+export type ManifestFeature = {
+  featureId: string;
+  name: string;
+  displayOrder: number;
+  screenIds: string[];
+};
+
 export type ManifestScreen = {
   id: string;
   name: string;
@@ -40,6 +47,8 @@ export type ViewerManifest = {
   projectName: string;
   base: string;
   screens: ManifestScreen[];
+  features?: ManifestFeature[];
+  ungroupedScreenIds?: string[];
 };
 
 export type ScreenItem = {

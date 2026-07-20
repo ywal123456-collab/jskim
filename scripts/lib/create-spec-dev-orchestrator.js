@@ -246,8 +246,21 @@ function createSpecDevOrchestrator(options) {
       'src',
       'references'
     );
+    const featuresFile = path.join(
+      workspaceRoot,
+      'spec',
+      projectName,
+      'src',
+      'features.json',
+    );
 
-    const watchRoots = [dataDir, themeDir, capturesDir, referencesDir];
+    const watchRoots = [
+      dataDir,
+      themeDir,
+      capturesDir,
+      referencesDir,
+      featuresFile,
+    ];
 
     metadataWatcher = chokidar.watch(watchRoots, {
       ignoreInitial: true,

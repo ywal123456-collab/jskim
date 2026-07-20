@@ -11,6 +11,7 @@ const {
   VERSION_API_PREFIX,
   FEATURES_API_PATH,
 } = require('../scripts/lib/create-version-history-api');
+const { createFeatureApi } = require('../scripts/lib/create-feature-api');
 const {
   serializeInlineScriptJson,
 } = require('../scripts/lib/serialize-inline-script-json');
@@ -71,10 +72,6 @@ function makeFacade(overrides = {}) {
       itemChanges: [],
       assetChanges: [],
       truncated: false,
-    }),
-    listBrowserVersionFeatures: () => ({
-      features: [],
-      ungroupedScreenIds: [],
     }),
     listBrowserVersionBranches: () => [],
     listBrowserVersionTags: () => [],
@@ -143,7 +140,7 @@ function request(port, options) {
 }
 
 describe('createVersionHistoryApi unit', () => {
-  it('GET status / features と header / 405 を返す', async () => {
+  it('GET status と header / 405 を返す（features は Feature API へ移管）', async () => {
     const api = createVersionHistoryApi({
       rootDir: path.join(os.tmpdir(), 'jskim-vh-unit'),
       projectName: 'demo',
@@ -163,8 +160,7 @@ describe('createVersionHistoryApi unit', () => {
       assert.equal(status.json.initialized, false);
 
       const features = await request(port, { path: FEATURES_API_PATH });
-      assert.equal(features.status, 200);
-      assert.deepEqual(features.json.features, []);
+      assert.equal(features.status, 404);
 
       const post = await request(port, {
         path: `${VERSION_API_PREFIX}/status`,
@@ -174,6 +170,109 @@ describe('createVersionHistoryApi unit', () => {
       assert.equal(post.headers.allow, 'GET');
       assert.equal(post.json.code, 'SPEC_VERSION_METHOD_NOT_ALLOWED');
     });
+  });
+
+  it('Version route は正常で features ownership は Feature API 専用', async () => {
+    const versionApi = createVersionHistoryApi({
+      rootDir: path.join(os.tmpdir(), 'jskim-vh-unit'),
+      projectName: 'demo',
+      facade: makeFacade(),
+    });
+    const featureApi = createFeatureApi({
+      rootDir: path.join(os.tmpdir(), 'jskim-feat-unit'),
+      projectName: 'demo',
+      host: '127.0.0.1',
+      port: 0,
+      listScreenIds: () => ['alpha'],
+      facade: {
+        getScreenFeatureWorkingState: () => ({
+          revision: null,
+          sourceExists: false,
+          features: [],
+          ungroupedScreenIds: ['alpha'],
+        }),
+        createScreenFeature: async () => {
+          throw new Error('not used');
+        },
+        updateScreenFeature: async () => {
+          throw new Error('not used');
+        },
+        deleteScreenFeature: async () => {
+          throw new Error('not used');
+        },
+        reorderScreenFeatures: async () => {
+          throw new Error('not used');
+        },
+        moveScreenToFeature: async () => {
+          throw new Error('not used');
+        },
+        reorderFeatureScreens: async () => {
+          throw new Error('not used');
+        },
+        moveFeatureDirection: async () => {
+          throw new Error('not used');
+        },
+        moveScreenFeatureDirection: async () => {
+          throw new Error('not used');
+        },
+      },
+    });
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://127.0.0.1');
+      const meta = {
+        pathname: url.pathname,
+        method: req.method || 'GET',
+      };
+      if (await featureApi.handleRequest(req, res, meta)) return;
+      if (await versionApi.handleRequest(req, res, meta)) return;
+      res.statusCode = 404;
+      res.end('not found');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    try {
+      const versionRoutes = [
+        `${VERSION_API_PREFIX}/status`,
+        `${VERSION_API_PREFIX}/revisions`,
+        `${VERSION_API_PREFIX}/branches`,
+        `${VERSION_API_PREFIX}/tags`,
+      ];
+      for (const route of versionRoutes) {
+        const res = await request(port, { path: route });
+        assert.equal(res.status, 200, route);
+        assert.equal(res.headers['cache-control'], 'no-store', route);
+        assert.equal(res.headers['x-content-type-options'], 'nosniff', route);
+      }
+
+      const features = await request(port, { path: FEATURES_API_PATH });
+      assert.equal(features.status, 200);
+      assert.equal(features.headers['cache-control'], 'no-store');
+      assert.equal(features.headers['x-content-type-options'], 'nosniff');
+      assert.equal(
+        features.headers['content-type'],
+        'application/json; charset=utf-8',
+      );
+
+      const versionOnly = createVersionHistoryApi({
+        rootDir: path.join(os.tmpdir(), 'jskim-vh-only'),
+        projectName: 'demo',
+        facade: makeFacade(),
+      });
+      await withApiServer(versionOnly, async (soloPort) => {
+        const delegated = await request(soloPort, { path: FEATURES_API_PATH });
+        assert.equal(delegated.status, 404);
+        assert.equal(delegated.text, 'not found');
+      });
+
+      const versionFeaturesPath = await request(port, {
+        path: `${VERSION_API_PREFIX}/features`,
+      });
+      assert.equal(versionFeaturesPath.status, 404);
+      assert.equal(versionFeaturesPath.json.code, 'SPEC_VERSION_ROUTE_NOT_FOUND');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it('不正 query と facade エラーを map する', async () => {

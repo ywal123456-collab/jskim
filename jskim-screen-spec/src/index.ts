@@ -136,6 +136,19 @@ export {
   persistScreenFeatures,
   validateScreenFeatureFile,
   FeatureError,
+  getScreenFeatureWorkingState,
+  readFeaturesFileRevision,
+  withFeatureMutationLock,
+  createScreenFeature,
+  updateScreenFeature,
+  deleteScreenFeature,
+  reorderScreenFeatures,
+  moveScreenToFeature,
+  reorderFeatureScreens,
+  moveFeatureDirection,
+  moveScreenFeatureDirection,
+  projectBrowserSafeFeatureState,
+  projectBrowserSafeFeatureManifest,
 } from './features/index.js';
 export type {
   ScreenFeature,
@@ -143,6 +156,11 @@ export type {
   LoadScreenFeaturesResult,
   PersistScreenFeaturesResult,
   FeatureErrorCode,
+  ScreenFeatureWorkingState,
+  FeatureMutationResult,
+  FeatureOperationContext,
+  BrowserSafeFeatureState,
+  BrowserSafeFeatureManifest,
 } from './features/index.js';
 export {
   initVersionRepository,

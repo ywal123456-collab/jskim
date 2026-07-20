@@ -19,6 +19,9 @@ const {
 const {
   injectVersionHistoryBootstrap,
 } = require('./create-version-history-api');
+const {
+  injectFeatureEditingBootstrap,
+} = require('./create-feature-api');
 const { formatListenError } = require('../commands/serve-errors');
 const { classifyReload } = require('./classify-reload');
 const {
@@ -93,8 +96,14 @@ function createWatchRuntime(options) {
     typeof options.versionHistoryApi.handleRequest === 'function'
       ? options.versionHistoryApi
       : null;
+  const featureEditApi =
+    options.featureEditApi &&
+    typeof options.featureEditApi.handleRequest === 'function'
+      ? options.featureEditApi
+      : null;
   const injectDescriptionEditing = Boolean(options.injectDescriptionEditing);
   const injectVersionHistory = Boolean(options.injectVersionHistory);
+  const injectFeatureEditing = Boolean(options.injectFeatureEditing);
 
   /** @type {string|undefined} */
   let selectedProjectName = options.projectName;
@@ -216,6 +225,9 @@ function createWatchRuntime(options) {
         if (injectVersionHistory) {
           next = injectVersionHistoryBootstrap(next);
         }
+        if (injectFeatureEditing) {
+          next = injectFeatureEditingBootstrap(next);
+        }
         return next;
       },
     });
@@ -244,6 +256,12 @@ function createWatchRuntime(options) {
         if (
           referenceImageApi &&
           (await referenceImageApi.handleRequest(req, res, meta))
+        ) {
+          return true;
+        }
+        if (
+          featureEditApi &&
+          (await featureEditApi.handleRequest(req, res, meta))
         ) {
           return true;
         }

@@ -94,6 +94,7 @@ describe('create-jskim', () => {
     assert.match(gitignore, /node_modules\//);
     assert.match(gitignore, /dist\//);
     assert.match(gitignore, /spec\/\*\/\.jskim\/version\//);
+    assert.match(gitignore, /spec\/\*\/\.jskim\/features\.lock/);
   });
 
   it('対話入力でプロジェクトを作成する', async () => {
