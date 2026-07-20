@@ -33,6 +33,12 @@ describe('package public API (7E-1)', () => {
     expect(typeof versionControl.revertVersionCommit).toBe('function');
     expect(typeof versionControl.fsckVersionRepository).toBe('function');
     expect(typeof versionControl.resolveVersionRevision).toBe('function');
+    expect(typeof versionControl.getBrowserVersionStatus).toBe('function');
+    expect(typeof versionControl.listBrowserVersionRevisions).toBe('function');
+    expect(typeof versionControl.getBrowserVersionRevisionDetail).toBe(
+      'function',
+    );
+    expect(typeof versionControl.listBrowserVersionFeatures).toBe('function');
     expect(features.FeatureError).toBeTypeOf('function');
     expect(versionControl.VersionControlError).toBeTypeOf('function');
     expect(versionControl.MAX_VERSION_OBJECT_BYTES).toBeGreaterThanOrEqual(

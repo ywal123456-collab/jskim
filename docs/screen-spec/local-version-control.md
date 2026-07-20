@@ -1,4 +1,4 @@
-# Screen Spec ローカル版管理設計（Phase 7E-0〜7E-3）
+# Screen Spec ローカル版管理設計（Phase 7E-0〜7E-4B）
 
 > ### 実装済み（domain API）
 > - 7E-1: repository / object store / Feature Group
@@ -21,16 +21,23 @@
 > - root `jskim spec version`（init / config / status / diff / add / commit / log / branch / tag / checkout / revert / fsck / recover）
 > - `--json` envelope、usage=2 / conflict·recovery=3 の exit code 区分
 >
+> ### 実装済み（Phase 7E-4B Revision API + Viewer）
+> - companion `revision-query`（browser-safe projection）
+> - `jskim spec dev` same-origin GET API（`/_jskim/spec/version/*`、`/_jskim/spec/features`）
+> - Viewer 「改訂履歴」 modal（read-only）。mutation は CLI のみ
+> - author email / Figma `fileKey` / `nodeId` / token / 絶対 path は API・Viewer に出さない
+> - static `spec build` / `jskim serve` では API mount・改訂履歴ボタンなし
+>
 > ### 未実装
-> - Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+> - Viewer mutation UI、merge、Excel Export、Remote Provider
 
 この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計および実装契約である。
 
 | 項目 | 値 |
 |------|-----|
-| 状態 | domain API 実装済み（CLI/UI 未提供） |
+| 状態 | domain + CLI + read-only Revision API / Viewer 改訂履歴 実装済み |
 | 関連 | [excel-export.md](./excel-export.md)（版管理対応 Export は Phase 7F） |
-| 対象 package | companion `@ywal123456/jskim-screen-spec`（root CLI / Viewer 接続は後続） |
+| 対象 package | companion `@ywal123456/jskim-screen-spec` + root `jskim spec version` / `jskim spec dev` |
 
 ---
 
@@ -353,7 +360,7 @@ serialization: 検証成功後に `features` 配列を `displayOrder` 昇順 →
 | Reference | `scripts/lib/create-reference-image-api.js` |
 | Capture | `scripts/lib/create-device-capture-api.js` |
 | serve / 通常 dev / 静的 `/spec/` | 編集 API なし（read-only） |
-| Revision API / 改訂履歴 modal | **未実装** |
+| Revision API / 改訂履歴 modal | **実装済み**（`create-version-history-api.js`、`jskim spec dev` のみ。static/serve は非 mount） |
 
 将来接続点:
 
@@ -775,29 +782,30 @@ jskim spec feature list|create|rename|reorder|move-screen|delete …
 Local Viewer は filesystem に直接触らず、`jskim spec dev` の same-origin API を使う。
 `serve` / 静的 Viewer では **read-only かつ未初期化なら空/非表示**（mutation なし）。
 
-### 19.1 初期 read API（案）
+### 19.1 初期 read API（実装済み）
 
-既存 `/_jskim/spec/...` に合わせる。
+既存 `/_jskim/spec/...` に合わせる。**GET のみ**。`jskim spec dev` でのみ mount。
 
 | Method | Path | 用途 |
 |--------|------|------|
-| GET | `/_jskim/spec/version/status` | branch, HEAD, dirty 要約 |
-| GET | `/_jskim/spec/version/revisions` | log（filter/page） |
-| GET | `/_jskim/spec/version/revisions/{commitHash}` | 詳細 + 変更要約 |
-| GET | `/_jskim/spec/version/diff` | `from`/`to`（default HEAD vs worktree） |
+| GET | `/_jskim/spec/version/status` | branch, HEAD, dirty 要約（未初期化は 200 + `initialized:false`） |
+| GET | `/_jskim/spec/version/revisions` | log（scope/filter/page + `historyHead`） |
+| GET | `/_jskim/spec/version/revisions/{commitHash}` | 詳細 + first-parent 変更要約 |
+| GET | `/_jskim/spec/version/diff` | `from`/`to`（省略時は to の first parent） |
 | GET | `/_jskim/spec/version/branches` | |
 | GET | `/_jskim/spec/version/tags` | |
 | GET | `/_jskim/spec/features` | working tree の features（未作成なら空） |
 
-Query（log/diff）: `featureId`, `screenId`, `assetType`（`reference`\|`capture`\|`description`\|…）, `from`, `to`, `cursor`, `limit`
+Query（log）: `scope`（`project`\|`feature`\|`screen`）、`featureId`、`screenId`、`cursor`、`limit`（default 20、max 100）、`historyHead`
 
 ### 19.2 応答の要点
 
-- short/full hash
-- changedFeatures / changedScreens / changedItems / changedAssets
-- browser-safe のみ（path は project-relative）
-- corrupt repository → `SPEC_VERSION_CORRUPT`
-- 未 init → `SPEC_VERSION_NOT_INITIALIZED`（UI は案内）
+- short/full hash、author **name のみ**（email は Viewer/API 非露出。CLI/repository には保持）
+- changedFeatures / changedScreens / changedItems / changedAssets（browser-safe summary）
+- Figma canonical の `fileKey` / `nodeId` は投影しない（`frameName` / `importedAt` / `source.type` のみ可）
+- corrupt repository → 500（`SPEC_VERSION_*_CORRUPT` 系）
+- 未 init の list/detail → 409 `SPEC_VERSION_NOT_INITIALIZED`（status は 200 投影）
+- history 変更中の pagination → 409 `SPEC_VERSION_HEAD_CHANGED`
 
 ### 19.3 将来 mutation API（設計のみ）
 
@@ -827,15 +835,23 @@ Project
 
 ## 21. 改訂履歴modal
 
-- 名称: **改訂履歴**
-- 表示: 現 branch、HEAD short hash、working tree 状態、message、author、日時、tag、parent、変更 feature/screen/item/assets
+- 名称: **改訂履歴**（実装済み・read-only）
+- 表示: 現 branch、HEAD short hash、working tree 状態、message、author name、日時、tag、parent、変更 feature/screen/item/assets
+- 起動: `jskim spec dev` の Viewer 画面ヘッダ（capability があるときのみ）。static Viewer では非表示
 - 起動 scope:
   - Project 全体
   - 現 Feature（**その commit 時点の membership** で filter。現在所属だけで過去を書き換えない）
-  - 現 Screen（**安定 `screenId`** で filter。機能移動後も履歴が追える）
-- commit 選択: parent diff、機能変更、画面追加/修正/削除、機能間移動、item、binary
-- UX: pagination、loading/empty/error、keyboard/focus/aria、390px、read-only 時は checkout/revert 非表示または無効
+  - 現 Screen（**安定 `screenId`** で filter。機能移動後も履歴が追える）— 画面ページからの既定
+- commit 選択: parent diff、機能変更、画面追加/修正/削除、機能間移動、item、Reference/Capture summary
+- UX: pagination、loading/empty/error、keyboard/focus/aria、390px
+- **mutation（commit/checkout/revert）は CLI のみ**。modal に mutation ボタンは無い
 - **autosave ≠ commit**。Description 保存は working tree 更新のみ
+- **browser-safe 境界**:
+  - inline bootstrap（`__JSKIM_SPEC_VERSION__`）は capability と API ベース URL のみ。`projectName` 等の可変文字列は載せない
+  - bootstrap JSON は HTML tokenizer 安全な inline serialization（`<` / `>` / `&` / U+2028 / U+2029 を escape）
+  - Revision API / modal は **author email** を返さない（author **name** のみ）
+  - Figma **fileKey** / **nodeId** / token / signed URL は API 応答に含めない
+  - commit message / Feature name / item label は **HTML として解釈しない**（Vue text interpolation）
 
 ---
 
@@ -1006,8 +1022,8 @@ hash は golden bytes を検討。Excel は semantic assertion 優先。
 
 | 項目 | 内容 |
 |------|------|
-| 範囲 | GET API、改訂履歴 modal |
-| 除外 | Remote、Excel、merge UI |
+| 範囲 | GET API、改訂履歴 modal（**7E-4B 実装済み**） |
+| 除外 | Remote、Excel、merge UI、Viewer mutation |
 
 ### Phase 7E-5 — Viewer Feature navigation / management
 

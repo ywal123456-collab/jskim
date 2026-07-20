@@ -96,7 +96,8 @@ describe('public release audit', () => {
 
   it('許可されていないユーザー絶対パスがソースに無い', () => {
     const hits = [];
-    const pattern = /(?:C:[\\/]Users[\\/]|\/Users\/|\/home\/)[^\s"'`]+/g;
+    const pattern =
+      /(?:C:[\\/]Users[\\/]|\/Users\/|(?:^|[\s"'`(]|[^a-zA-Z0-9/])\/home\/[^/\s"'`]+(?:\/|$|\s|"|'|`))/g;
     scanTextFiles((rel, text) => {
       const matches = text.match(pattern);
       if (matches) {
@@ -106,6 +107,28 @@ describe('public release audit', () => {
       }
     });
     assert.deepEqual(hits, [], `絶対パス候補: ${hits.join(', ')}`);
+  });
+
+  it('/home/ route segment と Linux 絶対 path を区別する', () => {
+    const pattern =
+      /(?:C:[\\/]Users[\\/]|\/Users\/|(?:^|[\s"'`(]|[^a-zA-Z0-9/])\/home\/[^/\s"'`]+(?:\/|$|\s|"|'|`))/g;
+    const allowed = [
+      'references/home/pc',
+      '/spec/screens/home',
+      'route /home/ index',
+    ];
+    const homeRoot = ['', 'home'].join('/');
+    const forbidden = [
+      `${homeRoot}/alice/project`,
+      `"${homeRoot}/bob/tmp/file"`,
+      '(`' + homeRoot + '/charlie`)',
+    ];
+    for (const text of allowed) {
+      assert.equal(text.match(pattern), null, text);
+    }
+    for (const text of forbidden) {
+      assert.ok(text.match(pattern), text);
+    }
   });
 
   it('許可されていないメールアドレスがソースに無い', () => {

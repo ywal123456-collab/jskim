@@ -3,9 +3,10 @@
 ## ローカル版管理 core
 
 Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / fsck / recovery を提供します。
-root CLI は `jskim spec version …` で接続済みです（**Viewer UI / Revision API は未提供**）。
+root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision API / Viewer 「改訂履歴」まで接続済みです。
+**mutation（commit / checkout / revert 等）は CLI のみ**です。Remote / merge / Excel は未提供です。
 
-### 実装済み（Phase 7E-1〜7E-4A）
+### 実装済み（Phase 7E-1〜7E-4B）
 
 - author config（`config.json`）と `resolveVersionAuthor`（explicit → env → config）
 - `commitVersion` / `getVersionLog` / `getVersionCommit`
@@ -18,10 +19,13 @@ root CLI は `jskim spec version …` で接続済みです（**Viewer UI / Revi
 - journal path は `operationId` のみから固定導出（traversal / symlink 拒否）。`cleanup_pending` は core 一致後の derived cleanup 再試行
 - `project.json.screenOrder`、Feature/Ungrouped 順序契約、PNG signature、index reachable integrity
 - root CLI: `jskim spec version init|config|status|diff|add|commit|log|branch|tag|checkout|revert|fsck|recover`
+- revision-query（browser-safe）+ `jskim spec dev` Revision API + Viewer 「改訂履歴」（read-only）
+- browser-safe: author email / Figma fileKey・nodeId / token / signed URL 非露出。commit・Feature・item 文字列は HTML 解釈しない
+- spec dev bootstrap（`__JSKIM_SPEC_VERSION__`）は capability + API ベース URL のみ（HTML-safe inline JSON）
 
 ### 未実装
 
-- Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+- Viewer mutation UI、merge、Excel Export、Remote Provider
 
 ### CLI 最小 workflow
 
@@ -33,6 +37,8 @@ npx jskim spec version add sample --all
 npx jskim spec version commit sample -m "初回登録"
 npx jskim spec version status sample
 npx jskim spec version log sample
+npx jskim spec dev sample
+# Viewer で「改訂履歴」を開き、画面 / 機能 / プロジェクト scope の履歴を閲覧
 ```
 
 - collect は自動実行しません
@@ -597,7 +603,8 @@ domain API のみ実装済みです（**ユーザー向け CLI / Viewer UI / Rev
 | object / snapshot / status / stage | 7E-1 / 7E-2 |
 | author / commit / log / branch / tag / checkout / revert / fsck / recovery | 7E-3 |
 
-未実装: ユーザー CLI、Revision API、Viewer 改訂履歴、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
+未実装: Viewer mutation UI、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
+author email / Figma `fileKey` / `nodeId` は Revision API・Viewer に露出しません（CLI/repository には保持）。
 
 詳細契約は `docs/screen-spec/local-version-control.md` を参照してください。
 

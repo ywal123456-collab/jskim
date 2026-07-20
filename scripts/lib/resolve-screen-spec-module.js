@@ -223,6 +223,13 @@ async function resolveScreenSpecModule(options = {}) {
     fsckVersionRepository: mod.fsckVersionRepository,
     inspectVersionRecovery: mod.inspectVersionRecovery,
     recoverVersionRepository: mod.recoverVersionRepository,
+    getBrowserVersionStatus: mod.getBrowserVersionStatus,
+    listBrowserVersionRevisions: mod.listBrowserVersionRevisions,
+    getBrowserVersionRevisionDetail: mod.getBrowserVersionRevisionDetail,
+    getBrowserVersionRevisionDiff: mod.getBrowserVersionRevisionDiff,
+    listBrowserVersionFeatures: mod.listBrowserVersionFeatures,
+    listBrowserVersionBranches: mod.listBrowserVersionBranches,
+    listBrowserVersionTags: mod.listBrowserVersionTags,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };
@@ -247,6 +254,13 @@ const VERSION_API_NAMES = [
   'fsckVersionRepository',
   'inspectVersionRecovery',
   'recoverVersionRepository',
+  'getBrowserVersionStatus',
+  'listBrowserVersionRevisions',
+  'getBrowserVersionRevisionDetail',
+  'getBrowserVersionRevisionDiff',
+  'listBrowserVersionFeatures',
+  'listBrowserVersionBranches',
+  'listBrowserVersionTags',
 ];
 
 /**

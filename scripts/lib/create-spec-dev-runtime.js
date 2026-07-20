@@ -13,6 +13,7 @@ const { createSpecDevOrchestrator } = require('./create-spec-dev-orchestrator');
 const { createDescriptionEditApi } = require('./create-description-edit-api');
 const { createDeviceCaptureApi } = require('./create-device-capture-api');
 const { createReferenceImageApi } = require('./create-reference-image-api');
+const { createVersionHistoryApi } = require('./create-version-history-api');
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -69,6 +70,14 @@ function createSpecDevRuntime(options = {}) {
     let getReferenceImagePublicInfo = options.getReferenceImagePublicInfo;
     let importFigmaReferenceImage = options.importFigmaReferenceImage;
     let reimportFigmaReferenceImage = options.reimportFigmaReferenceImage;
+    let getBrowserVersionStatus = options.getBrowserVersionStatus;
+    let listBrowserVersionRevisions = options.listBrowserVersionRevisions;
+    let getBrowserVersionRevisionDetail =
+      options.getBrowserVersionRevisionDetail;
+    let getBrowserVersionRevisionDiff = options.getBrowserVersionRevisionDiff;
+    let listBrowserVersionFeatures = options.listBrowserVersionFeatures;
+    let listBrowserVersionBranches = options.listBrowserVersionBranches;
+    let listBrowserVersionTags = options.listBrowserVersionTags;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -89,6 +98,7 @@ function createSpecDevRuntime(options = {}) {
           requireEditing: true,
           requireDeviceCapture: true,
           requireReferenceImage: true,
+          requireVersion: true,
         });
       } catch (err) {
         if (err && err.code === 'JSKIM_SCREEN_SPEC_NOT_FOUND') {
@@ -126,6 +136,21 @@ function createSpecDevRuntime(options = {}) {
         importFigmaReferenceImage || companion.importFigmaReferenceImage;
       reimportFigmaReferenceImage =
         reimportFigmaReferenceImage || companion.reimportFigmaReferenceImage;
+      getBrowserVersionStatus =
+        getBrowserVersionStatus || companion.getBrowserVersionStatus;
+      listBrowserVersionRevisions =
+        listBrowserVersionRevisions || companion.listBrowserVersionRevisions;
+      getBrowserVersionRevisionDetail =
+        getBrowserVersionRevisionDetail ||
+        companion.getBrowserVersionRevisionDetail;
+      getBrowserVersionRevisionDiff =
+        getBrowserVersionRevisionDiff || companion.getBrowserVersionRevisionDiff;
+      listBrowserVersionFeatures =
+        listBrowserVersionFeatures || companion.listBrowserVersionFeatures;
+      listBrowserVersionBranches =
+        listBrowserVersionBranches || companion.listBrowserVersionBranches;
+      listBrowserVersionTags =
+        listBrowserVersionTags || companion.listBrowserVersionTags;
     }
 
     // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
@@ -252,6 +277,31 @@ function createSpecDevRuntime(options = {}) {
       getFigmaHooks: options.getFigmaHooks,
     });
 
+    const versionHistoryApi =
+      typeof getBrowserVersionStatus === 'function' &&
+      typeof listBrowserVersionRevisions === 'function' &&
+      typeof getBrowserVersionRevisionDetail === 'function' &&
+      typeof getBrowserVersionRevisionDiff === 'function' &&
+      typeof listBrowserVersionFeatures === 'function' &&
+      typeof listBrowserVersionBranches === 'function' &&
+      typeof listBrowserVersionTags === 'function'
+        ? createVersionHistoryApi({
+            rootDir: workspaceRoot,
+            projectName,
+            host,
+            port,
+            facade: {
+              getBrowserVersionStatus,
+              listBrowserVersionRevisions,
+              getBrowserVersionRevisionDetail,
+              getBrowserVersionRevisionDiff,
+              listBrowserVersionFeatures,
+              listBrowserVersionBranches,
+              listBrowserVersionTags,
+            },
+          })
+        : null;
+
     runtime = createWatchRuntime({
       mode: 'dev',
       workspaceRoot,
@@ -268,9 +318,11 @@ function createSpecDevRuntime(options = {}) {
         options.initialDevLog === undefined ? 'spec-dev' : options.initialDevLog,
       injectSpecLiveReload: options.injectSpecLiveReload !== false,
       injectDescriptionEditing: options.injectDescriptionEditing !== false,
+      injectVersionHistory: options.injectVersionHistory !== false,
       descriptionEditApi,
       deviceCaptureApi,
       referenceImageApi,
+      versionHistoryApi,
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);

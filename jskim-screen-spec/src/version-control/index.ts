@@ -176,3 +176,25 @@ export type {
   MaterializePlan,
   PhysicalFilePlan,
 } from './materialize-snapshot.js';
+export {
+  getBrowserVersionStatus,
+  listBrowserVersionRevisions,
+  getBrowserVersionRevisionDetail,
+  getBrowserVersionRevisionDiff,
+  listBrowserVersionFeatures,
+  listBrowserVersionBranches,
+  listBrowserVersionTags,
+} from './revision-query.js';
+export type {
+  BrowserVersionStatus,
+  BrowserRevisionListItem,
+  BrowserRevisionDetail,
+  BrowserRevisionSummary,
+  BrowserFeatureList,
+  BrowserFeatureChange,
+  BrowserScreenChange,
+  BrowserItemChange,
+  BrowserAssetChange,
+  ListBrowserRevisionsOptions,
+  ListBrowserRevisionsResult,
+} from './revision-query.js';

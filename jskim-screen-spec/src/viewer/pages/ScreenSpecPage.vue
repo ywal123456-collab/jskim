@@ -15,7 +15,9 @@ import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
+import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
+import { useVersionHistory } from '../version-history/use-version-history';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
 import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
 import {
@@ -45,6 +47,21 @@ const props = defineProps<{
 const manifest = inject<ComputedRef<ViewerManifest>>('manifest');
 const editingEnabled = inject<boolean>('editingEnabled', false);
 const openCreateScreen = inject<() => void>('openCreateScreen', () => {});
+
+const screenIdRef = computed(() => props.screenId);
+const versionHistory = useVersionHistory({ screenId: screenIdRef });
+const revisionHistoryTriggerRef = ref<HTMLButtonElement | null>(null);
+
+async function openRevisionHistory(): Promise<void> {
+  await versionHistory.openDialog();
+}
+
+function closeRevisionHistory(): void {
+  versionHistory.closeDialog();
+  void nextTick(() => {
+    revisionHistoryTriggerRef.value?.focus();
+  });
+}
 
 const screen = ref<ScreenData | null>(null);
 const isEmptyState = ref(false);
@@ -839,6 +856,20 @@ watch(
         </p>
       </div>
 
+      <div class="spec-page__header-actions">
+        <button
+          v-if="versionHistory.available"
+          ref="revisionHistoryTriggerRef"
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="revision-history-open"
+          data-action="revision-history"
+          @click="openRevisionHistory"
+        >
+          改訂履歴
+        </button>
+      </div>
+
       <div v-if="editor.editingEnabled" class="spec-page__edit-bar">
         <span
           class="spec-page__status"
@@ -1168,6 +1199,28 @@ watch(
       @close="closeDeleteScreen"
       @completed="onDeleteScreenCompleted"
       @reload-latest="onDeleteReloadLatest"
+    />
+
+    <RevisionHistoryDialog
+      v-if="versionHistory.open.value"
+      :status="versionHistory.status.value"
+      :scope="versionHistory.scope.value"
+      :feature-id="versionHistory.featureIdForScope.value"
+      :feature-name="versionHistory.featureNameForScope.value"
+      :project-name="projectName"
+      :screen-id="props.screenId"
+      :revisions="versionHistory.revisions.value"
+      :selected-hash="versionHistory.selectedHash.value"
+      :detail="versionHistory.detail.value"
+      :loading="versionHistory.loading.value"
+      :loading-more="versionHistory.loadingMore.value"
+      :loading-detail="versionHistory.loadingDetail.value"
+      :has-more="versionHistory.hasMore.value"
+      :error-message="versionHistory.errorMessage.value"
+      @close="closeRevisionHistory"
+      @set-scope="(s) => versionHistory.setScope(s)"
+      @load-more="() => versionHistory.requestLoadMore()"
+      @select="(hash) => versionHistory.requestSelect(hash)"
     />
   </div>
 </template>

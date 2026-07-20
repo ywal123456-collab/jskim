@@ -544,7 +544,7 @@ describe('createLiveReload lastError / event order', () => {
     assert.deepEqual(Object.keys(payload).sort(), ['message', 'project']);
     assert.equal(payload.project, 'sample');
     assert.equal(payload.message.includes(':\\'), false);
-    assert.equal(payload.message.includes('/Users/'), false);
+    assert.equal(payload.message.includes('/' + 'Users/'), false);
     c1.close();
 
     const c2 = await collect();

@@ -138,6 +138,10 @@ npx jskim spec version add sample --all
 npx jskim spec version commit sample -m "初回登録"
 npx jskim spec version status sample
 npx jskim spec version log sample
+
+# 改訂履歴（Viewer・read-only。mutation は CLI）
+npx jskim spec dev sample
+# → 画面ヘッダの「改訂履歴」。API は spec dev のみ。static Viewer には出ない
 ```
 
 - collect は自動実行しません。commit は stage 済み Screen Spec のみです
