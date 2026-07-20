@@ -256,3 +256,32 @@ export function writeVersionIndex(options: {
   }
   return withIndexLock(options, run);
 }
+
+/**
+ * index.json を削除して virtual index 状態へ戻す。
+ * journal.oldIndex.exists === false の recovery 用。
+ */
+export function removeVersionIndex(options: {
+  rootDir: string;
+  projectName: string;
+  alreadyLocked?: boolean;
+}): void {
+  const run = (): void => {
+    const target = indexPath(options.rootDir, options.projectName);
+    if (!fs.existsSync(target)) return;
+    assertMetadataPathBoundary(target, 'index.json');
+    try {
+      fs.unlinkSync(target);
+    } catch {
+      throw createVersionControlError(
+        'SPEC_VERSION_INDEX_WRITE_FAILED',
+        'index を削除できませんでした。',
+      );
+    }
+  };
+  if (options.alreadyLocked) {
+    run();
+    return;
+  }
+  withIndexLock(options, run);
+}

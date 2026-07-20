@@ -25,6 +25,8 @@ function caseFoldKey(id: string): string {
 
 /**
  * loadScreenSpecProject と同じ comparator（screenId localeCompare 'en'）。
+ * screenId は /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/ の ASCII のみなので、
+ * localeCompare('en') の順序は locale 差の影響を受けず hash 互換性を維持できる。
  * tree entry の binary ソートとは別意味（製品 screen 順）。
  */
 export function compareScreenIdOrder(a: string, b: string): number {

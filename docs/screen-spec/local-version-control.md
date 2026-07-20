@@ -1,20 +1,32 @@
-# Screen Spec ローカル版管理設計（Phase 7E-0）
+# Screen Spec ローカル版管理設計（Phase 7E-0〜7E-3）
 
-> Phase 7E-2 では working snapshot / index / status / stage の core API を実装した。
-> snapshot は `project.json`（`screenOrder` 含む）、存在する `features.json`、theme、発見済み screen の description/source/snapshot/resource、reference/capture の meta と PNG のみを含める。`dist`、`.jskim`、resource manifest、未対応 source は含めない。
-> 画面順の正本: Feature 順=`displayOrder`、Feature 内=`screenIds`、Ungrouped=`project.json.screenOrder` から未所属を filter。Project 表示/Export は Feature 順→各 screenIds→Ungrouped。
-> `stageProject` は全体、`stageScreen` は対象 screen subtree + 必要なら `project.json.screenOrder` の semantic merge（features.json は自動 stage しない）、`stageFeature` は features.json と対象 feature の screen を stage し `screenOrder` は維持する。
-> index 読取時は reachable object の存在・integrity を検証する。`index.baseCommit !== HEAD` の stage は既定拒否。Reference/Capture は PNG signature も検証する。
-> object と index の新規/置換書込みは file fsync を行い、directory fsync は環境差のため best-effort とする。
+> ### 実装済み（domain API）
+> - 7E-1: repository / object store / Feature Group
+> - 7E-2: working snapshot / index / status / stage（`project.json.screenOrder`、PNG signature、index reachable integrity、HEAD 変更時 stage 拒否）
+> - 7E-3: author config、commit / log、branch / annotated tag、revision resolve、checkout materialization、revert、transaction journal、fsck、stale lock recovery
+>
+> lock 順序: **mutation lock → index lock → ref CAS**
+> **transaction commit point は ref/HEAD 更新**。old ref → rollback、new ref → forward recovery。それ以外は `SPEC_VERSION_RECOVERY_UNSAFE`。
+> 未完了 journal がある間は commit/checkout/revert/stage/branch/tag/author 書き込みを `SPEC_VERSION_RECOVERY_REQUIRED` で拒否する（log/status/fsck/inspect は read-only 継続可）。
+> journal path は `operationId`（UUID）のみから導出し、相対 path 文字列を信用しない（containment / symlink 拒否）。
+> commit で ref 更新後に index が失敗した場合は journal を残し recovery が new index へ前進する。
+> checkout で `source_installed` かつ HEAD が old のときは backup 検証付き rollback。derived cleanup 失敗は `cleanup_pending`（core は new のまま）。
+> revert は result commit を先に永続化し、source swap 後の ref 失敗は old source へ rollback する。
+> detached HEAD での commit は許可し、HEAD を新 commit へ移動する。
+> screenId は ASCII kebab-case のみ（契約 A）。`localeCompare('en')` は決定的。
+> checkout は aggregate `resources/manifest.json` と `spec/{project}/dist` を derived として除去し、次の collect/build で再生成する。
+> Screen Spec 内部 tag は source Git tag と自動連携しない。
+>
+> ### 未実装
+> - ユーザー CLI、Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
 
-この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計である。
-**本 Phase は設計のみ**。object store・API・UI・Remote Provider・Excel 実装は行わない。
+この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計および実装契約である。
 
 | 項目 | 値 |
 |------|-----|
-| 状態 | 設計（未実装） |
+| 状態 | domain API 実装済み（CLI/UI 未提供） |
 | 関連 | [excel-export.md](./excel-export.md)（版管理対応 Export は Phase 7F） |
-| 対象 package（将来） | companion `@ywal123456/jskim-screen-spec` + root CLI / `jskim spec dev` API |
+| 対象 package | companion `@ywal123456/jskim-screen-spec`（root CLI / Viewer 接続は後続） |
 
 ---
 

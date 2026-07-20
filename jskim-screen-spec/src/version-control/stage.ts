@@ -16,6 +16,7 @@ import {
 } from './snapshot.js';
 import { flattenSnapshotTree, flattenVersionTree } from './status.js';
 import { readVersionHead } from './head.js';
+import { assertNoIncompleteTransaction } from './transaction.js';
 import {
   readVersionIndex,
   withIndexLock,
@@ -157,6 +158,8 @@ function runStage(
   },
 ): StageResult {
   return withIndexLock(options, () => {
+    assertNoIncompleteTransaction(options);
+
     const indexBefore = readVersionIndex(options);
     const head = readVersionHead(options);
 
@@ -278,6 +281,7 @@ export function stageScreen(options: {
   expectedHead?: string | null;
 }): StageResult {
   return withIndexLock(options, () => {
+    assertNoIncompleteTransaction(options);
     // lock 内で再実行するため、外側の二重 lock を避ける alreadyLocked 経路へ委譲
     const indexBefore = readVersionIndex(options);
     const head = readVersionHead(options);

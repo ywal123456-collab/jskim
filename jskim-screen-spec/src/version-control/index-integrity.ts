@@ -11,6 +11,7 @@ const EMPTY_TREE_HASH = hashVersionObject('tree', {
 /**
  * index.tree から到達可能な全 object の存在と integrity を検証する。
  * 空 tree hash（未 materialize）は store を要求しない。
+ * 同一 blob の共有（DAG）は循環ではない。真正の tree 循環のみ拒否する。
  */
 export function assertIndexTreeReachable(options: {
   rootDir: string;
@@ -21,16 +22,20 @@ export function assertIndexTreeReachable(options: {
     return;
   }
 
-  const visited = new Set<string>();
+  const done = new Set<string>();
+  const visiting = new Set<string>();
 
   const walk = (hash: string, expectedType: 'tree' | 'blob'): void => {
-    if (visited.has(hash)) {
+    if (done.has(hash)) {
+      return;
+    }
+    if (visiting.has(hash)) {
       throw createVersionControlError(
         'SPEC_VERSION_INDEX_CORRUPT',
         'index tree に循環参照があります。',
       );
     }
-    visited.add(hash);
+    visiting.add(hash);
 
     let obj;
     try {
@@ -41,6 +46,7 @@ export function assertIndexTreeReachable(options: {
         expectedType,
       });
     } catch (err) {
+      visiting.delete(hash);
       if (
         err instanceof Error &&
         'code' in err &&
@@ -58,6 +64,8 @@ export function assertIndexTreeReachable(options: {
     }
 
     if (expectedType === 'blob') {
+      visiting.delete(hash);
+      done.add(hash);
       return;
     }
 
@@ -65,12 +73,14 @@ export function assertIndexTreeReachable(options: {
     try {
       tree = JSON.parse(obj.payload.toString('utf8')) as TreeObject;
     } catch {
+      visiting.delete(hash);
       throw createVersionControlError(
         'SPEC_VERSION_INDEX_CORRUPT',
         'index tree の payload が不正です。',
       );
     }
     if (!Array.isArray(tree.entries)) {
+      visiting.delete(hash);
       throw createVersionControlError(
         'SPEC_VERSION_INDEX_CORRUPT',
         'index tree の entries が不正です。',
@@ -78,6 +88,7 @@ export function assertIndexTreeReachable(options: {
     }
     for (const entry of tree.entries) {
       if (entry.objectType !== 'blob' && entry.objectType !== 'tree') {
+        visiting.delete(hash);
         throw createVersionControlError(
           'SPEC_VERSION_INDEX_CORRUPT',
           'index tree entry の type が不正です。',
@@ -85,6 +96,8 @@ export function assertIndexTreeReachable(options: {
       }
       walk(entry.hash, entry.objectType);
     }
+    visiting.delete(hash);
+    done.add(hash);
   };
 
   walk(options.treeHash, 'tree');

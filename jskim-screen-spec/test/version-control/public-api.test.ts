@@ -27,6 +27,12 @@ describe('package public API (7E-1)', () => {
     expect(typeof versionControl.stageProject).toBe('function');
     expect(typeof versionControl.stageScreen).toBe('function');
     expect(typeof versionControl.stageFeature).toBe('function');
+    expect(typeof versionControl.commitVersion).toBe('function');
+    expect(typeof versionControl.getVersionLog).toBe('function');
+    expect(typeof versionControl.checkoutVersion).toBe('function');
+    expect(typeof versionControl.revertVersionCommit).toBe('function');
+    expect(typeof versionControl.fsckVersionRepository).toBe('function');
+    expect(typeof versionControl.resolveVersionRevision).toBe('function');
     expect(features.FeatureError).toBeTypeOf('function');
     expect(versionControl.VersionControlError).toBeTypeOf('function');
     expect(versionControl.MAX_VERSION_OBJECT_BYTES).toBeGreaterThanOrEqual(

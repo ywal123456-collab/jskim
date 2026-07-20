@@ -2,13 +2,26 @@
 
 ## ローカル版管理 core
 
-Node public API は in-memory の `createWorkingSnapshot`、`getVersionStatus`、`stageProject`、`stageScreen`、`stageFeature` を提供します。
+Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / fsck / recovery を提供します（**ユーザー向け CLI / Viewer UI / Revision API は未提供**）。
 
-- `project.json` は `screenOrder`（全 screenId の project-level 順）を含みます。Ungrouped 順はここから Feature 未所属を filter します。
-- `stageScreen` は対象 screen subtree と必要な `screenOrder` merge のみを行い、`features.json` は自動 stage しません。削除前に Feature membership が残っている場合はエラーです。
-- `stageFeature` は `features.json` 全体を stage し、`screenOrder` は維持します。
-- index は reachable object を検証します。`index.baseCommit` と HEAD が異なるときの stage は拒否します。
-- Reference/Capture 画像は PNG signature を検証します。
+### 実装済み（Phase 7E-1〜7E-3 domain）
+
+- author config（`config.json`）と `resolveVersionAuthor`（explicit → env → config）
+- `commitVersion` / `getVersionLog` / `getVersionCommit`
+- branch / annotated tag（Screen Spec 内部 tag。source Git tag とは非連携）
+- symbolic / detached HEAD、revision resolve
+- `checkoutVersion`（dirty 拒否、logical tree → 物理 source materialization）
+- `revertVersionCommit`（新 commit として逆変更）
+- `fsckVersionRepository` / `inspectVersionRecovery` / `recoverVersionRepository`
+- transaction: **ref/HEAD が commit point**（old → rollback、new → forward）。未完了 journal 中は mutation を `SPEC_VERSION_RECOVERY_REQUIRED` で拒否
+- journal path は `operationId` のみから固定導出（traversal / symlink 拒否）。`cleanup_pending` は core 一致後の derived cleanup 再試行
+- `project.json.screenOrder`、Feature/Ungrouped 順序契約、PNG signature、index reachable integrity
+
+### 未実装
+
+- ユーザー CLI、Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+
+詳細契約: [docs/screen-spec/local-version-control.md](../docs/screen-spec/local-version-control.md)
 
 `@ywal123456/jskim-screen-spec` は、JSKim 本体とは独立した **画面設計書 companion package** です（optional / 公開 npm package）。
 
@@ -554,17 +567,18 @@ spec/sample/dist/
    └─ theme/preview.css
 ```
 
-## Feature Group / ローカル版管理（Phase 7E-1）
+## Feature Group / ローカル版管理（Phase 7E-1〜7E-3）
 
-domain API のみ実装済みです（**ユーザー向け CLI / Viewer UI は未提供**）。
+domain API のみ実装済みです（**ユーザー向け CLI / Viewer UI / Revision API は未提供**）。
 
 | API | 役割 |
 |-----|------|
 | `loadScreenFeatures` / `persistScreenFeatures` / `validateScreenFeatureFile` | `spec/{project}/src/features.json` |
 | `initVersionRepository` | `spec/{project}/.jskim/version/` の metadata 初期化（commit なし） |
-| `writeVersionObject` / `readVersionObject` / `hasVersionObject` / `hashVersionObject` | content-addressed object store |
+| object / snapshot / status / stage | 7E-1 / 7E-2 |
+| author / commit / log / branch / tag / checkout / revert / fsck / recovery | 7E-3 |
 
-未実装: snapshot/status/diff、stage/commit、branch/tag CLI、checkout/revert/merge、Revision API、改訂履歴 modal、Excel Export、Remote。
+未実装: ユーザー CLI、Revision API、Viewer 改訂履歴、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
 
 詳細契約は `docs/screen-spec/local-version-control.md` を参照してください。
 
