@@ -9,6 +9,7 @@ import {
   validateRefName,
 } from './refs.js';
 import { resolveVersionRevision } from './revision-resolver.js';
+import { assertNoMergeInProgress } from './merge-gates.js';
 import { assertNoIncompleteTransaction } from './transaction.js';
 
 export type VersionBranchInfo = {
@@ -60,6 +61,7 @@ export function createVersionBranch(options: {
 }): { name: string; commitHash: string } {
   return withMutationLock(options, 'branch-create', () => {
     assertNoIncompleteTransaction(options);
+    assertNoMergeInProgress(options);
     const name = validateRefName('heads', options.name);
     let commitHash: string;
     if (options.startPoint !== undefined) {
@@ -120,6 +122,7 @@ export function deleteVersionBranch(options: {
 }): void {
   withMutationLock(options, 'branch-delete', () => {
     assertNoIncompleteTransaction(options);
+    assertNoMergeInProgress(options);
     const name = validateRefName('heads', options.name);
     const head = readVersionHead(options);
     if (head.ref === `refs/heads/${name}`) {

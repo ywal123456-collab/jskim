@@ -6,6 +6,7 @@ import { createDurableFileAtomic } from './durable-create.js';
 import { createVersionControlError } from './errors.js';
 import { assertMetadataPathBoundary } from './fs-guards.js';
 import { versionRepositoryPath } from './repository-paths.js';
+import { assertNoMergeInProgress } from './merge-gates.js';
 import { assertNoIncompleteTransaction } from './transaction.js';
 import type { VersionPerson } from './types.js';
 
@@ -196,6 +197,7 @@ export function persistVersionAuthorConfig(
 ): 'created' | 'updated' | 'unchanged' {
   assertInitialized(options);
   assertNoIncompleteTransaction(options);
+  assertNoMergeInProgress(options);
   const config = assertConfig(options.config);
   const existing = loadVersionAuthorConfig(options);
   if (

@@ -141,6 +141,12 @@ npx jskim spec version commit sample -m "初回登録"
 npx jskim spec version status sample
 npx jskim spec version log sample
 
+# merge（別 branch の変更取り込み。conflict 時は exit 3）
+npx jskim spec version merge sample other-branch
+npx jskim spec version merge sample --inspect
+npx jskim spec version merge sample --continue
+npx jskim spec version merge sample --abort
+
 # 改訂履歴（Viewer・read-only。mutation は CLI）
 npx jskim spec dev sample
 # → 画面ヘッダの「改訂履歴」。API は spec dev のみ。static Viewer には出ない

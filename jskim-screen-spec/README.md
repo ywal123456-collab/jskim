@@ -2,11 +2,11 @@
 
 ## ローカル版管理 core
 
-Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / fsck / recovery を提供します。
+Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / **merge** / fsck / recovery を提供します。
 root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision API / Viewer 「改訂履歴」まで接続済みです。
-**mutation（commit / checkout / revert 等）は CLI のみ**です。Remote / merge / Excel は未提供です。
+**mutation（commit / checkout / revert / merge 等）は CLI のみ**です。Remote / Excel は未提供です。
 
-### 実装済み（Phase 7E-1〜7E-4B）
+### 実装済み（Phase 7E-1〜7E-6 / 7E-4B）
 
 - author config（`config.json`）と `resolveVersionAuthor`（explicit → env → config）
 - `commitVersion` / `getVersionLog` / `getVersionCommit`
@@ -14,18 +14,19 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 - symbolic / detached HEAD、revision resolve
 - `checkoutVersion`（dirty 拒否、logical tree → 物理 source materialization）
 - `revertVersionCommit`（新 commit として逆変更）
+- **`mergeVersion` / `inspectMergeVersion` / `continueMergeVersion` / `abortMergeVersion`**（3-way、Feature domain merge、`MERGE_STATE`）
 - `fsckVersionRepository` / `inspectVersionRecovery` / `recoverVersionRepository`
 - transaction: **ref/HEAD が commit point**（old → rollback、new → forward）。未完了 journal 中は mutation を `SPEC_VERSION_RECOVERY_REQUIRED` で拒否
 - journal path は `operationId` のみから固定導出（traversal / symlink 拒否）。`cleanup_pending` は core 一致後の derived cleanup 再試行
 - `project.json.screenOrder`、Feature/Ungrouped 順序契約、PNG signature、index reachable integrity
-- root CLI: `jskim spec version init|config|status|diff|add|commit|log|branch|tag|checkout|revert|fsck|recover`
-- revision-query（browser-safe）+ `jskim spec dev` Revision API + Viewer 「改訂履歴」（read-only）
+- root CLI: `jskim spec version init|config|status|diff|add|commit|log|branch|tag|checkout|revert|merge|fsck|recover`
+- revision-query（browser-safe）+ `jskim spec dev` Revision API + Viewer 「改訂履歴」（read-only、merge badge / parentCount）
 - browser-safe: author email / Figma fileKey・nodeId / token / signed URL 非露出。commit・Feature・item 文字列は HTML 解釈しない
 - spec dev bootstrap（`__JSKIM_SPEC_VERSION__`）は capability + API ベース URL のみ（HTML-safe inline JSON）
 
 ### 未実装
 
-- Viewer mutation UI、merge、Excel Export、Remote Provider
+- Viewer mutation UI、Excel Export、Remote Provider
 
 ### CLI 最小 workflow
 
@@ -606,7 +607,7 @@ spec/sample/dist/
 | author / commit / log / branch / tag / checkout / revert / fsck / recovery | 7E-3 |
 | read-only Revision API / Viewer 改訂履歴 modal | 7E-4B |
 
-未実装: Viewer 版 mutation UI、merge、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
+未実装: Viewer 版 mutation UI、Excel Export、Remote。Screen Spec 内部 tag は source Git tag と自動連携しません。
 author email / Figma `fileKey` / `nodeId` は Revision/Feature API・Viewer に露出しません（CLI/repository には保持）。
 Feature mutation lock は `spec/{project}/.jskim/features.lock`（gitignore 対象）。
 

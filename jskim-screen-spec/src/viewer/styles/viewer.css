@@ -1058,6 +1058,37 @@ body,
   overflow-wrap: anywhere;
 }
 
+.revision-history-dialog__merge-badge {
+  display: inline-block;
+  flex-shrink: 0;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: #1d4ed8;
+  background: #eff6ff;
+  white-space: nowrap;
+}
+
+.revision-history-dialog__parent-count {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  color: var(--spec-muted);
+  white-space: nowrap;
+}
+
+.revision-history-dialog__row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .revision-history-dialog__msg,
 .revision-history-dialog__message {
   margin: 0;
@@ -1084,6 +1115,20 @@ body,
 
 .revision-history-dialog__detail li {
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 390px) {
+  .revision-history-dialog {
+    max-width: calc(100vw - 1rem);
+  }
+
+  .revision-history-dialog__row,
+  .revision-history-dialog__row-top,
+  .revision-history-dialog__meta,
+  .revision-history-dialog__counts {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (max-width: 768px) {

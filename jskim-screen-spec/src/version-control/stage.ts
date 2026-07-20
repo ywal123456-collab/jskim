@@ -16,6 +16,8 @@ import {
 } from './snapshot.js';
 import { flattenSnapshotTree, flattenVersionTree } from './status.js';
 import { readVersionHead } from './head.js';
+import { updateMergeResolvedPathsAfterStage } from './merge-version.js';
+import { diffVersionTrees } from './status.js';
 import { assertNoIncompleteTransaction } from './transaction.js';
 import {
   readVersionIndex,
@@ -143,6 +145,24 @@ function readProjectDocumentFromTree(
   return assertVersionProjectDocument(parsed, { knownScreenIds });
 }
 
+function notifyMergeAfterStage(
+  options: { rootDir: string; projectName: string },
+  indexBefore: ReadVersionIndexResult,
+  written: ReadVersionIndexResult,
+): void {
+  const stagedChanges = diffVersionTrees({
+    rootDir: options.rootDir,
+    projectName: options.projectName,
+    oldTreeHash: indexBefore.tree,
+    newTreeHash: written.tree,
+  });
+  updateMergeResolvedPathsAfterStage({
+    rootDir: options.rootDir,
+    projectName: options.projectName,
+    stagedPaths: stagedChanges.map((c) => c.path),
+  });
+}
+
 function runStage(
   options: {
     rootDir: string;
@@ -244,6 +264,7 @@ function runStage(
       index: indexDoc,
       alreadyLocked: true,
     });
+    notifyMergeAfterStage(options, indexBefore, written);
     return {
       status: toStageStatus(indexBefore, written),
       indexRevision: written.revision,
@@ -467,6 +488,7 @@ export function stageScreen(options: {
       index: indexDoc,
       alreadyLocked: true,
     });
+    notifyMergeAfterStage(options, indexBefore, written);
     return {
       status: toStageStatus(indexBefore, written),
       indexRevision: written.revision,

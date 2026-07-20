@@ -17,6 +17,7 @@ const VERSION_COMMANDS = new Set([
   'tag',
   'checkout',
   'revert',
+  'merge',
   'fsck',
   'recover',
 ]);
@@ -28,6 +29,8 @@ const BOOLEAN_OPTIONS = new Set([
   '--features',
   '--inspect',
   '--confirm',
+  '--continue',
+  '--abort',
 ]);
 
 const VALUE_OPTIONS = new Set([
@@ -64,6 +67,8 @@ function emptyVersionOptions() {
     features: false,
     inspect: false,
     confirm: false,
+    continue: false,
+    abort: false,
     screen: undefined,
     feature: undefined,
     name: undefined,
@@ -104,6 +109,11 @@ function usageFor(versionCommand) {
     checkout: 'jskim spec version checkout [<project>] <revision>',
     revert:
       'jskim spec version revert [<project>] <revision> [--message <message>]',
+    merge:
+      'jskim spec version merge [<project>] <revision> [--message <message>]\n' +
+      '  jskim spec version merge [<project>] --inspect [--json]\n' +
+      '  jskim spec version merge [<project>] --continue [--message <message>]\n' +
+      '  jskim spec version merge [<project>] --abort',
     fsck: 'jskim spec version fsck [<project>] [--json]',
     recover:
       'jskim spec version recover [<project>] --inspect [--json]\n' +
@@ -137,6 +147,10 @@ function getSpecVersionHelpText() {
     '  jskim spec version tag [<project>] --create <name> -m <message> [--target <revision>]',
     '  jskim spec version checkout [<project>] <revision>',
     '  jskim spec version revert [<project>] <revision> [--message <message>]',
+    '  jskim spec version merge [<project>] <revision> [--message <message>]',
+    '  jskim spec version merge [<project>] --inspect [--json]',
+    '  jskim spec version merge [<project>] --continue [--message <message>]',
+    '  jskim spec version merge [<project>] --abort',
     '  jskim spec version fsck [<project>] [--json]',
     '  jskim spec version recover [<project>] --inspect [--json]',
     '  jskim spec version recover [<project>] --operation-id <uuid> --confirm',
@@ -224,6 +238,8 @@ function parseVersionCommandArgv(argv, versionCommand) {
         else if (token === '--features') options.features = true;
         else if (token === '--inspect') options.inspect = true;
         else if (token === '--confirm') options.confirm = true;
+        else if (token === '--continue') options.continue = true;
+        else if (token === '--abort') options.abort = true;
         continue;
       }
 
@@ -291,6 +307,7 @@ function assertCommandConstraints(versionCommand, options, positionals) {
     'commit',
     'checkout',
     'revert',
+    'merge',
   ]);
   if (options.json && !allowedJson.has(versionCommand)) {
     throw usageError(
@@ -419,10 +436,52 @@ function assertCommandConstraints(versionCommand, options, positionals) {
   } else if (
     options.inspect ||
     options.confirm ||
-    options.operationId != null
+    options.operationId != null ||
+    options.continue ||
+    options.abort
   ) {
+    if (versionCommand !== 'merge' || options.confirm || options.operationId != null) {
+      throw usageError(
+        `コマンド "version ${versionCommand}" では recover / merge 専用 option を使えません。`
+      );
+    }
+    if (options.inspect && (options.continue || options.abort)) {
+      throw usageError(
+        '--inspect と --continue / --abort は同時に指定できません。\n' +
+          `使用方法: ${usageFor('merge')}`
+      );
+    }
+    if (options.continue && options.abort) {
+      throw usageError(
+        '--continue と --abort は同時に指定できません。\n' +
+          `使用方法: ${usageFor('merge')}`
+      );
+    }
+  }
+
+  if (versionCommand === 'merge') {
+    const flagModes = [
+      options.inspect,
+      options.continue,
+      options.abort,
+    ].filter(Boolean).length;
+    const startMode = flagModes === 0;
+    if (startMode && positionals.length === 0) {
+      throw usageError(
+        'revision を指定するか --inspect / --continue / --abort のいずれかを指定してください。\n' +
+          `使用方法: ${usageFor('merge')}`
+      );
+    }
+    if (!startMode && positionals.length > 1) {
+      throw usageError(
+        'project名は1つだけ指定してください。\n' +
+          `受け取った値: ${positionals.join(', ')}\n` +
+          `使用方法: ${usageFor('merge')}`
+      );
+    }
+  } else if (options.continue || options.abort) {
     throw usageError(
-      `コマンド "version ${versionCommand}" では recover 用 option を使えません。`
+      `コマンド "version ${versionCommand}" では --continue / --abort を使えません。`
     );
   }
 
@@ -452,7 +511,14 @@ function assertCommandConstraints(versionCommand, options, positionals) {
  * @param {string[]} positionals
  */
 function assignPositionals(versionCommand, options, positionals) {
-  if (versionCommand === 'checkout' || versionCommand === 'revert') {
+  if (
+    versionCommand === 'checkout' ||
+    versionCommand === 'revert' ||
+    (versionCommand === 'merge' &&
+      !options.inspect &&
+      !options.continue &&
+      !options.abort)
+  ) {
     if (positionals.length === 0) {
       throw usageError(
         'revision を指定してください。\n' + `使用方法: ${usageFor(versionCommand)}`

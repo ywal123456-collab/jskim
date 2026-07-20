@@ -1,9 +1,11 @@
 import { createWorkingSnapshot, type WorkingSnapshot } from './snapshot.js';
 import { readVersionHead } from './head.js';
+import { readVersionMergeState } from './merge-state.js';
 import { EMPTY_TREE_HASH, readVersionIndex } from './version-index.js';
 import { readVersionObject } from './object-store.js';
 import type { TreeObject } from './types.js';
 import { createVersionControlError } from './errors.js';
+import type { MergeConflict } from './merge-conflict.js';
 
 export type VersionChange = {
   path: string;
@@ -214,6 +216,11 @@ export type VersionStatusResult = {
   indexTree: string;
   workingTree: string;
   headChangedSinceIndex: boolean;
+  mergeInProgress: boolean;
+  mergeBase: string | null;
+  mergeTarget: string | null;
+  unresolvedConflicts: MergeConflict[];
+  resolvedConflicts: MergeConflict[];
 };
 
 /**
@@ -233,6 +240,12 @@ export function getVersionStatus(options: {
 
   const stagedChanges = diffFlatMaps(headFiles, indexFiles);
   const unstagedChanges = diffFlatMaps(indexFiles, workingFiles);
+  const mergeState = readVersionMergeState(options);
+  const resolved = new Set(mergeState?.resolvedPaths ?? []);
+  const unresolvedConflicts =
+    mergeState?.conflicts.filter((c) => !resolved.has(c.path)) ?? [];
+  const resolvedConflicts =
+    mergeState?.conflicts.filter((c) => resolved.has(c.path)) ?? [];
 
   return {
     stagedChanges,
@@ -245,5 +258,10 @@ export function getVersionStatus(options: {
     indexTree: index.tree,
     workingTree: snapshot.rootTreeHash,
     headChangedSinceIndex: head.commit !== index.baseCommit,
+    mergeInProgress: mergeState != null,
+    mergeBase: mergeState?.base ?? null,
+    mergeTarget: mergeState?.theirs ?? null,
+    unresolvedConflicts,
+    resolvedConflicts,
   };
 }

@@ -69,6 +69,31 @@ function formatVersionStatusHuman(status, extra = {}) {
     lines.push('recovery required: いいえ');
   }
 
+  if (status.mergeInProgress) {
+    lines.push('');
+    lines.push('merge: 進行中');
+    if (status.mergeBase) {
+      lines.push(`  base: ${shortHash(status.mergeBase)}`);
+    }
+    if (status.mergeTarget) {
+      lines.push(`  theirs: ${shortHash(status.mergeTarget)}`);
+    }
+    const unresolved = status.unresolvedConflicts || [];
+    const resolved = status.resolvedConflicts || [];
+    lines.push(
+      `  conflict: 未解決 ${unresolved.length} / 解決済み ${resolved.length}`
+    );
+    if (unresolved.length > 0) {
+      lines.push('  未解決 path:');
+      for (const conflict of unresolved.slice(0, 20)) {
+        lines.push(`    ${conflict.path}`);
+      }
+      lines.push(
+        '  次の操作: 競合を解消して add → jskim spec version merge <project> --continue'
+      );
+    }
+  }
+
   if (status.clean) {
     lines.push('状態: clean');
   } else {
@@ -115,6 +140,17 @@ function projectVersionStatusJson(status, extra = {}) {
     indexRevision: status.indexRevision,
     headChangedSinceIndex: status.headChangedSinceIndex,
     recoveryRequired: Boolean(extra.recoveryRequired),
+    mergeInProgress: Boolean(status.mergeInProgress),
+    mergeBase: status.mergeBase ?? null,
+    mergeTarget: status.mergeTarget ?? null,
+    unresolvedConflicts: (status.unresolvedConflicts || []).map((c) => ({
+      path: c.path,
+      kind: c.kind,
+    })),
+    resolvedConflicts: (status.resolvedConflicts || []).map((c) => ({
+      path: c.path,
+      kind: c.kind,
+    })),
     stagedChanges: status.stagedChanges.map(projectChange),
     unstagedChanges: status.unstagedChanges.map(projectChange),
   };
@@ -300,6 +336,111 @@ function formatRecoveryInspectHuman(inspection) {
   return lines.join('\n');
 }
 
+/**
+ * @param {object} inspection inspectMergeVersion 結果
+ * @returns {string}
+ */
+function formatVersionMergeInspectHuman(inspection) {
+  if (!inspection.inProgress) {
+    return '[JSKim] 進行中の merge はありません。';
+  }
+  const lines = ['[JSKim] merge 進行中'];
+  const state = inspection.mergeState;
+  if (state) {
+    lines.push(`branch: ${state.currentBranch}`);
+    lines.push(`target: ${state.targetRevision}`);
+    lines.push(`base: ${shortHash(state.base)}`);
+    lines.push(`ours: ${shortHash(state.ours)}`);
+    lines.push(`theirs: ${shortHash(state.theirs)}`);
+  }
+  const unresolved = inspection.unresolvedConflicts || [];
+  const resolved = inspection.resolvedConflicts || [];
+  lines.push(`未解決 conflict: ${unresolved.length}`);
+  for (const conflict of unresolved.slice(0, 30)) {
+    lines.push(`  ${conflict.path} (${conflict.kind})`);
+  }
+  lines.push(`解決済み conflict: ${resolved.length}`);
+  for (const conflict of resolved.slice(0, 30)) {
+    lines.push(`  ${conflict.path} (${conflict.kind})`);
+  }
+  if (unresolved.length > 0) {
+    lines.push(
+      '次の操作: 競合 path を編集して add した後、jskim spec version merge <project> --continue'
+    );
+  } else {
+    lines.push(
+      '次の操作: jskim spec version merge <project> --continue'
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * @param {object} inspection
+ */
+function projectVersionMergeInspectJson(inspection) {
+  return {
+    schemaVersion: '1.0',
+    inProgress: inspection.inProgress,
+    mergeState: inspection.mergeState
+      ? {
+          ours: inspection.mergeState.ours,
+          theirs: inspection.mergeState.theirs,
+          base: inspection.mergeState.base,
+          targetRevision: inspection.mergeState.targetRevision,
+          currentBranch: inspection.mergeState.currentBranch,
+          defaultMessage: inspection.mergeState.defaultMessage,
+          workingTreeHash: inspection.mergeState.workingTreeHash,
+          startedAt: inspection.mergeState.startedAt,
+        }
+      : null,
+    unresolvedConflicts: (inspection.unresolvedConflicts || []).map((c) => ({
+      path: c.path,
+      kind: c.kind,
+    })),
+    resolvedConflicts: (inspection.resolvedConflicts || []).map((c) => ({
+      path: c.path,
+      kind: c.kind,
+    })),
+  };
+}
+
+/**
+ * @param {{ outcome: string, conflicts?: object[] }} result
+ * @returns {string}
+ */
+function formatVersionMergeConflictsHuman(result) {
+  const lines = ['[JSKim] merge conflict が発生しました。'];
+  for (const conflict of result.conflicts || []) {
+    lines.push(`  ${conflict.path} (${conflict.kind})`);
+  }
+  lines.push(
+    '次の操作: 競合 path を編集して add → jskim spec version merge <project> --continue'
+  );
+  lines.push('中止: jskim spec version merge <project> --abort');
+  return lines.join('\n');
+}
+
+/**
+ * @param {object} result mergeVersion / continueMergeVersion 結果
+ * @returns {string}
+ */
+function formatVersionMergeOutcomeHuman(result) {
+  if (result.outcome === 'already-up-to-date') {
+    return '[JSKim] すでに最新です（already-up-to-date）。';
+  }
+  if (result.outcome === 'fast-forward') {
+    return `[JSKim] fast-forward merge しました: ${shortHash(result.commitHash)}`;
+  }
+  if (result.outcome === 'merged') {
+    return `[JSKim] merge commit を作成しました: ${shortHash(result.commitHash)}`;
+  }
+  if (result.commitHash && result.parents) {
+    return `[JSKim] merge commit を作成しました: ${shortHash(result.commitHash)}`;
+  }
+  return '[JSKim] merge が完了しました。';
+}
+
 module.exports = {
   shortHash,
   changeCode,
@@ -314,4 +455,8 @@ module.exports = {
   formatVersionFsckHuman,
   projectRecoveryInspectJson,
   formatRecoveryInspectHuman,
+  formatVersionMergeInspectHuman,
+  projectVersionMergeInspectJson,
+  formatVersionMergeConflictsHuman,
+  formatVersionMergeOutcomeHuman,
 };

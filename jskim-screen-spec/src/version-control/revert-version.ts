@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveVersionAuthor } from './author-config.js';
 import { createVersionControlError } from './errors.js';
+import { assertNoMergeInProgress } from './merge-gates.js';
 import { readVersionHead } from './head.js';
 import {
   buildMaterializePlan,
@@ -125,6 +126,7 @@ export function revertVersionCommit(
   return withMutationLock(options, 'revert', () =>
     withIndexLock(options, () => {
       assertNoIncompleteTransaction(options);
+      assertNoMergeInProgress(options);
 
       const status = getVersionStatus(options);
       if (!status.clean) {

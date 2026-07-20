@@ -39,6 +39,7 @@ function revision(
     hash: 'b'.repeat(64),
     shortHash: 'bbbbbbb',
     parents: [],
+    parentCount: 0,
     message: '初回登録',
     author: { name: '山田 太郎' },
     committedAt: '2026-07-12T00:00:00.000Z',
@@ -60,6 +61,7 @@ function detail(
   return {
     ...revision(),
     isMerge: false,
+    parentCount: 0,
     featureChanges: [],
     screenChanges: [
       { screenId: 'alpha', kind: 'modified', sections: ['description'] },
@@ -194,6 +196,57 @@ describe('RevisionHistoryDialog', () => {
     expect(text).toContain('メール');
     expect(text).toContain('一部のみ表示');
     expect(text).not.toContain('@example.com');
+    wrapper.unmount();
+  });
+
+  it('merge commit 行に マージ badge と 親: 2、390px で overflow しない', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    });
+    const mergeRev = revision({
+      hash: 'c'.repeat(64),
+      shortHash: 'ccccccc',
+      parents: ['d'.repeat(64), 'e'.repeat(64)],
+      parentCount: 2,
+      message: 'Merge topic into main',
+    });
+    const wrapper = mount(RevisionHistoryDialog, {
+      props: {
+        status: baseStatus(),
+        scope: 'project',
+        featureId: 'inquiry',
+        featureName: '問い合わせ',
+        projectName: 'demo',
+        screenId: 'alpha',
+        revisions: [mergeRev],
+        selectedHash: mergeRev.hash,
+        detail: detail({
+          hash: mergeRev.hash,
+          shortHash: mergeRev.shortHash,
+          parents: mergeRev.parents,
+          parentCount: 2,
+          isMerge: true,
+          message: mergeRev.message,
+        }),
+        loading: false,
+        loadingMore: false,
+        loadingDetail: false,
+        hasMore: false,
+        errorMessage: '',
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+    expect(wrapper.get('[data-testid="revision-history-merge-badge"]').text()).toBe(
+      'マージ',
+    );
+    expect(wrapper.get('[data-testid="revision-history-parent-count"]').text()).toBe(
+      '親: 2',
+    );
+    expect(wrapper.text()).toContain('commit（first parent 比較）');
+    const dialog = wrapper.get('.revision-history-dialog').element as HTMLElement;
+    expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth + 1);
     wrapper.unmount();
   });
 });

@@ -11,6 +11,7 @@ import {
   validateRefName,
 } from './refs.js';
 import { resolveVersionRevision } from './revision-resolver.js';
+import { assertNoMergeInProgress } from './merge-gates.js';
 import { assertNoIncompleteTransaction } from './transaction.js';
 import type { TagObject, VersionPerson } from './types.js';
 import { assertTagObject } from './validate-object.js';
@@ -122,6 +123,7 @@ export function createVersionTag(
 ): VersionTagInfo {
   return withMutationLock(options, 'tag-create', () => {
     assertNoIncompleteTransaction(options);
+    assertNoMergeInProgress(options);
     const name = validateRefName('tags', options.name);
     if (listRefNames({ ...options, kind: 'tags' }).includes(name)) {
       throw createVersionControlError(

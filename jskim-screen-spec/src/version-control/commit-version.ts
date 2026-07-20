@@ -7,6 +7,11 @@ import {
   writeVersionHeadDetached,
 } from './head.js';
 import { withMutationLock } from './mutation-lock.js';
+import {
+  finishMergeCommit,
+  isMergeReadyToCommit,
+} from './merge-version.js';
+import { readVersionMergeState } from './merge-state.js';
 import { writeVersionObject } from './object-store.js';
 import { compareAndSwapVersionRef } from './refs.js';
 import { diffVersionTrees } from './status.js';
@@ -120,9 +125,41 @@ function branchNameFromRef(ref: string | null): string | null {
  * ref/HEAD update を commit point とし、その後の index 失敗は journal を残して RECOVERY_REQUIRED。
  */
 export function commitVersion(options: CommitVersionOptions): CommitVersionResult {
+  const mergeReady = isMergeReadyToCommit(options);
+  if (mergeReady) {
+    const message = assertCommitMessage(
+      options.message || mergeReady.defaultMessage,
+    );
+    const result = finishMergeCommit({ ...options, message });
+    const head = readVersionHead(options);
+    const author = resolveVersionAuthor({
+      rootDir: options.rootDir,
+      projectName: options.projectName,
+      author: options.author,
+    });
+    return {
+      commitHash: result.commitHash,
+      treeHash: result.treeHash,
+      parents: result.parents,
+      message: result.message,
+      author,
+      committedAt: options.committedAt ?? new Date().toISOString(),
+      headRef: head.ref,
+      detached: head.ref === null,
+    };
+  }
+
   return withMutationLock(options, 'commit', () =>
     withIndexLock(options, () => {
       assertNoIncompleteTransaction(options);
+
+      const pendingMerge = readVersionMergeState(options);
+      if (pendingMerge) {
+        throw createVersionControlError(
+          'SPEC_VERSION_MERGE_UNRESOLVED',
+          '未解決の merge conflict があるため commit できません。',
+        );
+      }
 
       const head = readVersionHead(options);
       const index = readVersionIndex(options);

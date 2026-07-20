@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createVersionControlError } from './errors.js';
 import { assertMetadataPathBoundary, assertNotSymlink } from './fs-guards.js';
 import { readVersionHead } from './head.js';
+import { removeVersionMergeState } from './merge-state.js';
 import { readVersionObject } from './object-store.js';
 import { versionRepositoryPath } from './repository-paths.js';
 import { createWorkingSnapshot } from './snapshot.js';
@@ -154,6 +155,14 @@ function classifyHead(
   current: { commit: string | null; ref: string | null; unborn: boolean },
   journal: VersionTransactionJournal,
 ): RecoveryHeadState {
+  const headUnchanged =
+    journal.oldHead.commit &&
+    journal.newHead.commit &&
+    journal.oldHead.commit === journal.newHead.commit &&
+    journal.oldHead.ref === journal.newHead.ref;
+  if (headUnchanged && headMatches(current, journal.oldHead)) {
+    return 'old';
+  }
   if (headMatches(current, journal.newHead)) return 'new';
   if (headMatches(current, journal.oldHead)) return 'old';
   return 'other';
@@ -198,7 +207,11 @@ function classifySource(
   options: { rootDir: string; projectName: string },
   journal: VersionTransactionJournal,
 ): RecoverySourceState {
-  if (!journal.sourceSwap || journal.operation === 'commit') {
+  if (
+    !journal.sourceSwap ||
+    journal.operation === 'commit' ||
+    journal.operation === 'merge-continue'
+  ) {
     return 'not-applicable';
   }
   try {
@@ -224,47 +237,120 @@ function decideAction(
     return 'unsafe';
   }
 
-  if (headState === 'new') {
-    // HEAD new + source old は推定で source を上書きしない
-    if (journal.sourceSwap && sourceState === 'old') {
+  if (
+    journal.operation === 'merge' &&
+    journal.phase === 'cleanup_pending' &&
+    headState === 'old' &&
+    indexState === 'new' &&
+    sourceState === 'new'
+  ) {
+    return 'cleanup';
+  }
+
+  if (
+    journal.operation === 'merge-abort' &&
+    (journal.phase === 'index_reset' || journal.phase === 'cleanup_pending') &&
+    (headState === 'old' || headState === 'new') &&
+    indexState === 'new' &&
+    sourceState === 'new'
+  ) {
+    return 'cleanup';
+  }
+
+  const commitLike =
+    journal.operation === 'commit' || journal.operation === 'merge-continue';
+  const checkoutLike =
+    journal.operation === 'checkout' ||
+    journal.operation === 'revert' ||
+    journal.operation === 'merge' ||
+    journal.operation === 'merge-abort';
+
+  if (commitLike) {
+    if (headState === 'new') {
+      if (journal.sourceSwap && sourceState === 'old') {
+        return 'unsafe';
+      }
+      if (
+        (sourceState === 'new' || sourceState === 'not-applicable') &&
+        (indexState === 'old' || indexState === 'missing')
+      ) {
+        return 'complete';
+      }
+      if (
+        (sourceState === 'new' || sourceState === 'not-applicable') &&
+        indexState === 'new'
+      ) {
+        return 'cleanup';
+      }
       return 'unsafe';
     }
-    if (
-      (sourceState === 'new' || sourceState === 'not-applicable') &&
-      (indexState === 'old' || indexState === 'missing')
-    ) {
-      return 'complete';
-    }
-    if (
-      (sourceState === 'new' || sourceState === 'not-applicable') &&
-      indexState === 'new'
-    ) {
-      return 'cleanup';
+    if (headState === 'old') {
+      if (
+        journal.sourceSwap &&
+        sourceState === 'new' &&
+        (journal.phase === 'source_installed' ||
+          journal.phase === 'source_backed_up' ||
+          journal.phase === 'prepared')
+      ) {
+        return 'rollback';
+      }
+      if (
+        (sourceState === 'old' || sourceState === 'not-applicable') &&
+        (indexState === 'old' || indexState === 'missing')
+      ) {
+        return 'cleanup';
+      }
+      return 'unsafe';
     }
     return 'unsafe';
   }
 
-  // head old → commit point 前
-  if (
-    journal.sourceSwap &&
-    sourceState === 'new' &&
-    (journal.phase === 'source_installed' ||
-      journal.phase === 'source_backed_up' ||
-      journal.phase === 'prepared' ||
-      journal.phase === 'ref_updated')
-  ) {
-    // ref_updated だが HEAD が old なら不整合 → unsafe
-    if (journal.phase === 'ref_updated') {
+  if (checkoutLike) {
+    if (headState === 'new') {
+      if (journal.sourceSwap && sourceState === 'old') {
+        return 'unsafe';
+      }
+      if (
+        (sourceState === 'new' || sourceState === 'not-applicable') &&
+        (indexState === 'old' || indexState === 'missing')
+      ) {
+        return 'complete';
+      }
+      if (
+        (sourceState === 'new' || sourceState === 'not-applicable') &&
+        indexState === 'new'
+      ) {
+        return 'cleanup';
+      }
       return 'unsafe';
     }
-    return 'rollback';
-  }
 
-  if (
-    (sourceState === 'old' || sourceState === 'not-applicable') &&
-    (indexState === 'old' || indexState === 'missing')
-  ) {
-    return 'cleanup';
+    if (headState === 'old') {
+      if (
+        journal.sourceSwap &&
+        sourceState === 'new' &&
+        (journal.phase === 'source_installed' ||
+          journal.phase === 'source_backed_up' ||
+          journal.phase === 'prepared' ||
+          journal.phase === 'ref_updated')
+      ) {
+        if (journal.phase === 'ref_updated') {
+          return 'unsafe';
+        }
+        return 'rollback';
+      }
+
+      if (
+        (sourceState === 'old' || sourceState === 'not-applicable') &&
+        (indexState === 'old' || indexState === 'missing')
+      ) {
+        return 'cleanup';
+      }
+
+      return 'unsafe';
+    }
+
+    return 'unsafe';
   }
 
   return 'unsafe';
@@ -692,6 +778,9 @@ export function recoverVersionRepository(
         journal.newIndex.tree,
       );
       restoreIndex(options, journal, 'new');
+      if (journal.operation === 'merge-continue') {
+        removeVersionMergeState(options);
+      }
       if (journal.sourceSwap) {
         if (!removeDerivedBestEffort(options.rootDir, options.projectName)) {
           // cleanup_pending 相当で journal を残す → 呼び出し側が再実行
@@ -728,6 +817,32 @@ export function recoverVersionRepository(
 
     if (live.recommendedAction === 'cleanup') {
       if (live.headState === 'old') {
+        if (
+          journal.operation === 'merge' &&
+          journal.phase === 'cleanup_pending' &&
+          live.indexState === 'new'
+        ) {
+          removeTransactionArtifacts({
+            rootDir: options.rootDir,
+            projectName: options.projectName,
+            operationId: journal.operationId,
+          });
+          return;
+        }
+        if (
+          journal.operation === 'merge-abort' &&
+          (journal.phase === 'index_reset' ||
+            journal.phase === 'cleanup_pending') &&
+          live.indexState === 'new'
+        ) {
+          removeVersionMergeState(options);
+          removeTransactionArtifacts({
+            rootDir: options.rootDir,
+            projectName: options.projectName,
+            operationId: journal.operationId,
+          });
+          return;
+        }
         // old 完了相当: index を old に揃え journal 掃除
         if (live.indexState !== 'old' && live.indexState !== 'missing') {
           restoreIndex(options, journal, 'old');

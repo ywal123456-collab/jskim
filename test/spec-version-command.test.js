@@ -7,8 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseJskimArgv } = require('../scripts/lib/parse-cli-args');
+const { parseSpecVersionArgv } = require('../scripts/lib/parse-spec-version-args');
 const {
   runSpecVersionCommand,
+  dispatchVersionCommand,
 } = require('../scripts/commands/spec-version-command');
 const { REPO_ROOT } = require('./helpers/create-test-workspace');
 const { runCli } = require('./helpers/run-cli');
@@ -300,6 +302,112 @@ describe('spec version CLI', () => {
     assert.throws(() =>
       parseJskimArgv(['spec', 'version', 'recover', 'demo', '--operation-id', 'x'])
     );
+  });
+
+  it('merge: help と argv 解析', () => {
+    const help = parseSpecVersionArgv(['--help']);
+    assert.equal(help.kind, 'help');
+
+    const inspect = parseSpecVersionArgv(['merge', 'demo', '--inspect']);
+    assert.equal(inspect.versionCommand, 'merge');
+    assert.equal(inspect.projectName, 'demo');
+    assert.equal(inspect.revision, undefined);
+    assert.equal(inspect.options.inspect, true);
+
+    const start = parseSpecVersionArgv(['merge', 'demo', 'feature-branch']);
+    assert.equal(start.versionCommand, 'merge');
+    assert.equal(start.projectName, 'demo');
+    assert.equal(start.revision, 'feature-branch');
+
+    assert.throws(() =>
+      parseSpecVersionArgv(['merge', 'demo', '--inspect', '--abort'])
+    );
+    assert.throws(() => parseSpecVersionArgv(['merge']));
+  });
+
+  it('merge: dispatchVersionCommand が mock API を呼ぶ', async () => {
+    const ctx = { rootDir: '/tmp/demo', projectName: 'demo' };
+    const calls = [];
+    const api = {
+      mergeVersion: (options) => {
+        calls.push(['mergeVersion', options]);
+        return {
+          outcome: 'merged',
+          commitHash: 'f'.repeat(64),
+          treeHash: 't'.repeat(64),
+          parents: ['a'.repeat(64), 'b'.repeat(64)],
+        };
+      },
+      inspectMergeVersion: (options) => {
+        calls.push(['inspectMergeVersion', options]);
+        return {
+          inProgress: true,
+          mergeState: {
+            targetRevision: 'topic',
+            currentBranch: 'main',
+            defaultMessage: 'Merge topic into main',
+          },
+          unresolvedConflicts: [{ path: 'screens/a/description.json', kind: 'content' }],
+          resolvedConflicts: [],
+        };
+      },
+      continueMergeVersion: (options) => {
+        calls.push(['continueMergeVersion', options]);
+        return {
+          commitHash: 'c'.repeat(64),
+          treeHash: 'u'.repeat(64),
+          parents: ['a'.repeat(64), 'b'.repeat(64)],
+          message: 'Merge topic into main',
+        };
+      },
+      abortMergeVersion: (options) => {
+        calls.push(['abortMergeVersion', options]);
+        return { restoredTree: 'r'.repeat(64) };
+      },
+    };
+
+    const start = await dispatchVersionCommand({
+      api,
+      ctx,
+      versionCommand: 'merge',
+      revision: 'topic',
+      vo: { message: 'Merge topic into main' },
+    });
+    assert.match(start.human, /merge commit/);
+    assert.equal(start.jsonResult.outcome, 'merged');
+    assert.equal(calls[0][0], 'mergeVersion');
+    assert.equal(calls[0][1].target, 'topic');
+
+    const inspect = await dispatchVersionCommand({
+      api,
+      ctx,
+      versionCommand: 'merge',
+      revision: undefined,
+      vo: { inspect: true },
+    });
+    assert.match(inspect.human, /merge 進行中/);
+    assert.equal(inspect.jsonResult.inProgress, true);
+
+    const cont = await dispatchVersionCommand({
+      api,
+      ctx,
+      versionCommand: 'merge',
+      revision: undefined,
+      vo: { continue: true, message: 'finish' },
+    });
+    assert.match(cont.human, /merge commit/);
+    assert.equal(cont.jsonResult.outcome, 'continued');
+
+    const abort = await dispatchVersionCommand({
+      api,
+      ctx,
+      versionCommand: 'merge',
+      revision: undefined,
+      vo: { abort: true },
+    });
+    assert.match(abort.human, /abort/);
+    assert.equal(abort.jsonResult.outcome, 'aborted');
+    assert.equal(calls.length, 4);
   });
 
   it('companion 未インストール時は日本語エラー', async () => {

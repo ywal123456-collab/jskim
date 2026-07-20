@@ -176,6 +176,51 @@ export type {
   MaterializePlan,
   PhysicalFilePlan,
 } from './materialize-snapshot.js';
+export { findMergeBase } from './merge-base.js';
+export type { MergeBaseKind, MergeBaseResult } from './merge-base.js';
+export type { MergeConflict, MergeConflictKind } from './merge-conflict.js';
+export { mergeProjectDocument, collectScreenIdsFromPaths } from './merge-project.js';
+export type { MergeProjectResult } from './merge-project.js';
+export { mergeFeaturesDocument } from './merge-features.js';
+export type { MergeFeaturesResult } from './merge-features.js';
+export {
+  mergeLogicalTrees,
+  buildWorkingTreeFiles,
+  buildIndexTreeFiles,
+  oursTreeFiles,
+} from './merge-tree.js';
+export type { MergeTreeResult } from './merge-tree.js';
+export {
+  mergeStatePath,
+  assertVersionMergeState,
+  writeVersionMergeState,
+  readVersionMergeState,
+  removeVersionMergeState,
+  hasVersionMergeState,
+} from './merge-state.js';
+export type { VersionMergeState } from './merge-state.js';
+export {
+  assertMergeCanStart,
+  assertNoMergeInProgress,
+  assertMergeInProgress,
+} from './merge-gates.js';
+export {
+  mergeVersion,
+  inspectMergeVersion,
+  continueMergeVersion,
+  abortMergeVersion,
+  finishMergeCommit,
+  updateMergeResolvedPathsAfterStage,
+  isMergeReadyToCommit,
+} from './merge-version.js';
+export type {
+  MergeVersionOptions,
+  MergeVersionResult,
+  InspectMergeVersionResult,
+  ContinueMergeVersionOptions,
+  AbortMergeVersionOptions,
+  MergeTransactionAdapters,
+} from './merge-version.js';
 export {
   getBrowserVersionStatus,
   listBrowserVersionRevisions,

@@ -59,6 +59,7 @@ export type BrowserRevisionListItem = {
   hash: string;
   shortHash: string;
   parents: string[];
+  parentCount: number;
   message: string;
   author: { name: string };
   committedAt: string;
@@ -99,6 +100,7 @@ export type BrowserRevisionDetail = {
   hash: string;
   shortHash: string;
   parents: string[];
+  parentCount: number;
   message: string;
   author: { name: string };
   committedAt: string;
@@ -812,6 +814,7 @@ export function listBrowserVersionRevisions(
       hash,
       shortHash: shortHash(hash),
       parents: [...commit.parents],
+      parentCount: commit.parents.length,
       message: commit.message,
       author: { name: commit.author.name },
       committedAt: commit.committedAt,
@@ -857,6 +860,7 @@ export function getBrowserVersionRevisionDetail(options: {
     hash: resolved.commitHash,
     shortHash: shortHash(resolved.commitHash),
     parents: [...commit.parents],
+    parentCount: commit.parents.length,
     message: commit.message,
     author: { name: commit.author.name },
     committedAt: commit.committedAt,
@@ -900,6 +904,7 @@ export function getBrowserVersionRevisionDiff(options: {
     hash: toRev.commitHash,
     shortHash: shortHash(toRev.commitHash),
     parents: [...toCommit.parents],
+    parentCount: toCommit.parents.length,
     message: toCommit.message,
     author: { name: toCommit.author.name },
     committedAt: toCommit.committedAt,

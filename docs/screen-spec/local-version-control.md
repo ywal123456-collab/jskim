@@ -4,6 +4,7 @@
 > - 7E-1: repository / object store / Feature Group
 > - 7E-2: working snapshot / index / status / stage（`project.json.screenOrder`、PNG signature、index reachable integrity、HEAD 変更時 stage 拒否）
 > - 7E-3: author config、commit / log、branch / annotated tag、revision resolve、checkout materialization、revert、transaction journal、fsck、stale lock recovery
+> - **7E-6**: local merge（3-way / fast-forward / already-up-to-date）、`MERGE_STATE`、conflict / `--continue` / `--abort`、`mergeFeaturesDocument` 等 Feature domain merge
 >
 > lock 順序: **mutation lock → index lock → ref CAS**
 > **transaction commit point は ref/HEAD 更新**。old ref → rollback、new ref → forward recovery。それ以外は `SPEC_VERSION_RECOVERY_UNSAFE`。
@@ -18,24 +19,25 @@
 > Screen Spec 内部 tag は source Git tag と自動連携しない。
 >
 > ### 実装済み（Phase 7E-4A CLI）
-> - root `jskim spec version`（init / config / status / diff / add / commit / log / branch / tag / checkout / revert / fsck / recover）
+> - root `jskim spec version`（init / config / status / diff / add / commit / log / branch / tag / checkout / revert / **merge** / fsck / recover）
+> - merge: `<revision>` 開始、`--inspect` / `--continue` / `--abort`（相互排他）、conflict 時 exit **3**
 > - `--json` envelope、usage=2 / conflict·recovery=3 の exit code 区分
 >
 > ### 実装済み（Phase 7E-4B Revision API + Viewer）
 > - companion `revision-query`（browser-safe projection）
 > - `jskim spec dev` same-origin GET API（`/_jskim/spec/version/*`、`/_jskim/spec/features`）
-> - Viewer 「改訂履歴」 modal（read-only）。mutation は CLI のみ
+> - Viewer 「改訂履歴」 modal（read-only）。merge commit は **マージ** badge と **親: N**（`parentCount`）表示。mutation は CLI のみ
 > - author email / Figma `fileKey` / `nodeId` / token / 絶対 path は API・Viewer に出さない
 > - static `spec build` / `jskim serve` では API mount・改訂履歴ボタンなし
 >
 > ### 未実装
-> - Viewer mutation UI、merge、Excel Export、Remote Provider
+> - Viewer mutation UI、Excel Export、Remote Provider
 
 この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計および実装契約である。
 
 | 項目 | 値 |
 |------|-----|
-| 状態 | domain + CLI + read-only Revision API / Viewer 改訂履歴 実装済み |
+| 状態 | domain + CLI + merge + read-only Revision API / Viewer 改訂履歴 実装済み |
 | 関連 | [excel-export.md](./excel-export.md)（版管理対応 Export は Phase 7F） |
 | 対象 package | companion `@ywal123456/jskim-screen-spec` + root `jskim spec version` / `jskim spec dev` |
 
@@ -716,7 +718,36 @@ commit 時の tree は「HEAD tree に staged 変更を適用した **完全な 
 | screen JSON 同一フィールド | field conflict |
 | 片側削除・片側修正 | conflict |
 | binary Reference/Capture | 双方変更なら conflict |
-| abort / continue | `version/` 下に状態ファイル |
+| abort / continue | `version/` 下に `MERGE_STATE.json`（`mergeIndexTree` / `mergeIndexRevision` 含む）。conflict setup 時点で index も auto-merge 結果を保持する。conflict path を stage すると resolved 扱い |
+
+#### merge CLI workflow（7E-6 実装）
+
+```text
+# branch 上で target revision を merge（clean tree 必須）
+jskim spec version merge [<project>] <revision> [--message <msg>] [--json]
+
+# 進行中 merge の確認
+jskim spec version merge [<project>] --inspect [--json]
+
+# conflict 解消後（該当 path を add 済み）
+jskim spec version merge [<project>] --continue [--message <msg>]
+
+# merge 中止（working tree が merge 開始時と同一のとき。index は merge setup の auto-merge 状態を許容し、ours へ復元する）
+jskim spec version merge [<project>] --abort
+```
+
+conflict setup 後の index は **ours tree ではなく** auto-merge 済み tree（non-conflict は theirs/ours 結果、conflict path は ours）を保持する。`continue` / `commit` はこの index を merge commit の tree として使う。
+
+merge 中に Feature API で `features.json` を変更した場合は **working edit** とみなす。反映には `add --feature` / `add --features` が必要であり、merge 開始後の Feature 変更があると `merge --abort` は `SPEC_VERSION_MERGE_ABORT_UNSAFE` になり得る。
+
+| outcome | 説明 | exit |
+|---------|------|------|
+| already-up-to-date | 取り込み不要 | 0 |
+| fast-forward | ref / source を target へ | 0 |
+| merged | 2-parent commit 作成 | 0 |
+| conflicts | `MERGE_STATE` 残置、path 一覧 | **3** |
+
+merge 進行中は checkout / revert / branch / tag / author config を `SPEC_VERSION_MERGE_IN_PROGRESS` で拒否する。`status` は merge base / target / 未解決 conflict を表示する。
 
 ---
 
@@ -752,6 +783,10 @@ jskim spec version branch [<project>] …
 jskim spec version checkout [<project>] <revision>
 jskim spec version tag [<project>] <name>
 jskim spec version revert [<project>] <revision>
+jskim spec version merge [<project>] <revision> [--message <message>]
+jskim spec version merge [<project>] --inspect [--json]
+jskim spec version merge [<project>] --continue [--message <message>]
+jskim spec version merge [<project>] --abort
 ```
 
 現行 `jskim spec <subcommand>` パターンに合わせる。`export` は別サブコマンド（Phase 7F）。
@@ -1033,13 +1068,13 @@ hash は golden bytes を検討。Excel は semantic assertion 優先。
 | 契約 | Feature 変更は working tree のみ。自動 stage/commit なし。Feature 削除は Screen 削除ではない |
 | 除外 | Excel、Remote、merge、Viewer 版 mutation UI |
 
-### Phase 7E-6 — local merge + conflict / abort / continue
+### Phase 7E-6 — local merge + conflict / abort / continue（**実装済み**）
 
 | 項目 | 内容 |
 |------|------|
-| 範囲 | 3-way merge、§16.3 conflict、abort/continue、必要なら Viewer 解消 UI |
+| 範囲 | 3-way merge、§16.3 conflict、CLI abort/continue/inspect、Feature domain merge、Viewer read-only merge 表示 |
 | 完了条件 | 代表 conflict ケースのテスト green |
-| 除外 | Remote Provider 本体（7G） |
+| 除外 | Remote Provider 本体（7G）、Viewer conflict 解消 UI |
 
 ### Phase 7F-1〜3 — version-aware Excel
 
@@ -1062,7 +1097,7 @@ interface + in-memory → fetch/push/CAS → Central Viewer 参照。
 - author は repository-local config + env。global Git 非継承。欠落は error
 - tag 形式は 7E-1、CLI は 7E-3。force/移動禁止。source Git tag と非連携
 - template（Nunjucks/Vue）実装ソースは version 対象外
-- merge object（parents≥2）は最初から許容。**engine は 7E-6**
+- merge object（parents≥2）は最初から許容。**merge engine / CLI は 7E-6 実装済み**
 - Feature membership 正本は `features.json` のみ。機能順は一意な `displayOrder`、画面順は `screenIds`
 - Ungrouped = features 非掲載。順は既存 screen canonical 順
 - Reference version は **canonical meta（Figma 時 fileKey/nodeId 含む）+ PNG**。token/signed URL は非保存。Viewer/API/Excel は browser-safe のみ

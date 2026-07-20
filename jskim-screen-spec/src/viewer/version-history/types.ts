@@ -54,6 +54,7 @@ export type BrowserRevisionListItem = {
   hash: string;
   shortHash: string;
   parents: string[];
+  parentCount: number;
   message: string;
   author: { name: string };
   committedAt: string;
@@ -94,6 +95,7 @@ export type BrowserRevisionDetail = {
   hash: string;
   shortHash: string;
   parents: string[];
+  parentCount: number;
   message: string;
   author: { name: string };
   committedAt: string;

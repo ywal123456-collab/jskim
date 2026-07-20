@@ -6,6 +6,7 @@ const { resolveProject } = require('../lib/resolve-project');
 const { resolveScreenSpecModule } = require('../lib/resolve-screen-spec-module');
 const {
   EXIT_SUCCESS,
+  EXIT_CONFLICT,
   mapVersionCliExitCode,
   projectVersionCliError,
   writeVersionJson,
@@ -23,6 +24,10 @@ const {
   formatVersionFsckHuman,
   projectRecoveryInspectJson,
   formatRecoveryInspectHuman,
+  formatVersionMergeInspectHuman,
+  projectVersionMergeInspectJson,
+  formatVersionMergeConflictsHuman,
+  formatVersionMergeOutcomeHuman,
 } = require('../lib/format-version-cli');
 
 /**
@@ -143,6 +148,8 @@ async function dispatchVersionCommand(params) {
       return runCheckout(api, ctx, revision);
     case 'revert':
       return runRevert(api, ctx, revision, vo);
+    case 'merge':
+      return runMerge(api, ctx, revision, vo);
     case 'fsck':
       return runFsck(api, ctx);
     case 'recover':
@@ -433,6 +440,79 @@ function runRevert(api, ctx, revision, vo) {
   };
 }
 
+function runMerge(api, ctx, revision, vo) {
+  if (vo.inspect) {
+    const inspection = api.inspectMergeVersion(ctx);
+    return {
+      human: formatVersionMergeInspectHuman(inspection),
+      jsonResult: projectVersionMergeInspectJson(inspection),
+    };
+  }
+  if (vo.continue) {
+    const result = api.continueMergeVersion({
+      ...ctx,
+      message: vo.message,
+    });
+    return {
+      human: formatVersionMergeOutcomeHuman(result),
+      jsonResult: {
+        outcome: 'continued',
+        commitHash: result.commitHash,
+        treeHash: result.treeHash,
+        parents: result.parents,
+        message: result.message,
+      },
+    };
+  }
+  if (vo.abort) {
+    const result = api.abortMergeVersion(ctx);
+    return {
+      human: '[JSKim] merge を abort しました。',
+      jsonResult: {
+        outcome: 'aborted',
+        restoredTree: result.restoredTree,
+      },
+    };
+  }
+
+  const result = api.mergeVersion({
+    ...ctx,
+    target: revision,
+    message: vo.message,
+  });
+
+  if (result.outcome === 'conflicts') {
+    return {
+      human: formatVersionMergeConflictsHuman(result),
+      jsonResult: {
+        outcome: 'conflicts',
+        conflicts: (result.conflicts || []).map((c) => ({
+          path: c.path,
+          kind: c.kind,
+        })),
+        mergeState: result.mergeState
+          ? {
+              targetRevision: result.mergeState.targetRevision,
+              currentBranch: result.mergeState.currentBranch,
+              defaultMessage: result.mergeState.defaultMessage,
+            }
+          : null,
+      },
+      exitCode: EXIT_CONFLICT,
+    };
+  }
+
+  return {
+    human: formatVersionMergeOutcomeHuman(result),
+    jsonResult: {
+      outcome: result.outcome,
+      commitHash: result.commitHash,
+      treeHash: result.treeHash,
+      parents: result.parents ?? undefined,
+    },
+  };
+}
+
 function runFsck(api, ctx) {
   const fsck = api.fsckVersionRepository(ctx);
   const inspection = api.inspectVersionRecovery(ctx);
@@ -547,6 +627,18 @@ function finishError({ json, command, project, err, recoverHint }) {
   ) {
     message += `\n確認: jskim spec version status ${project}`;
   }
+  if (
+    projected.code === 'SPEC_VERSION_MERGE_IN_PROGRESS' &&
+    project
+  ) {
+    message += `\n確認: jskim spec version merge ${project} --inspect`;
+  }
+  if (
+    projected.code === 'SPEC_VERSION_MERGE_UNRESOLVED' &&
+    project
+  ) {
+    message += `\n次の操作: jskim spec version merge ${project} --continue`;
+  }
 
   if (json) {
     writeVersionJson({
@@ -563,4 +655,5 @@ function finishError({ json, command, project, err, recoverHint }) {
 
 module.exports = {
   runSpecVersionCommand,
+  dispatchVersionCommand,
 };

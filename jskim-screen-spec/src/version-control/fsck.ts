@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createVersionControlError } from './errors.js';
 import { assertMetadataPathBoundary } from './fs-guards.js';
 import { readVersionHead } from './head.js';
+import { mergeStatePath, readVersionMergeState } from './merge-state.js';
 import { decodeVersionObjectBytes } from './object-format.js';
 import { createWorkingSnapshot } from './snapshot.js';
 import {
@@ -409,6 +410,103 @@ export function fsckVersionRepository(options: {
     }
   } catch {
     errors.push('index を検証できません。');
+  }
+
+  // MERGE_STATE
+  const mergeStateFile = mergeStatePath(options.rootDir, options.projectName);
+  if (fs.existsSync(mergeStateFile)) {
+    try {
+      const mergeState = readVersionMergeState(options);
+      if (mergeState) {
+        const head = readVersionHead(options);
+        if (head.commit !== mergeState.ours) {
+          errors.push('MERGE_STATE.ours が HEAD commit と一致しません。');
+        }
+        if (head.ref) {
+          const branchName = head.ref.startsWith('refs/heads/')
+            ? head.ref.slice('refs/heads/'.length)
+            : null;
+          if (branchName && branchName !== mergeState.currentBranch) {
+            warnings.push(
+              'MERGE_STATE.currentBranch が HEAD branch と一致しません。',
+            );
+          }
+          if (!branchName) {
+            warnings.push(
+              'MERGE_STATE がありますが HEAD が detached です。',
+            );
+          }
+        }
+        for (const label of ['ours', 'theirs', 'base'] as const) {
+          const hash = mergeState[label];
+          if (!fs.existsSync(objectAbsolutePath(repo, hash))) {
+            errors.push(
+              `MERGE_STATE.${label} の commit object がありません。`,
+            );
+          }
+        }
+        const conflictPaths = new Set<string>();
+        const seenResolved = new Set<string>();
+        for (const conflict of mergeState.conflicts) {
+          if (
+            typeof conflict.path !== 'string' ||
+            conflict.path.length === 0 ||
+            conflict.path.includes('\0') ||
+            conflict.path.startsWith('/') ||
+            conflict.path.includes('\\')
+          ) {
+            errors.push(
+              `merge conflict path が不正です: ${conflict.path}`,
+            );
+          } else {
+            conflictPaths.add(conflict.path);
+          }
+        }
+        for (const resolved of mergeState.resolvedPaths) {
+          if (!conflictPaths.has(resolved)) {
+            errors.push(
+              `resolvedPaths に conflicts に無い path があります: ${resolved}`,
+            );
+          }
+          if (seenResolved.has(resolved)) {
+            errors.push(`resolvedPaths に重複 path があります: ${resolved}`);
+          }
+          seenResolved.add(resolved);
+        }
+        if (
+          !fs.existsSync(
+            objectAbsolutePath(repo, mergeState.workingTreeHash),
+          )
+        ) {
+          errors.push(
+            'MERGE_STATE.workingTreeHash の tree object がありません。',
+          );
+        } else {
+          walkTree(
+            repo,
+            mergeState.workingTreeHash,
+            reachable,
+            errors,
+            new Set(),
+          );
+        }
+        if (
+          !fs.existsSync(objectAbsolutePath(repo, mergeState.mergeIndexTree))
+        ) {
+          errors.push('MERGE_STATE.mergeIndexTree の tree object がありません。');
+        } else {
+          walkTree(
+            repo,
+            mergeState.mergeIndexTree,
+            reachable,
+            errors,
+            new Set(),
+          );
+        }
+      }
+    } catch {
+      errors.push('MERGE_STATE を検証できません。');
+    }
   }
 
   const all = collectObjectHashes(repo);

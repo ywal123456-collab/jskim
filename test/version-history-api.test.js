@@ -316,6 +316,77 @@ describe('createVersionHistoryApi unit', () => {
     });
   });
 
+  it('revision detail facade の isMerge / parentCount を JSON で返す', async () => {
+    const mergeHash = 'f'.repeat(64);
+    const api = createVersionHistoryApi({
+      rootDir: path.join(os.tmpdir(), 'jskim-vh-merge-unit'),
+      projectName: 'demo',
+      facade: makeFacade({
+        listBrowserVersionRevisions: () => ({
+          historyHead: mergeHash,
+          revisions: [
+            {
+              hash: mergeHash,
+              shortHash: mergeHash.slice(0, 7),
+              parents: ['a'.repeat(64), 'b'.repeat(64)],
+              parentCount: 2,
+              message: 'Merge topic into main',
+              author: { name: 'n' },
+              committedAt: '2026-01-01T00:00:00.000Z',
+              tags: [],
+              summary: {
+                changedFeatureCount: 0,
+                changedScreenCount: 1,
+                changedItemCount: 0,
+                changedReferenceCount: 0,
+                changedCaptureCount: 0,
+              },
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        }),
+        getBrowserVersionRevisionDetail: () => ({
+          hash: mergeHash,
+          shortHash: mergeHash.slice(0, 7),
+          parents: ['a'.repeat(64), 'b'.repeat(64)],
+          parentCount: 2,
+          message: 'Merge topic into main',
+          author: { name: 'n' },
+          committedAt: '2026-01-01T00:00:00.000Z',
+          tags: [],
+          isMerge: true,
+          summary: {
+            changedFeatureCount: 0,
+            changedScreenCount: 1,
+            changedItemCount: 0,
+            changedReferenceCount: 0,
+            changedCaptureCount: 0,
+          },
+          featureChanges: [],
+          screenChanges: [],
+          itemChanges: [],
+          assetChanges: [],
+          truncated: false,
+        }),
+      }),
+    });
+    await withApiServer(api, async (port) => {
+      const list = await request(port, {
+        path: `${VERSION_API_PREFIX}/revisions?scope=project&limit=5`,
+      });
+      assert.equal(list.status, 200);
+      assert.equal(list.json.revisions[0].parentCount, 2);
+
+      const detail = await request(port, {
+        path: `${VERSION_API_PREFIX}/revisions/${mergeHash}`,
+      });
+      assert.equal(detail.status, 200);
+      assert.equal(detail.json.isMerge, true);
+      assert.equal(detail.json.parentCount, 2);
+    });
+  });
+
   it('bootstrap 注入は idempotent で projectName を含まない', () => {
     const html = '<html><body><h1>x</h1></body></html>';
     const once = injectVersionHistoryBootstrap(html);

@@ -456,6 +456,84 @@ describe('version-history-api integration', () => {
     }
   });
 
+  it('merge commit は parentCount=2 と isMerge=true を返す', async () => {
+    const rootDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'jskim-vh-merge-'));
+    const projectName = 'demo';
+    try {
+      writeScreen(rootDir, projectName, 'alpha');
+      writeScreen(rootDir, projectName, 'beta');
+      companion.initVersionRepository({ rootDir, projectName });
+      companion.persistVersionAuthorConfig({
+        rootDir,
+        projectName,
+        config: {
+          schemaVersion: '1.0',
+          user: { name: SENTINEL.authorName, email: SENTINEL.email },
+        },
+      });
+      companion.stageProject({ rootDir, projectName });
+      companion.commitVersion({
+        rootDir,
+        projectName,
+        message: SENTINEL.message,
+      });
+
+      companion.createVersionBranch({ rootDir, projectName, name: 'topic' });
+      companion.checkoutVersion({ rootDir, projectName, target: 'topic' });
+      writeScreen(rootDir, projectName, 'beta', 'topic-side');
+      companion.stageProject({ rootDir, projectName });
+      companion.commitVersion({
+        rootDir,
+        projectName,
+        message: 'topic-side',
+      });
+
+      companion.checkoutVersion({ rootDir, projectName, target: 'main' });
+      writeScreen(rootDir, projectName, 'alpha', 'main-side');
+      companion.stageProject({ rootDir, projectName });
+      companion.commitVersion({
+        rootDir,
+        projectName,
+        message: 'main-side',
+      });
+
+      const merged = companion.mergeVersion({
+        rootDir,
+        projectName,
+        target: 'topic',
+        message: 'Merge topic into main',
+      });
+      assert.equal(merged.outcome, 'merged');
+
+      const api = createVersionHistoryApi({
+        rootDir,
+        projectName,
+        facade: makeFacade(companion),
+      });
+      await withApiServer(api, async (port) => {
+        const list = await request(
+          port,
+          '/_jskim/spec/version/revisions?scope=project&limit=5'
+        );
+        assert.equal(list.status, 200);
+        const mergeItem = list.json.revisions.find((r) => r.isMerge === true || r.parentCount === 2)
+          ?? list.json.revisions[0];
+        assert.equal(mergeItem.parentCount, 2);
+
+        const detail = await request(
+          port,
+          `/_jskim/spec/version/revisions/${mergeItem.hash}`
+        );
+        assert.equal(detail.status, 200);
+        assert.equal(detail.json.isMerge, true);
+        assert.equal(detail.json.parentCount, 2);
+        assertNoForbiddenSecrets(detail.text);
+      });
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('未初期化 repository では history endpoint が 409', async () => {
     const rootDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'jskim-vh-uninit2-'));
     const projectName = 'demo';

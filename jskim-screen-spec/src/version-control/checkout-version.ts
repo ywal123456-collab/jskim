@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createVersionControlError } from './errors.js';
+import { assertNoMergeInProgress } from './merge-gates.js';
 import {
   readVersionHead,
   writeVersionHeadDetached,
@@ -140,6 +141,7 @@ export function checkoutVersion(
   return withMutationLock(options, 'checkout', () =>
     withIndexLock(options, () => {
       assertNoIncompleteTransaction(options);
+      assertNoMergeInProgress(options);
 
       const status = getVersionStatus(options);
       if (!status.clean) {

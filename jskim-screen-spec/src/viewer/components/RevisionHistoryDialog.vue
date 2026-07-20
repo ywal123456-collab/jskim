@@ -73,6 +73,16 @@ const emptyScoped = computed(
     !props.errorMessage,
 );
 
+function isMergeRevision(rev: {
+  parentCount?: number;
+  parents?: string[];
+}): boolean {
+  if (typeof rev.parentCount === 'number') {
+    return rev.parentCount >= 2;
+  }
+  return (rev.parents?.length ?? 0) >= 2;
+}
+
 function firstLine(message: string): string {
   const line = message.split(/\r?\n/)[0] ?? '';
   return line.trim() || '(メッセージなし)';
@@ -296,6 +306,18 @@ jskim spec version commit {{ projectName || '&lt;project&gt;' }} -m "初回登�
               <span class="revision-history-dialog__hash">{{
                 rev.shortHash
               }}</span>
+              <span
+                v-if="isMergeRevision(rev)"
+                class="revision-history-dialog__merge-badge"
+                data-testid="revision-history-merge-badge"
+                >マージ</span
+              >
+              <span
+                v-if="rev.parentCount > 0"
+                class="revision-history-dialog__parent-count"
+                data-testid="revision-history-parent-count"
+                >親: {{ rev.parentCount }}</span
+              >
               <span class="revision-history-dialog__msg">{{
                 firstLine(rev.message)
               }}</span>
@@ -346,9 +368,14 @@ jskim spec version commit {{ projectName || '&lt;project&gt;' }} -m "初回登�
                 作者: {{ detail.author.name }} /
                 {{ formatDate(detail.committedAt) }}
               </p>
-              <p v-if="detail.isMerge">merge commit（first parent 比較）</p>
-              <p v-if="detail.parents.length">
-                parents: {{ detail.parents.join(', ') }}
+              <p v-if="isMergeRevision(detail)">
+                <span class="revision-history-dialog__merge-badge">マージ</span>
+                commit（first parent 比較） / 親: {{ detail.parentCount }}
+              </p>
+              <p
+                v-else-if="detail.parentCount === 1 && detail.parents.length"
+              >
+                parent: {{ detail.parents[0]?.slice(0, 7) }}
               </p>
               <p v-if="detail.tags.length">
                 tags: {{ detail.tags.join(', ') }}

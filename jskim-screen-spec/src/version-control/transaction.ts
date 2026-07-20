@@ -37,7 +37,7 @@ export type IndexSnapshot = {
 export type VersionTransactionJournal = {
   schemaVersion: '1.0';
   operationId: string;
-  operation: 'commit' | 'checkout' | 'revert';
+  operation: 'commit' | 'checkout' | 'revert' | 'merge' | 'merge-continue' | 'merge-abort';
   phase: TransactionPhase;
   oldHead: HeadSnapshot;
   newHead: HeadSnapshot;
@@ -335,7 +335,10 @@ export function assertVersionTransactionJournal(
   if (
     value.operation !== 'commit' &&
     value.operation !== 'checkout' &&
-    value.operation !== 'revert'
+    value.operation !== 'revert' &&
+    value.operation !== 'merge' &&
+    value.operation !== 'merge-continue' &&
+    value.operation !== 'merge-abort'
   ) {
     throw createVersionControlError(
       'SPEC_VERSION_CHECKOUT_TRANSACTION_INCOMPLETE',

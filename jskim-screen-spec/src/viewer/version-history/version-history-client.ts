@@ -132,6 +132,7 @@ function isRevisionList(body: unknown): body is ListRevisionsResponse {
       isRecord(r.author) &&
       typeof r.author.name === 'string' &&
       typeof r.committedAt === 'string' &&
+      typeof r.parentCount === 'number' &&
       Array.isArray(r.parents) &&
       Array.isArray(r.tags) &&
       isRecord(r.summary),
@@ -147,6 +148,7 @@ function isRevisionDetail(body: unknown): body is BrowserRevisionDetail {
     isRecord(body.author) &&
     typeof body.author.name === 'string' &&
     typeof body.committedAt === 'string' &&
+    typeof body.parentCount === 'number' &&
     Array.isArray(body.parents) &&
     Array.isArray(body.tags) &&
     typeof body.isMerge === 'boolean' &&
