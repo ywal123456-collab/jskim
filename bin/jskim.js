@@ -3,6 +3,7 @@
 
 const path = require('node:path');
 const { getHelpText } = require('../scripts/commands/help-text');
+const { getSpecVersionHelpText } = require('../scripts/lib/parse-spec-version-args');
 const { parseJskimArgv } = require('../scripts/lib/parse-cli-args');
 const { runBuildCommand } = require('../scripts/commands/build-command');
 const { runWatchCommand } = require('../scripts/commands/watch-command');
@@ -11,6 +12,8 @@ const { runDevCommand } = require('../scripts/commands/dev-command');
 const { runSpecBuildCommand } = require('../scripts/commands/spec-build-command');
 const { runSpecCollectCommand } = require('../scripts/commands/spec-collect-command');
 const { runSpecDevCommand } = require('../scripts/commands/spec-dev-command');
+const { runSpecVersionCommand } = require('../scripts/commands/spec-version-command');
+const { mapVersionCliExitCode } = require('../scripts/lib/version-cli-errors');
 
 function readPackageVersion() {
   // package インストール先の package.json を読む（作業空間ではない）
@@ -36,12 +39,16 @@ async function dispatch(argv) {
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     console.error(message);
-    process.exitCode = 1;
+    process.exitCode = mapVersionCliExitCode(err);
     return;
   }
 
   if (parsed.kind === 'help') {
-    printHelp();
+    if (parsed.helpTopic === 'spec-version') {
+      console.log(getSpecVersionHelpText());
+    } else {
+      printHelp();
+    }
     process.exitCode = 0;
     return;
   }
@@ -133,12 +140,24 @@ async function dispatch(argv) {
       });
       return;
     }
+    if (parsed.subcommand === 'version') {
+      await runSpecVersionCommand({
+        projectName,
+        revision: parsed.revision,
+        versionCommand: parsed.versionCommand,
+        versionOptions: options,
+        workspaceRoot,
+        usageLine: `jskim spec version ${parsed.versionCommand} [<project>]`,
+      });
+      return;
+    }
     throw new Error(
       `[JSKim] 不明な spec サブコマンドです: ${parsed.subcommand || '(なし)'}\n` +
         '使用方法:\n' +
         '  jskim spec build [<project>]\n' +
         '  jskim spec collect [<project>]\n' +
-        '  jskim spec dev [<project>]'
+        '  jskim spec dev [<project>]\n' +
+        '  jskim spec version <subcommand>'
     );
   }
 }
@@ -146,5 +165,5 @@ async function dispatch(argv) {
 dispatch(process.argv.slice(2)).catch((err) => {
   const message = err && err.message ? err.message : String(err);
   console.error(message);
-  process.exitCode = 1;
+  process.exitCode = mapVersionCliExitCode(err);
 });

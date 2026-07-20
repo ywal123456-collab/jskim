@@ -74,7 +74,7 @@ jskim dev sample
 
 | 名称 | 種類 | 役割 |
 |------|------|------|
-| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec collect` / `spec build` / `spec dev` |
+| `@ywal123456/jskim` | npm engine package | `jskim build` / `watch` / `serve` / `dev` / `spec collect` / `spec build` / `spec dev` / `spec version` |
 | `create-jskim` | npm creator package | 新しい JSKim 作業空間の生成 |
 | `@ywal123456/jskim-screen-spec` | optional published companion | 画面設計書 collect / viewer build（optional） |
 | `jskim` | CLI binary | インストール後に実行するコマンド名 |
@@ -125,7 +125,24 @@ jskim dev [<project>] [--host <host>] [--port <port>] [--open]
 jskim spec collect [<project>]
 jskim spec build [<project>]
 jskim spec dev [<project>] [--host <host>] [--port <port>] [--open]
+jskim spec version <subcommand>   # Screen Spec のローカル版管理（詳細: jskim spec version --help）
 ```
+
+最小 workflow（版管理）:
+
+```powershell
+npx jskim spec collect sample
+npx jskim spec version init sample
+npx jskim spec version config sample --name "Taro Yamada" --email "taro@example.com"
+npx jskim spec version add sample --all
+npx jskim spec version commit sample -m "初回登録"
+npx jskim spec version status sample
+npx jskim spec version log sample
+```
+
+- collect は自動実行しません。commit は stage 済み Screen Spec のみです
+- implementation の source Git / Git tag とは別系統で、Remote はありません
+- checkout は仕様 source を切り替え、実装 Nunjucks は変更しません
 
 `package.json` の scripts 例:
 

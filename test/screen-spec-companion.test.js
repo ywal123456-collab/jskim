@@ -110,5 +110,10 @@ describe('スクリーン仕様 companion package', () => {
         path.join(REPO_ROOT, 'scripts/commands/spec-build-command.js')
       )
     );
+    assert.ok(
+      fs.existsSync(
+        path.join(REPO_ROOT, 'scripts/commands/spec-version-command.js')
+      )
+    );
   });
 });

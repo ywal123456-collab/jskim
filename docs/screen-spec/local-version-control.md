@@ -17,8 +17,12 @@
 > checkout は aggregate `resources/manifest.json` と `spec/{project}/dist` を derived として除去し、次の collect/build で再生成する。
 > Screen Spec 内部 tag は source Git tag と自動連携しない。
 >
+> ### 実装済み（Phase 7E-4A CLI）
+> - root `jskim spec version`（init / config / status / diff / add / commit / log / branch / tag / checkout / revert / fsck / recover）
+> - `--json` envelope、usage=2 / conflict·recovery=3 の exit code 区分
+>
 > ### 未実装
-> - ユーザー CLI、Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+> - Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
 
 この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計および実装契約である。
 

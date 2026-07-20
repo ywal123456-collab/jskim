@@ -1,5 +1,9 @@
 'use strict';
 
+const {
+  parseSpecVersionArgv,
+} = require('./parse-spec-version-args');
+
 const COMMANDS = new Set(['build', 'watch', 'serve', 'dev', 'spec']);
 
 const COMMAND_OPTIONS = {
@@ -72,6 +76,7 @@ function parseSpecArgv(argv) {
         '  jskim spec build [<project>]',
         '  jskim spec collect [<project>]',
         '  jskim spec dev [<project>]',
+        '  jskim spec version <subcommand>',
       ].join('\n')
     );
   }
@@ -79,6 +84,10 @@ function parseSpecArgv(argv) {
   const subcommand = args[0];
   if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
     return { kind: 'help', options: emptyOptions() };
+  }
+
+  if (subcommand === 'version') {
+    return parseSpecVersionArgv(args.slice(1));
   }
 
   if (subcommand !== 'build' && subcommand !== 'collect' && subcommand !== 'dev') {
@@ -89,11 +98,13 @@ function parseSpecArgv(argv) {
         '  jskim spec build [<project>]',
         '  jskim spec collect [<project>]',
         '  jskim spec dev [<project>]',
+        '  jskim spec version <subcommand>',
         '',
         '使用できるサブコマンド:',
         '  build [<project>]     画面設計書 viewer を build します。',
         '  collect [<project>]   画面設計書用 snapshot を収集します。',
         '  dev [<project>]       収集・viewer build・開発server・自動更新を開始します。',
+        '  version …            Screen Spec のローカル版管理です。',
       ].join('\n')
     );
   }
@@ -303,6 +314,7 @@ function formatUnknownCommand(command) {
     '  spec build [<project>]',
     '  spec collect [<project>]',
     '  spec dev [<project>]',
+    '  spec version <subcommand>',
   ].join('\n');
 }
 

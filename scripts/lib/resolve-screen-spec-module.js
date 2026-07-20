@@ -22,7 +22,7 @@ function getMissingScreenSpecModuleMessage() {
     'その後:',
     '  npx jskim spec collect <project>',
     '  npx jskim spec build <project>',
-    '  または npx jskim spec dev <project>',
+    '  または npx jskim spec version init <project>',
   ].join('\n');
 }
 
@@ -52,6 +52,7 @@ function getMissingScreenSpecDevMessage() {
  * @param {string} [options.modulePath]
  * @param {boolean} [options.requireCollect]
  * @param {boolean} [options.requireWatchHelpers]
+ * @param {boolean} [options.requireVersion]
  * @returns {Promise<object>}
  */
 async function resolveScreenSpecModule(options = {}) {
@@ -68,11 +69,8 @@ async function resolveScreenSpecModule(options = {}) {
   try {
     mod = await import(pathToFileURL(entryPath).href);
   } catch (err) {
-    const message = err && err.message ? err.message : String(err);
     const wrapped = new Error(
-      `[JSKim] ${COMPANION_PACKAGE_NAME} の読み込みに失敗しました。\n` +
-        `entry: ${entryPath}\n` +
-        `原因: ${message}`
+      `[JSKim] ${COMPANION_PACKAGE_NAME} の読み込みに失敗しました。`
     );
     wrapped.cause = err;
     wrapped.code = 'JSKIM_SCREEN_SPEC_LOAD_FAILED';
@@ -81,8 +79,7 @@ async function resolveScreenSpecModule(options = {}) {
 
   if (typeof mod.buildScreenSpecViewer !== 'function') {
     throw new Error(
-      `[JSKim] ${COMPANION_PACKAGE_NAME} に buildScreenSpecViewer がありません。\n` +
-        `entry: ${entryPath}`
+      `[JSKim] ${COMPANION_PACKAGE_NAME} に buildScreenSpecViewer がありません。`
     );
   }
 
@@ -186,6 +183,10 @@ async function resolveScreenSpecModule(options = {}) {
     }
   }
 
+  if (options.requireVersion) {
+    assertVersionApis(mod);
+  }
+
   return {
     buildScreenSpecViewer: mod.buildScreenSpecViewer,
     buildScreenSpecViewerAtomic: mod.buildScreenSpecViewerAtomic,
@@ -204,9 +205,66 @@ async function resolveScreenSpecModule(options = {}) {
     getReferenceImageStatus: mod.getReferenceImageStatus,
     importFigmaReferenceImage: mod.importFigmaReferenceImage,
     reimportFigmaReferenceImage: mod.reimportFigmaReferenceImage,
+    initVersionRepository: mod.initVersionRepository,
+    persistVersionAuthorConfig: mod.persistVersionAuthorConfig,
+    getVersionStatus: mod.getVersionStatus,
+    stageProject: mod.stageProject,
+    stageScreen: mod.stageScreen,
+    stageFeature: mod.stageFeature,
+    commitVersion: mod.commitVersion,
+    getVersionLog: mod.getVersionLog,
+    listVersionBranches: mod.listVersionBranches,
+    createVersionBranch: mod.createVersionBranch,
+    deleteVersionBranch: mod.deleteVersionBranch,
+    listVersionTags: mod.listVersionTags,
+    createVersionTag: mod.createVersionTag,
+    checkoutVersion: mod.checkoutVersion,
+    revertVersionCommit: mod.revertVersionCommit,
+    fsckVersionRepository: mod.fsckVersionRepository,
+    inspectVersionRecovery: mod.inspectVersionRecovery,
+    recoverVersionRepository: mod.recoverVersionRepository,
     packageName: COMPANION_PACKAGE_NAME,
     entryPath,
   };
+}
+
+const VERSION_API_NAMES = [
+  'initVersionRepository',
+  'persistVersionAuthorConfig',
+  'getVersionStatus',
+  'stageProject',
+  'stageScreen',
+  'stageFeature',
+  'commitVersion',
+  'getVersionLog',
+  'listVersionBranches',
+  'createVersionBranch',
+  'deleteVersionBranch',
+  'listVersionTags',
+  'createVersionTag',
+  'checkoutVersion',
+  'revertVersionCommit',
+  'fsckVersionRepository',
+  'inspectVersionRecovery',
+  'recoverVersionRepository',
+];
+
+/**
+ * @param {object} mod
+ */
+function assertVersionApis(mod) {
+  const missing = VERSION_API_NAMES.filter(
+    (name) => typeof mod[name] !== 'function'
+  );
+  if (missing.length > 0) {
+    const err = new Error(
+      `[JSKim] ${COMPANION_PACKAGE_NAME} が必要です。\n` +
+        'インストールされている companion は版管理APIに対応していません。\n' +
+        'companion を最新版へ更新し、必要なら rebuild してください。'
+    );
+    err.code = 'JSKIM_SCREEN_SPEC_VERSION_UNSUPPORTED';
+    throw err;
+  }
 }
 
 /**

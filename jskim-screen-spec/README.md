@@ -2,9 +2,10 @@
 
 ## ローカル版管理 core
 
-Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / fsck / recovery を提供します（**ユーザー向け CLI / Viewer UI / Revision API は未提供**）。
+Node public API は snapshot / status / stage に加え、commit / log / branch / annotated tag / checkout / revert / fsck / recovery を提供します。
+root CLI は `jskim spec version …` で接続済みです（**Viewer UI / Revision API は未提供**）。
 
-### 実装済み（Phase 7E-1〜7E-3 domain）
+### 実装済み（Phase 7E-1〜7E-4A）
 
 - author config（`config.json`）と `resolveVersionAuthor`（explicit → env → config）
 - `commitVersion` / `getVersionLog` / `getVersionCommit`
@@ -16,10 +17,28 @@ Node public API は snapshot / status / stage に加え、commit / log / branch 
 - transaction: **ref/HEAD が commit point**（old → rollback、new → forward）。未完了 journal 中は mutation を `SPEC_VERSION_RECOVERY_REQUIRED` で拒否
 - journal path は `operationId` のみから固定導出（traversal / symlink 拒否）。`cleanup_pending` は core 一致後の derived cleanup 再試行
 - `project.json.screenOrder`、Feature/Ungrouped 順序契約、PNG signature、index reachable integrity
+- root CLI: `jskim spec version init|config|status|diff|add|commit|log|branch|tag|checkout|revert|fsck|recover`
 
 ### 未実装
 
-- ユーザー CLI、Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+- Revision HTTP API、Viewer 改訂履歴、merge、Excel Export、Remote Provider
+
+### CLI 最小 workflow
+
+```powershell
+npx jskim spec collect sample
+npx jskim spec version init sample
+npx jskim spec version config sample --name "Taro Yamada" --email "taro@example.com"
+npx jskim spec version add sample --all
+npx jskim spec version commit sample -m "初回登録"
+npx jskim spec version status sample
+npx jskim spec version log sample
+```
+
+- collect は自動実行しません
+- commit は stage 済み Screen Spec のみ（implementation の source Git とは別系統）
+- Remote はありません。Screen Spec 内部 tag と source Git tag は別です
+- checkout は仕様 source を切り替え、実装 Nunjucks は変更しません
 
 詳細契約: [docs/screen-spec/local-version-control.md](../docs/screen-spec/local-version-control.md)
 

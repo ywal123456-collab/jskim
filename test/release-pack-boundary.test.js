@@ -316,7 +316,9 @@ describe('Screen Spec release pack boundary', () => {
 
     assert.match(joined, /package\/bin\/jskim\.js/);
     assert.match(joined, /package\/scripts\/commands\/spec-dev-command\.js/);
+    assert.match(joined, /package\/scripts\/commands\/spec-version-command\.js/);
     assert.match(joined, /package\/scripts\/lib\/resolve-screen-spec-module\.js/);
+    assert.match(joined, /package\/scripts\/lib\/parse-spec-version-args\.js/);
     assert.equal(joined.includes('jskim-screen-spec/'), false);
     assert.equal(joined.includes('node_modules/'), false);
   });

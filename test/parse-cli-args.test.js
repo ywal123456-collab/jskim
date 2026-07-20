@@ -181,7 +181,7 @@ describe('parse-cli-args', () => {
     assert.equal(parsed.projectName, undefined);
   });
 
-  it('jskim spec unknown はエラーになり build / collect / dev を案内する', () => {
+  it('jskim spec unknown はエラーになり build / collect / dev / version を案内する', () => {
     assert.throws(
       () => parseJskimArgv(['spec', 'foo']),
       /不明な spec サブコマンドです: foo/
@@ -198,9 +198,13 @@ describe('parse-cli-args', () => {
       () => parseJskimArgv(['spec', 'foo']),
       /jskim spec dev \[<project>\]/
     );
+    assert.throws(
+      () => parseJskimArgv(['spec', 'foo']),
+      /jskim spec version/
+    );
   });
 
-  it('不明なコマンド案内に spec build / collect / dev が含まれる', () => {
+  it('不明なコマンド案内に spec build / collect / dev / version が含まれる', () => {
     assert.throws(
       () => parseJskimArgv(['nope']),
       /spec build \[<project>\]/
@@ -212,6 +216,102 @@ describe('parse-cli-args', () => {
     assert.throws(
       () => parseJskimArgv(['nope']),
       /spec dev \[<project>\]/
+    );
+    assert.throws(
+      () => parseJskimArgv(['nope']),
+      /spec version/
+    );
+  });
+
+  it('jskim spec version サブコマンドを認識する', () => {
+    const init = parseJskimArgv(['spec', 'version', 'init', 'sample']);
+    assert.equal(init.kind, 'command');
+    assert.equal(init.subcommand, 'version');
+    assert.equal(init.versionCommand, 'init');
+    assert.equal(init.projectName, 'sample');
+
+    const status = parseJskimArgv([
+      'spec',
+      'version',
+      'status',
+      'sample',
+      '--json',
+    ]);
+    assert.equal(status.versionCommand, 'status');
+    assert.equal(status.options.json, true);
+
+    const add = parseJskimArgv([
+      'spec',
+      'version',
+      'add',
+      'sample',
+      '--screen',
+      'wizard-input',
+    ]);
+    assert.equal(add.options.screen, 'wizard-input');
+
+    const commit = parseJskimArgv([
+      'spec',
+      'version',
+      'commit',
+      'sample',
+      '-m',
+      '初回',
+    ]);
+    assert.equal(commit.options.message, '初回');
+
+    const checkout = parseJskimArgv([
+      'spec',
+      'version',
+      'checkout',
+      'sample',
+      'main',
+    ]);
+    assert.equal(checkout.projectName, 'sample');
+    assert.equal(checkout.revision, 'main');
+
+    const checkoutOnly = parseJskimArgv([
+      'spec',
+      'version',
+      'checkout',
+      'abc1234',
+    ]);
+    assert.equal(checkoutOnly.projectName, undefined);
+    assert.equal(checkoutOnly.revision, 'abc1234');
+
+    const help = parseJskimArgv(['spec', 'version', '--help']);
+    assert.equal(help.kind, 'help');
+    assert.equal(help.helpTopic, 'spec-version');
+  });
+
+  it('version add の相互排他と usage exitCode 2', () => {
+    assert.throws(() =>
+      parseJskimArgv(['spec', 'version', 'add', 'sample', '--all', '--features'])
+    );
+    try {
+      parseJskimArgv(['spec', 'version', 'add', 'sample']);
+      assert.fail('should throw');
+    } catch (err) {
+      assert.equal(err.exitCode, 2);
+      assert.equal(err.code, 'JSKIM_USAGE_ERROR');
+    }
+    assert.throws(() =>
+      parseJskimArgv([
+        'spec',
+        'version',
+        'branch',
+        'sample',
+        '--create',
+        'a',
+        '--delete',
+        'b',
+      ])
+    );
+    assert.throws(() =>
+      parseJskimArgv(['spec', 'version', 'commit', 'sample', '--token', 'x'])
+    );
+    assert.throws(() =>
+      parseJskimArgv(['spec', 'version', 'revert', 'sample', 'abc', '-m', 'x'])
     );
   });
 });

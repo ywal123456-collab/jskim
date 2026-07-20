@@ -17,13 +17,15 @@ function getHelpText() {
     '  jskim spec build [<project>]',
     '  jskim spec collect [<project>]',
     '  jskim spec dev [<project>] [--host <host>] [--port <port>] [--open]',
+    '  jskim spec version <subcommand>',
     '',
     'コマンド:',
-    '  build   静的ファイルをビルドします。',
-    '  watch   ファイルの変更を監視して再ビルドします。',
-    '  serve   ビルド済みのファイルを配信します。',
-    '  dev     ビルド・監視・サーバー・ライブリロードを起動します。',
-    '  spec    画面設計書（optional companion）関連コマンドです。',
+    '  build          静的ファイルをビルドします。',
+    '  watch          ファイルの変更を監視して再ビルドします。',
+    '  serve          ビルド済みのファイルを配信します。',
+    '  dev            ビルド・監視・サーバー・ライブリロードを起動します。',
+    '  spec           画面設計書（optional companion）関連コマンドです。',
+    '  spec version   Screen Spec のローカル版管理です。',
     '',
     'オプション:',
     '  --all           設定内の全projectを順にbuildします（buildのみ）。',
@@ -35,7 +37,8 @@ function getHelpText() {
     '',
     '補足:',
     '  projectを省略できるのは、設定内のprojectが1件だけの場合です。',
-    '  spec collect / build / dev は @ywal123456/jskim-screen-spec（optional）が必要です。',
+    '  spec collect / build / dev / version は @ywal123456/jskim-screen-spec（optional）が必要です。',
+    '  版管理の詳細: jskim spec version --help',
     '  画面設計書の開発: jskim spec dev （collect + viewer build + /spec/ 自動更新）',
     '  手動手順: jskim spec collect → jskim spec build → jskim dev の /spec/',
   ].join('\n');
@@ -59,6 +62,7 @@ function getUnknownCommandText(command) {
     '  spec build [<project>]',
     '  spec collect [<project>]',
     '  spec dev [<project>]',
+    '  spec version <subcommand>',
   ].join('\n');
 }
 
