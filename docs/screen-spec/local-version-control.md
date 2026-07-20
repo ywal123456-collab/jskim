@@ -942,9 +942,10 @@ hash は golden bytes を検討。Excel は semantic assertion 優先。
 
 | 項目 | 内容 |
 |------|------|
-| 範囲 | `features.json`、blob/tree/commit/tag **形式**、`version init`（metadata のみ）、gitignore 契約の実装、fsck 基本 |
-| 完了条件 | hash 決定性・init が commit を作らないこと・features 無し互換 |
-| 除外 | tag CLI、merge engine、Remote、Excel |
+| 状態 | **実装済み**（domain API。ユーザー向け CLI は未提供） |
+| 範囲 | `features.json` の validate/load/persist、`initVersionRepository`、blob/tree/commit/tag object store、canonical JSON、`spec/*/.jskim/version/` gitignore |
+| 公開 API（companion root） | `loadScreenFeatures` / `persistScreenFeatures` / `validateScreenFeatureFile` / `initVersionRepository` / `writeVersionObject` / `readVersionObject` / `hasVersionObject` / `hashVersionObject` |
+| 除外（未実装） | snapshot/status/diff、stage/commit workflow、branch/tag CLI、checkout/revert/merge、Revision API、Viewer、Excel、Remote |
 
 ### Phase 7E-2 — snapshot / status / diff / stage
 

@@ -544,6 +544,20 @@ spec/sample/dist/
    └─ theme/preview.css
 ```
 
+## Feature Group / ローカル版管理（Phase 7E-1）
+
+domain API のみ実装済みです（**ユーザー向け CLI / Viewer UI は未提供**）。
+
+| API | 役割 |
+|-----|------|
+| `loadScreenFeatures` / `persistScreenFeatures` / `validateScreenFeatureFile` | `spec/{project}/src/features.json` |
+| `initVersionRepository` | `spec/{project}/.jskim/version/` の metadata 初期化（commit なし） |
+| `writeVersionObject` / `readVersionObject` / `hasVersionObject` / `hashVersionObject` | content-addressed object store |
+
+未実装: snapshot/status/diff、stage/commit、branch/tag CLI、checkout/revert/merge、Revision API、改訂履歴 modal、Excel Export、Remote。
+
+詳細契約は `docs/screen-spec/local-version-control.md` を参照してください。
+
 ## 制限（現状）
 
 - optional companion（engine 本体とは別 install）

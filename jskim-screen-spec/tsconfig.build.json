@@ -22,6 +22,8 @@
     "src/reference-image/**/*.ts",
     "src/figma/**/*.ts",
     "src/editing/**/*.ts",
+    "src/features/**/*.ts",
+    "src/version-control/**/*.ts",
     "src/util/**/*.ts",
     "src/watch/**/*.ts"
   ],

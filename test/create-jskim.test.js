@@ -93,6 +93,7 @@ describe('create-jskim', () => {
     const gitignore = await fsp.readFile(path.join(project, '.gitignore'), 'utf8');
     assert.match(gitignore, /node_modules\//);
     assert.match(gitignore, /dist\//);
+    assert.match(gitignore, /spec\/\*\/\.jskim\/version\//);
   });
 
   it('対話入力でプロジェクトを作成する', async () => {

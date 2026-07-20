@@ -131,3 +131,35 @@ export {
 } from './collector/resources/resource-token.js';
 export { applyShadowCompatCss } from './collector/resources/shadow-compat-css.js';
 export { contentHash12 } from './collector/resources/content-hash.js';
+export {
+  loadScreenFeatures,
+  persistScreenFeatures,
+  validateScreenFeatureFile,
+  FeatureError,
+} from './features/index.js';
+export type {
+  ScreenFeature,
+  ScreenFeatureFile,
+  LoadScreenFeaturesResult,
+  PersistScreenFeaturesResult,
+  FeatureErrorCode,
+} from './features/index.js';
+export {
+  initVersionRepository,
+  writeVersionObject,
+  readVersionObject,
+  hasVersionObject,
+  hashVersionObject,
+  VersionControlError,
+  MAX_VERSION_OBJECT_BYTES,
+} from './version-control/index.js';
+export type {
+  InitVersionRepositoryResult,
+  WriteVersionObjectResult,
+  ReadVersionObjectResult,
+  TreeObject,
+  CommitObject,
+  TagObject,
+  VersionControlErrorCode,
+  VersionObjectType,
+} from './version-control/index.js';
