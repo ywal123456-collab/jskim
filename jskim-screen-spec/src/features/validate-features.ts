@@ -93,7 +93,16 @@ export function validateScreenFeatureFile(
     );
   }
 
-  const known = new Set(options.knownScreenIds);
+  const known = new Set<string>();
+  for (const id of options.knownScreenIds) {
+    if (known.has(id)) {
+      throw createFeatureError(
+        'SPEC_FEATURE_DUPLICATE_KNOWN_SCREEN',
+        'knownScreenIds に重複があります。',
+      );
+    }
+    known.add(id);
+  }
   const seenFeatureIds = new Set<string>();
   const seenOrders = new Set<number>();
   const seenScreens = new Set<string>();

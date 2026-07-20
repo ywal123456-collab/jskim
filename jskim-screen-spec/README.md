@@ -1,5 +1,15 @@
 # JSKim Screen Spec（companion package）
 
+## ローカル版管理 core
+
+Node public API は in-memory の `createWorkingSnapshot`、`getVersionStatus`、`stageProject`、`stageScreen`、`stageFeature` を提供します。
+
+- `project.json` は `screenOrder`（全 screenId の project-level 順）を含みます。Ungrouped 順はここから Feature 未所属を filter します。
+- `stageScreen` は対象 screen subtree と必要な `screenOrder` merge のみを行い、`features.json` は自動 stage しません。削除前に Feature membership が残っている場合はエラーです。
+- `stageFeature` は `features.json` 全体を stage し、`screenOrder` は維持します。
+- index は reachable object を検証します。`index.baseCommit` と HEAD が異なるときの stage は拒否します。
+- Reference/Capture 画像は PNG signature を検証します。
+
 `@ywal123456/jskim-screen-spec` は、JSKim 本体とは独立した **画面設計書 companion package** です（optional / 公開 npm package）。
 
 ## インストール

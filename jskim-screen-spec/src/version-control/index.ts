@@ -52,3 +52,25 @@ export {
   readTypedVersionObject,
   hasVersionObject,
 } from './object-store.js';
+export { createWorkingSnapshot, persistSnapshotObjects } from './snapshot.js';
+export type { WorkingSnapshot, WorkingSnapshotObject } from './snapshot.js';
+export { readVersionHead } from './head.js';
+export type { VersionHead } from './head.js';
+export {
+  readVersionIndex,
+  EMPTY_TREE_HASH,
+  computeIndexRevision,
+} from './version-index.js';
+export type { VersionIndex, ReadVersionIndexResult } from './version-index.js';
+export { diffVersionTrees, getVersionStatus } from './status.js';
+export type { VersionChange, VersionStatusResult } from './status.js';
+export { stageProject, stageScreen, stageFeature } from './stage.js';
+export type { StageResult } from './stage.js';
+export {
+  assertVersionProjectDocument,
+  buildVersionProjectDocument,
+  compareScreenIdOrder,
+  mergeScreenOrderForStage,
+} from './project-document.js';
+export type { VersionProjectDocument } from './project-document.js';
+export { assertIndexTreeReachable } from './index-integrity.js';

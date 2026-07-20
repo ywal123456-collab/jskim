@@ -147,4 +147,70 @@ describe('initVersionRepository', () => {
     initVersionRepository({ rootDir: root, projectName: 'demo' });
     expect(fs.existsSync(marker)).toBe(true);
   });
+
+  it('directory のみから初期化を完了する', () => {
+    const root = tempRoot();
+    const repo = path.join(root, 'spec', 'demo', '.jskim', 'version');
+    fs.mkdirSync(repo, { recursive: true });
+    expect(initVersionRepository({ rootDir: root, projectName: 'demo' }).status).toBe('created');
+    expect(fs.existsSync(path.join(repo, 'format.json'))).toBe(true);
+    expect(fs.existsSync(path.join(repo, 'HEAD'))).toBe(true);
+  });
+
+  it('valid な format.json のみなら HEAD を補完する', () => {
+    const root = tempRoot();
+    const repo = path.join(root, 'spec', 'demo', '.jskim', 'version');
+    fs.mkdirSync(repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, 'format.json'), JSON.stringify({
+      repositoryFormatVersion: '1.0', hashAlgorithm: 'sha256',
+    }));
+    initVersionRepository({ rootDir: root, projectName: 'demo' });
+    expect(fs.readFileSync(path.join(repo, 'HEAD'), 'utf8').trim()).toBe('ref: refs/heads/main');
+  });
+
+  it('unborn main の HEAD のみなら format.json を補完する', () => {
+    const root = tempRoot();
+    const repo = path.join(root, 'spec', 'demo', '.jskim', 'version');
+    fs.mkdirSync(repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, 'HEAD'), 'ref: refs/heads/main\n');
+    initVersionRepository({ rootDir: root, projectName: 'demo' });
+    expect(JSON.parse(fs.readFileSync(path.join(repo, 'format.json'), 'utf8'))).toMatchObject({
+      repositoryFormatVersion: '1.0', hashAlgorithm: 'sha256',
+    });
+  });
+
+  it('metadata は正常で locks が無ければ directory を補完する', () => {
+    const root = tempRoot();
+    initVersionRepository({ rootDir: root, projectName: 'demo' });
+    const locks = path.join(root, 'spec', 'demo', '.jskim', 'version', 'locks');
+    fs.rmSync(locks, { recursive: true });
+    expect(initVersionRepository({ rootDir: root, projectName: 'demo' }).status).toBe('existing');
+    expect(fs.existsSync(locks)).toBe(true);
+  });
+
+  it('破損 format.json を上書きしない', () => {
+    const root = tempRoot();
+    const repo = path.join(root, 'spec', 'demo', '.jskim', 'version');
+    fs.mkdirSync(repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, 'format.json'), '{broken');
+    expect(() => initVersionRepository({ rootDir: root, projectName: 'demo' })).toThrow(VersionControlError);
+    expect(fs.readFileSync(path.join(repo, 'format.json'), 'utf8')).toBe('{broken');
+  });
+
+  it('format.json のみで object があれば自動修復しない', () => {
+    const root = tempRoot();
+    const repo = path.join(root, 'spec', 'demo', '.jskim', 'version');
+    fs.mkdirSync(path.join(repo, 'objects', 'ab'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'format.json'), JSON.stringify({
+      repositoryFormatVersion: '1.0', hashAlgorithm: 'sha256',
+    }));
+    fs.writeFileSync(path.join(repo, 'objects', 'ab', 'object'), 'x');
+    try {
+      initVersionRepository({ rootDir: root, projectName: 'demo' });
+      expect.fail('should throw');
+    } catch (error) {
+      expect((error as VersionControlError).code).toBe('SPEC_VERSION_REPOSITORY_CORRUPT');
+    }
+    expect(fs.existsSync(path.join(repo, 'HEAD'))).toBe(false);
+  });
 });

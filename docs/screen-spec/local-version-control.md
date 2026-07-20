@@ -1,5 +1,12 @@
 # Screen Spec ローカル版管理設計（Phase 7E-0）
 
+> Phase 7E-2 では working snapshot / index / status / stage の core API を実装した。
+> snapshot は `project.json`（`screenOrder` 含む）、存在する `features.json`、theme、発見済み screen の description/source/snapshot/resource、reference/capture の meta と PNG のみを含める。`dist`、`.jskim`、resource manifest、未対応 source は含めない。
+> 画面順の正本: Feature 順=`displayOrder`、Feature 内=`screenIds`、Ungrouped=`project.json.screenOrder` から未所属を filter。Project 表示/Export は Feature 順→各 screenIds→Ungrouped。
+> `stageProject` は全体、`stageScreen` は対象 screen subtree + 必要なら `project.json.screenOrder` の semantic merge（features.json は自動 stage しない）、`stageFeature` は features.json と対象 feature の screen を stage し `screenOrder` は維持する。
+> index 読取時は reachable object の存在・integrity を検証する。`index.baseCommit !== HEAD` の stage は既定拒否。Reference/Capture は PNG signature も検証する。
+> object と index の新規/置換書込みは file fsync を行い、directory fsync は環境差のため best-effort とする。
+
 この文書は、Screen Spec に **Git に似たローカル版管理** と **画面中心データモデル（Feature Group 付き）** を導入するための調査・設計である。
 **本 Phase は設計のみ**。object store・API・UI・Remote Provider・Excel 実装は行わない。
 
@@ -552,22 +559,36 @@ precedence（確定）:
 commit が指す logical tree（例）:
 
 ```text
-project.json                 # projectName, format hints
+project.json                 # { schemaVersion, projectName, screenOrder[] }
 features.json                # ScreenFeaturesDocument
+theme/preview.css            # 存在する場合
 screens/{screenId}/description.json
 screens/{screenId}/source.json          # Source 文書の正規化コピー
 screens/{screenId}/snapshots/{stateId}.html
+screens/{screenId}/resources/...        # per-screen（aggregate manifest は除外）
 screens/{screenId}/references/{viewport}/meta.json
 screens/{screenId}/references/{viewport}/reference.png   # blob（hash ファイル名に依存しない logical 名）
 screens/{screenId}/captures/{stateId}/{viewport}/meta.json
 screens/{screenId}/captures/{stateId}/{viewport}/capture.png
 ```
 
+`project.json.screenOrder` は **全 screenId をちょうど 1 回**含む project-level 順（現行 canonical は `loadScreenSpecProject` の `screenId.localeCompare(..., 'en')`）。  
+tree 内ディレクトリの名前ソートは hash 安定化用であり、製品の画面順ではない。
+
+| 順序の種類 | 正本 |
+|------------|------|
+| Feature どうし | `features[].displayOrder` |
+| Feature 内画面 | `features[].screenIds` |
+| Ungrouped | `screenOrder` からどの Feature にも属さない id を filter（配列順維持） |
+| Project 全体表示 / Export | Feature（displayOrder）→ 各 screenIds → Ungrouped（上記） |
+
+Feature へ移動しても `screenOrder` から screenId を削除しない。checkout（7E-3）は `screenOrder` / Feature / screen データを復元できること。
+
 | 含む | 含まない |
 |------|----------|
 | Description / Source / features | `dist/**` |
-| Reference / Capture（meta+bytes） | Viewer bundle / cache |
-| snapshots / resources（§5.1） | token / signed URL / 絶対パス / dist |
+| Reference / Capture（meta+bytes、PNG signature 検証） | Viewer bundle / cache |
+| snapshots / per-screen resources | token / signed URL / 絶対パス / dist / aggregate manifest |
 | Source `*.spec.json` の正規化コピー | **Nunjucks / Vue 実装ソース全体** |
 
 Feature 変更は主に `features.json` blob の diff として現れ、画面移動だけでは画面 blob を不必要に複製しない。
@@ -951,8 +972,12 @@ hash は golden bytes を検討。Excel は semantic assertion 優先。
 
 | 項目 | 内容 |
 |------|------|
-| 範囲 | inclusion matrix に沿う status/diff、screen/feature/project stage |
-| 除外 | merge、Remote |
+| 状態 | **実装済み**（domain API。ユーザー向け CLI は未提供） |
+| 範囲 | logical working snapshot（`project.json.screenOrder`）、object persistence、HEAD 読取、recursive tree diff、index（reachable integrity + lock/CAS）、`getVersionStatus`、`stageProject` / `stageScreen` / `stageFeature`、HEAD≠baseCommit 時 stage 拒否、PNG signature、7E-1 follow-up |
+| 公開 API（追加） | `createWorkingSnapshot` / `persistSnapshotObjects` / `readVersionHead` / `readVersionIndex` / `diffVersionTrees` / `getVersionStatus` / `stageProject` / `stageScreen` / `stageFeature` |
+| stage 契約 | `stageScreen`: screen subtree + `screenOrder` semantic merge（他 screen 内容は触らない。features.json 非自動）。`stageFeature`: features.json 全体 + 所属 screen（`screenOrder` 維持）。大規模な順序再配置は `stageProject` |
+| 未解決 | Capture 専用バイト上限（現状は寸法中心。snapshot は全 bytes をメモリ読込） |
+| 除外（未実装） | ユーザー CLI、commit/log、branch/tag 更新、checkout/revert、merge、Revision API、Viewer、Excel、Remote |
 
 ### Phase 7E-3 — commit / log / branch / tag / checkout / revert / recovery
 

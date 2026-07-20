@@ -1,17 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createFileAtomic } from '../util/write-file-atomic.js';
+import { createDurableFileAtomic } from './durable-create.js';
+import type { DurableCreateFs } from './durable-create.js';
 import {
   MAX_VERSION_OBJECT_BYTES,
   type VersionObjectType,
 } from './constants.js';
 import { createVersionControlError } from './errors.js';
 import {
+  assertObjectReadBoundary,
+  assertObjectWriteBoundary,
+  assertMetadataPathBoundary,
+} from './fs-guards.js';
+import {
   decodeVersionObjectBytes,
   encodeVersionObject,
   hashVersionObject,
 } from './object-format.js';
 import {
+  formatJsonPath,
   objectAbsolutePath,
   versionRepositoryPath,
 } from './repository-paths.js';
@@ -24,26 +31,33 @@ import type {
 
 export { hashVersionObject };
 
+export type WriteVersionObjectInternalOptions = WriteVersionObjectOptions & {
+  /** test 用 durable filesystem 注入 */
+  durableFs?: DurableCreateFs;
+};
+
 function ensureRepositoryInitialized(
   rootDir: string,
   projectName: string,
 ): string {
   const repo = versionRepositoryPath(rootDir, projectName);
-  const formatPath = path.join(repo, 'format.json');
+  const formatPath = formatJsonPath(repo);
   if (!fs.existsSync(formatPath)) {
     throw createVersionControlError(
-      'SPEC_VERSION_REPOSITORY_CORRUPT',
+      'SPEC_VERSION_NOT_INITIALIZED',
       '版管理リポジトリが初期化されていません。',
     );
   }
+  assertMetadataPathBoundary(formatPath, 'format.json');
   return repo;
 }
 
 /**
  * content-addressed object を書く。同一 hash が既にあれば integrity 確認後 unchanged。
+ * 破損既存は overwrite / delete せずエラー。
  */
 export function writeVersionObject(
-  options: WriteVersionObjectOptions,
+  options: WriteVersionObjectInternalOptions,
 ): WriteVersionObjectResult {
   const maxBytes = options.maxBytes ?? MAX_VERSION_OBJECT_BYTES;
   const repo = ensureRepositoryInitialized(
@@ -58,7 +72,7 @@ export function writeVersionObject(
   const target = objectAbsolutePath(repo, encoded.hash);
 
   try {
-    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'objects'), { recursive: true });
   } catch {
     throw createVersionControlError(
       'SPEC_VERSION_OBJECT_WRITE_FAILED',
@@ -66,8 +80,12 @@ export function writeVersionObject(
     );
   }
 
+  assertObjectWriteBoundary(repo, target);
+
   try {
-    const created = createFileAtomic(target, encoded.encoded);
+    const created = createDurableFileAtomic(target, encoded.encoded, {
+      fs: options.durableFs,
+    });
     if (created.status === 'created') {
       return {
         status: 'created',
@@ -76,12 +94,17 @@ export function writeVersionObject(
       };
     }
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException | undefined)?.code;
-    if (code === 'CREATE_FILE_ATOMIC_UNSUPPORTED') {
-      throw createVersionControlError(
-        'SPEC_VERSION_OBJECT_WRITE_FAILED',
-        'オブジェクトを安全に書き込めませんでした。',
-      );
+    if (err instanceof Error && 'code' in err) {
+      const code = (err as { code: string }).code;
+      if (code.startsWith('SPEC_VERSION_')) {
+        throw err;
+      }
+      if (code === 'CREATE_FILE_ATOMIC_UNSUPPORTED') {
+        throw createVersionControlError(
+          'SPEC_VERSION_OBJECT_WRITE_FAILED',
+          'オブジェクトを安全に書き込めませんでした。',
+        );
+      }
     }
     throw createVersionControlError(
       'SPEC_VERSION_OBJECT_WRITE_FAILED',
@@ -89,7 +112,8 @@ export function writeVersionObject(
     );
   }
 
-  // exists: integrity 確認
+  // exists: integrity 確認（破損時は unchanged 成功にしない・削除しない）
+  assertObjectReadBoundary(target);
   let existing: Buffer;
   try {
     existing = fs.readFileSync(target);
@@ -127,7 +151,15 @@ export function hasVersionObject(options: {
     options.projectName,
   );
   const target = objectAbsolutePath(repo, options.hash);
-  return fs.existsSync(target);
+  if (!fs.existsSync(target)) {
+    return false;
+  }
+  try {
+    assertObjectReadBoundary(target);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 export function readVersionObject(
@@ -145,6 +177,8 @@ export function readVersionObject(
       'オブジェクトが見つかりません。',
     );
   }
+
+  assertObjectReadBoundary(target);
 
   let encoded: Buffer;
   try {

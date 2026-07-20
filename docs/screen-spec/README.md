@@ -1,5 +1,7 @@
 # JSKim Screen Spec v1
 
+ローカル版管理では snapshot/status/stage を提供します。snapshot は明示された Screen Spec の論理入力だけを対象とし、生成物や任意の source file は含めません。
+
 この文書は、JSKim の画面設計書機能（Screen Spec）の **v1 契約** を定義します。
 実装の前に、attribute・JSON・validation・folder 構造を固定することが目的です。
 

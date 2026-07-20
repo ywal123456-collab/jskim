@@ -134,6 +134,11 @@ function assertMessage(value: unknown, label: string): string {
   return value;
 }
 
+/**
+ * tree entry name の安全性。
+ * - NFC 済みであること（非 NFC は拒否。既存 NFC tree の hash を維持）
+ * - case-fold は NFC 後の String#toLowerCase()（Unicode 簡易。full case fold ではない）
+ */
 function isSafeTreeEntryName(name: string): boolean {
   if (name.length === 0 || name.length > 255) return false;
   if (name === '.' || name === '..') return false;
@@ -146,9 +151,14 @@ function isSafeTreeEntryName(name: string): boolean {
     return false;
   }
   if (name.endsWith(' ') || name.endsWith('.')) return false;
+  if (name.normalize('NFC') !== name) return false;
   const base = name.split('.')[0]?.toLowerCase() || '';
   if (WINDOWS_RESERVED_NAMES.has(base)) return false;
   return true;
+}
+
+function caseFoldKey(name: string): string {
+  return name.normalize('NFC').toLowerCase();
 }
 
 export function assertTreeObject(value: unknown): TreeObject {
@@ -180,6 +190,7 @@ export function assertTreeObject(value: unknown): TreeObject {
 
   const entries: TreeEntry[] = [];
   const seenNames = new Set<string>();
+  const seenCaseFold = new Set<string>();
   for (let i = 0; i < value.entries.length; i += 1) {
     const raw = value.entries[i];
     if (!isPlainObject(raw)) {
@@ -206,6 +217,14 @@ export function assertTreeObject(value: unknown): TreeObject {
       );
     }
     seenNames.add(raw.name);
+    const folded = caseFoldKey(raw.name);
+    if (seenCaseFold.has(folded)) {
+      throw createVersionControlError(
+        'SPEC_VERSION_INVALID_OBJECT',
+        `tree.entries の name が case-fold 後に衝突しています。`,
+      );
+    }
+    seenCaseFold.add(folded);
     if (raw.objectType !== 'blob' && raw.objectType !== 'tree') {
       throw createVersionControlError(
         'SPEC_VERSION_INVALID_OBJECT',

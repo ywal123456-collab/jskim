@@ -127,7 +127,9 @@ export function decodeVersionObjectBytes(
   }
 
   const header = encoded.subarray(0, nul).toString('utf8');
-  const match = /^(blob|tree|commit|tag) (\d+)$/.exec(header);
+  // length は非正規（leading zero / 符号 / 空白 / 指数）を明示拒否する。
+  // 許可: "0", "1", "10", ...（十進・先頭ゼロ無し。0 のみ単独 "0"）
+  const match = /^(blob|tree|commit|tag) (0|[1-9]\d*)$/.exec(header);
   if (!match) {
     throw createVersionControlError(
       'SPEC_VERSION_OBJECT_CORRUPT',

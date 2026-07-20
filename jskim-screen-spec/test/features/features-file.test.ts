@@ -35,6 +35,20 @@ const known = [
 ];
 
 describe('Screen Feature file', () => {
+  it('knownScreenIds の重複を拒否する', () => {
+    try {
+      validateScreenFeatureFile(
+        { schemaVersion: '1.0', features: [] },
+        { knownScreenIds: ['inquiry-input', 'inquiry-input'] },
+      );
+      expect.fail('should throw');
+    } catch (err) {
+      expect((err as FeatureError).code).toBe(
+        'SPEC_FEATURE_DUPLICATE_KNOWN_SCREEN',
+      );
+    }
+  });
+
   it('features.json が無い場合は全画面 Ungrouped', () => {
     const root = tempRoot();
     const result = loadScreenFeatures({

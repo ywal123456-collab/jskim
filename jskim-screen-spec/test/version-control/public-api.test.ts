@@ -18,6 +18,15 @@ describe('package public API (7E-1)', () => {
     expect(typeof versionControl.readVersionObject).toBe('function');
     expect(typeof versionControl.hasVersionObject).toBe('function');
     expect(typeof versionControl.hashVersionObject).toBe('function');
+    expect(typeof versionControl.createWorkingSnapshot).toBe('function');
+    expect(typeof versionControl.persistSnapshotObjects).toBe('function');
+    expect(typeof versionControl.getVersionStatus).toBe('function');
+    expect(typeof versionControl.diffVersionTrees).toBe('function');
+    expect(typeof versionControl.readVersionIndex).toBe('function');
+    expect(typeof versionControl.readVersionHead).toBe('function');
+    expect(typeof versionControl.stageProject).toBe('function');
+    expect(typeof versionControl.stageScreen).toBe('function');
+    expect(typeof versionControl.stageFeature).toBe('function');
     expect(features.FeatureError).toBeTypeOf('function');
     expect(versionControl.VersionControlError).toBeTypeOf('function');
     expect(versionControl.MAX_VERSION_OBJECT_BYTES).toBeGreaterThanOrEqual(

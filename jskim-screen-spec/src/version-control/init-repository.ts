@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createFileAtomic, writeFileAtomic } from '../util/write-file-atomic.js';
+import { createDurableFileAtomic } from './durable-create.js';
 import {
   DEFAULT_BRANCH,
   HASH_ALGORITHM,
@@ -8,6 +8,10 @@ import {
   REPOSITORY_FORMAT_VERSION,
 } from './constants.js';
 import { createVersionControlError } from './errors.js';
+import {
+  assertMetadataPathBoundary,
+  assertNotSymlink,
+} from './fs-guards.js';
 import {
   formatJsonPath,
   headPath,
@@ -29,7 +33,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
+function ensureRequiredDirs(repo: string): void {
+  fs.mkdirSync(path.join(repo, 'objects'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'refs', 'heads'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'refs', 'tags'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'locks'), { recursive: true });
+}
+
 function readExistingFormat(formatPath: string): RepositoryFormatDocument {
+  assertMetadataPathBoundary(formatPath, 'format.json');
   let text: string;
   try {
     text = fs.readFileSync(formatPath, 'utf8');
@@ -72,7 +84,8 @@ function readExistingFormat(formatPath: string): RepositoryFormatDocument {
   };
 }
 
-function assertHeadUnbornMain(headFile: string): void {
+function assertHeadReadable(headFile: string): void {
+  assertMetadataPathBoundary(headFile, 'HEAD');
   let text: string;
   try {
     text = fs.readFileSync(headFile, 'utf8');
@@ -83,25 +96,79 @@ function assertHeadUnbornMain(headFile: string): void {
     );
   }
   const normalized = text.replace(/\r\n/g, '\n').trimEnd();
-  if (normalized !== HEAD_MAIN_REF) {
-    // existing repo may already have advanced HEAD in later phases;
-    // for 7E-1 idempotent init we only accept unborn main OR reject overwrite.
-    // If HEAD points elsewhere, treat as existing valid repo only when format ok —
-    // but do not rewrite. Accept any `ref: refs/heads/...` or 64-hex for existing.
-    const okSymbolic = /^ref: refs\/heads\/[A-Za-z0-9._/-]+$/.test(normalized);
-    const okDetached = /^[a-f0-9]{64}$/.test(normalized);
-    if (!okSymbolic && !okDetached) {
-      throw createVersionControlError(
-        'SPEC_VERSION_REPOSITORY_CORRUPT',
-        'HEAD の形式が不正です。',
-      );
+  if (normalized === HEAD_MAIN_REF) {
+    return;
+  }
+  const okSymbolic = /^ref: refs\/heads\/[A-Za-z0-9._/-]+$/.test(normalized);
+  const okDetached = /^[a-f0-9]{64}$/.test(normalized);
+  if (!okSymbolic && !okDetached) {
+    throw createVersionControlError(
+      'SPEC_VERSION_REPOSITORY_CORRUPT',
+      'HEAD の形式が不正です。',
+    );
+  }
+}
+
+function hasUnexpectedContent(repo: string): boolean {
+  const objects = path.join(repo, 'objects');
+  if (fs.existsSync(objects)) {
+    try {
+      const fanouts = fs.readdirSync(objects);
+      for (const f of fanouts) {
+        const abs = path.join(objects, f);
+        const st = fs.lstatSync(abs);
+        if (st.isSymbolicLink()) return true;
+        if (st.isDirectory()) {
+          const files = fs.readdirSync(abs);
+          if (files.length > 0) return true;
+        } else if (st.isFile()) {
+          return true;
+        }
+      }
+    } catch {
+      return true;
     }
+  }
+  const heads = path.join(repo, 'refs', 'heads');
+  if (fs.existsSync(heads)) {
+    try {
+      if (fs.readdirSync(heads).length > 0) return true;
+    } catch {
+      return true;
+    }
+  }
+  const tags = path.join(repo, 'refs', 'tags');
+  if (fs.existsSync(tags)) {
+    try {
+      if (fs.readdirSync(tags).length > 0) return true;
+    } catch {
+      return true;
+    }
+  }
+  const indexFile = path.join(repo, 'index.json');
+  if (fs.existsSync(indexFile)) return true;
+  return false;
+}
+
+function writeFormatIfAbsent(formatPath: string, body: string): void {
+  const result = createDurableFileAtomic(formatPath, body);
+  if (result.status === 'exists') {
+    readExistingFormat(formatPath);
+  }
+}
+
+function writeHeadIfAbsent(headFile: string, body: string): void {
+  const result = createDurableFileAtomic(headFile, body);
+  if (result.status === 'exists') {
+    assertHeadReadable(headFile);
   }
 }
 
 /**
  * 版管理リポジトリ metadata のみを初期化する。
- * 自動 stage / initial commit / features.json 生成は行わない。
+ * 空の部分初期化（directory のみ / format のみ / HEAD のみ / 欠落 dir）は
+ * 安全な範囲で idempotent に補完する。
+ * 破損 format/HEAD・予期しない object/ref・symlink は自動修復しない。
  */
 export function initVersionRepository(
   options: InitVersionRepositoryOptions,
@@ -126,20 +193,31 @@ export function initVersionRepository(
       );
     }
   } catch (err) {
-    if (err instanceof Error && 'code' in err && (err as { code: string }).code.startsWith('SPEC_')) {
+    if (
+      err instanceof Error &&
+      'code' in err &&
+      String((err as { code: string }).code).startsWith('SPEC_')
+    ) {
       throw err;
     }
   }
 
-  if (fs.existsSync(formatPath)) {
+  const formatExists = fs.existsSync(formatPath);
+  const headExists = fs.existsSync(headFile);
+
+  if (formatExists && headExists) {
     readExistingFormat(formatPath);
-    if (!fs.existsSync(headFile)) {
+    assertHeadReadable(headFile);
+    try {
+      ensureRequiredDirs(repo);
+    } catch {
       throw createVersionControlError(
-        'SPEC_VERSION_REPOSITORY_CORRUPT',
-        'HEAD がありません。',
+        'SPEC_VERSION_INIT_FAILED',
+        '版管理リポジトリのディレクトリを作成できませんでした。',
       );
     }
-    assertHeadUnbornMain(headFile);
+    assertNotSymlink(path.join(repo, 'objects'), 'objects');
+    assertNotSymlink(path.join(repo, 'locks'), 'locks');
     return {
       status: 'existing',
       repositoryRelativePath: relativePath,
@@ -147,12 +225,88 @@ export function initVersionRepository(
     };
   }
 
-  // 新規作成
+  // 片方だけ / どちらも無い場合
+  if (formatExists && !headExists) {
+    readExistingFormat(formatPath);
+    if (hasUnexpectedContent(repo)) {
+      throw createVersionControlError(
+        'SPEC_VERSION_REPOSITORY_CORRUPT',
+        'format.json のみ存在し、予期しない内容があるため自動修復できません。',
+      );
+    }
+    try {
+      ensureRequiredDirs(repo);
+      writeHeadIfAbsent(headFile, `${HEAD_MAIN_REF}\n`);
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        String((err as { code: string }).code).startsWith('SPEC_')
+      ) {
+        throw err;
+      }
+      throw createVersionControlError(
+        'SPEC_VERSION_INIT_FAILED',
+        'HEAD の補完に失敗しました。',
+      );
+    }
+    return {
+      status: 'created',
+      repositoryRelativePath: relativePath,
+      headRef: `refs/heads/${DEFAULT_BRANCH}`,
+    };
+  }
+
+  if (!formatExists && headExists) {
+    assertHeadReadable(headFile);
+    const normalized = fs
+      .readFileSync(headFile, 'utf8')
+      .replace(/\r\n/g, '\n')
+      .trimEnd();
+    if (normalized !== HEAD_MAIN_REF || hasUnexpectedContent(repo)) {
+      throw createVersionControlError(
+        'SPEC_VERSION_REPOSITORY_CORRUPT',
+        'HEAD のみ存在し、自動修復できない状態です。',
+      );
+    }
+    const formatDoc: RepositoryFormatDocument = {
+      repositoryFormatVersion: REPOSITORY_FORMAT_VERSION,
+      hashAlgorithm: HASH_ALGORITHM,
+    };
+    const formatBody = `${JSON.stringify(formatDoc, null, 2)}\n`;
+    try {
+      ensureRequiredDirs(repo);
+      writeFormatIfAbsent(formatPath, formatBody);
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        String((err as { code: string }).code).startsWith('SPEC_')
+      ) {
+        throw err;
+      }
+      throw createVersionControlError(
+        'SPEC_VERSION_INIT_FAILED',
+        'format.json の補完に失敗しました。',
+      );
+    }
+    return {
+      status: 'created',
+      repositoryRelativePath: relativePath,
+      headRef: `refs/heads/${DEFAULT_BRANCH}`,
+    };
+  }
+
+  // 完全新規（directory のみ含む）
+  if (hasUnexpectedContent(repo)) {
+    throw createVersionControlError(
+      'SPEC_VERSION_REPOSITORY_CORRUPT',
+      '未初期化リポジトリに予期しない内容があります。',
+    );
+  }
+
   try {
-    fs.mkdirSync(path.join(repo, 'objects'), { recursive: true });
-    fs.mkdirSync(path.join(repo, 'refs', 'heads'), { recursive: true });
-    fs.mkdirSync(path.join(repo, 'refs', 'tags'), { recursive: true });
-    fs.mkdirSync(path.join(repo, 'locks'), { recursive: true });
+    ensureRequiredDirs(repo);
   } catch {
     throw createVersionControlError(
       'SPEC_VERSION_INIT_FAILED',
@@ -168,52 +322,20 @@ export function initVersionRepository(
   const headBody = `${HEAD_MAIN_REF}\n`;
 
   try {
-    const formatResult = createFileAtomic(formatPath, formatBody);
-    if (formatResult.status === 'exists') {
-      // 競合: 他 process が先に作った
-      readExistingFormat(formatPath);
-      if (fs.existsSync(headFile)) {
-        assertHeadUnbornMain(headFile);
-      }
-      return {
-        status: 'existing',
-        repositoryRelativePath: relativePath,
-        headRef: `refs/heads/${DEFAULT_BRANCH}`,
-      };
-    }
-
-    if (!fs.existsSync(headFile)) {
-      const headResult = createFileAtomic(headFile, headBody);
-      if (headResult.status === 'exists') {
-        assertHeadUnbornMain(headFile);
-      }
-    } else {
-      assertHeadUnbornMain(headFile);
-    }
+    writeFormatIfAbsent(formatPath, formatBody);
+    writeHeadIfAbsent(headFile, headBody);
   } catch (err) {
-    if (err instanceof Error && 'code' in err) {
-      const code = (err as { code: string }).code;
-      if (code.startsWith('SPEC_VERSION_')) {
-        throw err;
-      }
+    if (
+      err instanceof Error &&
+      'code' in err &&
+      String((err as { code: string }).code).startsWith('SPEC_')
+    ) {
+      throw err;
     }
-    // 部分作成の掃除はしない（不完全 repo は corrupt として次回検出）
     throw createVersionControlError(
       'SPEC_VERSION_INIT_FAILED',
       '版管理リポジトリの初期化に失敗しました。',
     );
-  }
-
-  // format だけ先に存在し HEAD が無い場合の修復は writeFileAtomic で HEAD 作成済み想定
-  if (!fs.existsSync(headFile)) {
-    try {
-      writeFileAtomic(headFile, headBody);
-    } catch {
-      throw createVersionControlError(
-        'SPEC_VERSION_INIT_FAILED',
-        'HEAD の作成に失敗しました。',
-      );
-    }
   }
 
   return {
