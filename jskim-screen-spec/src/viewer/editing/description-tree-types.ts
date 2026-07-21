@@ -15,6 +15,8 @@ export type DescriptionTreeApiError = {
 export type DescriptionTreeGetResponse = {
   revision: string;
   sourceSchemaVersion: string;
+  /** snapshot 由来の collected item ID（UI 表示用。delete/exclude 判定は server-side） */
+  collectedItemIds?: string[];
   description: DescriptionTreeApiDocument;
 };
 

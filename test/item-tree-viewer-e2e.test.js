@@ -242,6 +242,7 @@ describe('Item Tree Viewer E2E', () => {
       deleteDescriptionItem: companion.deleteDescriptionItem,
       excludeDescriptionItem: companion.excludeDescriptionItem,
       restoreDescriptionItem: companion.restoreDescriptionItem,
+      updateDescriptionScreen: companion.updateDescriptionScreen,
       collectCollectedItemIdsForScreen: companion.collectCollectedItemIdsForScreen,
       formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
     });

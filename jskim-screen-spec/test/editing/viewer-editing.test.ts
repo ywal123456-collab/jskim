@@ -5,21 +5,32 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router';
 import { useDescriptionEditor } from '../../src/viewer/editing/useDescriptionEditor';
 import ItemDescriptionTable from '../../src/viewer/components/ItemDescriptionTable.vue';
 import type { ScreenData } from '../../src/viewer/types';
+import {
+  stubDescriptionTreeFetch,
+  type MockTreeDoc,
+} from '../helpers/description-tree-fetch-mock';
 
-const baseDocument = {
-  schemaVersion: '1.2',
-  screen: { id: 'demo', name: 'Demo', description: '説明' },
-  itemOrder: ['title'],
-  excludedItems: {},
-  items: {
-    title: {
-      name: 'タイトル',
-      type: 'text',
-      description: '見出し',
-      note: '',
+function createBaseTreeDoc(overrides?: Partial<MockTreeDoc>): MockTreeDoc {
+  return {
+    screen: {
+      id: 'demo',
+      name: 'Demo',
+      description: '説明',
+      ...overrides?.screen,
     },
-  },
-};
+    itemOrder: overrides?.itemOrder ?? ['title'],
+    excludedItems: overrides?.excludedItems ?? {},
+    items: overrides?.items ?? {
+      title: {
+        name: 'タイトル',
+        type: 'text',
+        description: '見出し',
+        note: '',
+      },
+    },
+    collectedItemIds: overrides?.collectedItemIds,
+  };
+}
 
 const screen: ScreenData = {
   id: 'demo',
@@ -72,7 +83,7 @@ const EditorHarness = defineComponent({
         :value="editor.draftDocument.value?.screen.name || ''"
         @input="onNameInput"
       />
-      <button data-save type="button" @click="editor.save()">save</button>
+      <button data-save type="button" @click="editor.saveScreenMetadata()">save</button>
       <button data-cancel type="button" @click="editor.cancel()">cancel</button>
       <pre data-conflict>{{ editor.conflictError.value?.code || '' }}</pre>
     </div>
@@ -89,7 +100,7 @@ describe('Description Viewer editing', () => {
 
   afterEach(() => {
     delete window.__JSKIM_SPEC_EDIT__;
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   async function mountEditor() {
@@ -116,30 +127,7 @@ describe('Description Viewer editing', () => {
   }
 
   it('field 変更で dirty、原復で clean、保存成功で clean', async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
-      if (!init || init.method === 'GET' || !init.method) {
-        return new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: baseDocument,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        );
-      }
-      return new Response(
-        JSON.stringify({
-          screenId: 'demo',
-          revision: 'sha256:r2',
-          saved: true,
-          written: true,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
+    const { getFetchMock } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
     await flushPromises();
@@ -161,38 +149,32 @@ describe('Description Viewer editing', () => {
     await wrapper.find('[data-save]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-dirty]').text()).toBe('false');
-    // 保存成功後は dirty=false により clean（UI 上は「保存済み」）
     expect(['saved', 'clean']).toContain(wrapper.find('[data-status]').text());
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/_jskim/spec/descriptions/demo',
-      expect.objectContaining({ method: 'PUT' }),
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      '/_jskim/spec/description-tree/demo/screen',
+      expect.objectContaining({ method: 'PATCH' }),
     );
   });
 
   it('409 conflict と保存中の重複防止', async () => {
-    let putCount = 0;
-    let resolvePut: ((value: Response) => void) | null = null;
+    let patchCount = 0;
+    let resolvePatch: ((value: Response) => void) | null = null;
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
-        if (!init || init.method === 'GET' || !init.method) {
-          return new Response(
-            JSON.stringify({
-              screenId: 'demo',
-              revision: 'sha256:r1',
-              exists: true,
-              document: baseDocument,
-            }),
-            { status: 200 },
-          );
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.endsWith('/screen') && method === 'PATCH') {
+          patchCount += 1;
+          if (patchCount === 1) {
+            return new Promise<Response>((resolve) => {
+              resolvePatch = resolve;
+            });
+          }
         }
-        putCount += 1;
-        if (putCount === 1) {
-          return new Promise((resolve) => {
-            resolvePut = resolve;
-          });
-        }
-        return new Response('should-not', { status: 500 });
+        return baseFetch(input, init);
       }),
     );
 
@@ -201,16 +183,19 @@ describe('Description Viewer editing', () => {
     await flushPromises();
     await wrapper.find('[data-name]').setValue('x');
 
-    const p1 = wrapper.vm.editor.save();
-    const p2 = wrapper.vm.editor.save();
-    expect(putCount).toBe(1);
-    resolvePut!(
+    const p1 = wrapper.vm.editor.saveScreenMetadata();
+    const p2 = wrapper.vm.editor.saveScreenMetadata();
+    expect(patchCount).toBe(1);
+    resolvePatch!(
       new Response(
         JSON.stringify({
           code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
           message: '衝突',
         }),
-        { status: 409 },
+        {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        },
       ),
     );
     await Promise.all([p1, p2]);
@@ -233,7 +218,7 @@ describe('Description Viewer editing', () => {
     const wrapper = mount(ItemDescriptionTable, {
       props: {
         screen,
-        selectedItemId: null,
+        selectedItemId: 'title',
         editable: true,
         draftItems: {
           title: {
@@ -260,20 +245,7 @@ describe('Description Viewer editing', () => {
   it('dirty 時は beforeunload を登録する', async () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
     const removeSpy = vi.spyOn(window, 'removeEventListener');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: baseDocument,
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
 
     const { wrapper, root } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
@@ -287,150 +259,82 @@ describe('Description Viewer editing', () => {
     );
   });
 
-  it('addItem で itemOrder 末尾に新規項目を追加する（重複は無視）', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: baseDocument,
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
-
+  it('createItem で root 末尾に新規項目を追加する', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
     await flushPromises();
 
-    const added = wrapper.vm.editor.addItem({
+    const ok = await wrapper.vm.editor.createItem({
       itemId: 'new-field',
       name: '新規項目',
       type: 'text',
       description: '説明',
       note: '備考',
     });
-    expect(added).toBe(true);
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'title',
-      'new-field',
-    ]);
+    expect(ok.status).toBe('committed-refreshed');
+    await flushPromises();
+    expect(state.get('demo')?.doc.itemOrder).toEqual(['title', 'new-field']);
     expect(wrapper.vm.editor.draftDocument.value?.items['new-field']).toEqual({
       name: '新規項目',
       type: 'text',
       description: '説明',
       note: '備考',
     });
-    expect(wrapper.vm.editor.dirty.value).toBe(true);
-
-    const dup = wrapper.vm.editor.addItem({
-      itemId: 'title',
-      name: '重複',
-      type: 'text',
-      description: '',
-      note: '',
-    });
-    expect(dup).toBe(false);
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'title',
-      'new-field',
-    ]);
+    expect(wrapper.vm.editor.dirty.value).toBe(false);
   });
 
-  it('moveItemUp / moveItemDown で itemOrder を並び替える（境界では何もしない）', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: {
-              ...baseDocument,
-              itemOrder: ['a', 'b', 'c'],
-              items: {
-                a: { name: '', type: '', description: '', note: '' },
-                b: { name: '', type: '', description: '', note: '' },
-                c: { name: '', type: '', description: '', note: '' },
-              },
-            },
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+  it('moveItemUp / moveItemDown で root 順序を並び替える（境界では何もしない）', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['a', 'b', 'c'],
+        items: {
+          a: { name: '', type: '', description: '', note: '' },
+          b: { name: '', type: '', description: '', note: '' },
+          c: { name: '', type: '', description: '', note: '' },
+        },
+      }),
+    });
 
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
     await flushPromises();
 
-    wrapper.vm.editor.moveItemUp('a');
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'a',
-      'b',
-      'c',
-    ]);
+    expect(await wrapper.vm.editor.moveItemUp('a')).toEqual({ status: 'mutation-rejected' });
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual(['a', 'b', 'c']);
 
-    wrapper.vm.editor.moveItemDown('a');
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'b',
-      'a',
-      'c',
-    ]);
+    expect(await wrapper.vm.editor.moveItemDown('a')).toEqual({ status: 'committed-refreshed' });
+    await flushPromises();
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual(['b', 'a', 'c']);
 
-    wrapper.vm.editor.moveItemUp('a');
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'a',
-      'b',
-      'c',
-    ]);
+    expect(await wrapper.vm.editor.moveItemUp('a')).toEqual({ status: 'committed-refreshed' });
+    await flushPromises();
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual(['a', 'b', 'c']);
 
-    wrapper.vm.editor.moveItemDown('c');
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'a',
-      'b',
-      'c',
-    ]);
+    expect(await wrapper.vm.editor.moveItemDown('c')).toEqual({ status: 'mutation-rejected' });
   });
 
-  it('duplicateItem は原項目の直後に挿入し、removeItem は manual-only のみ削除する', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: {
-              ...baseDocument,
-              itemOrder: ['title', 'manual'],
-              items: {
-                title: {
-                  name: 'タイトル',
-                  type: 'text',
-                  description: '',
-                  note: '',
-                },
-                manual: {
-                  name: '手動',
-                  type: 'text',
-                  description: 'd',
-                  note: 'n',
-                },
-              },
-            },
-            collectedItemIds: ['title'],
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+  it('duplicateItem は原項目の直後に挿入し、deleteItem は manual-only を削除する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          manual: {
+            name: '手動',
+            type: 'text',
+            description: 'd',
+            note: 'n',
+          },
+        },
+        collectedItemIds: ['title'],
+      }),
+    });
 
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
@@ -439,140 +343,840 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.isCollectedItem('title')).toBe(true);
     expect(wrapper.vm.editor.isCollectedItem('manual')).toBe(false);
 
-    const duplicated = wrapper.vm.editor.duplicateItem('title', {
+    const duplicated = await wrapper.vm.editor.duplicateItem('title', {
       itemId: 'title-copy',
       name: 'タイトル',
       type: 'text',
       description: '',
       note: '',
     });
-    expect(duplicated).toBe(true);
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+    expect(duplicated.status).toBe('committed-refreshed');
+    await flushPromises();
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual([
       'title',
       'title-copy',
       'manual',
     ]);
 
-    expect(wrapper.vm.editor.removeItem('title')).toBe(false);
-    expect(wrapper.vm.editor.removeItem('manual')).toBe(true);
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
+    expect(await wrapper.vm.editor.deleteItem('title')).toEqual({ status: 'mutation-rejected' });
+    expect((await wrapper.vm.editor.deleteItem('manual')).status).toBe('committed-refreshed');
+    await flushPromises();
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual([
       'title',
       'title-copy',
     ]);
     expect(wrapper.vm.editor.draftDocument.value?.items.manual).toBeUndefined();
-    expect(wrapper.vm.editor.dirty.value).toBe(true);
   });
 
-  it('excludeItem / restoreItem は説明を保持し、manual 除外は拒否する', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: {
-              ...baseDocument,
-              itemOrder: ['title', 'manual'],
-              items: {
-                title: {
-                  name: 'タイトル',
-                  type: 'text',
-                  description: '見出し説明',
-                  note: '備考',
-                },
-                manual: {
-                  name: '手動',
-                  type: 'text',
-                  description: '',
-                  note: '',
-                },
-              },
-              excludedItems: {},
-            },
-            collectedItemIds: ['title'],
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+  it('excludeItem / restoreItem は説明を保持する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '見出し説明',
+            note: '備考',
+          },
+          manual: {
+            name: '手動',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title'],
+      }),
+    });
 
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
     await flushPromises();
 
-    expect(wrapper.vm.editor.excludeItem('manual')).toBe(false);
-    expect(wrapper.vm.editor.excludeItem('title')).toBe(true);
+    expect((await wrapper.vm.editor.excludeItem('title')).status).toBe('committed-refreshed');
+    await flushPromises();
     expect(wrapper.vm.editor.draftDocument.value?.items.title).toBeUndefined();
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual(['manual']);
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual(['manual']);
     expect(wrapper.vm.editor.draftDocument.value?.excludedItems.title).toEqual({
       name: 'タイトル',
       type: 'text',
       description: '見出し説明',
       note: '備考',
     });
-    expect(wrapper.vm.editor.dirty.value).toBe(true);
 
-    expect(wrapper.vm.editor.restoreItem('title')).toBe(true);
-    expect(wrapper.vm.editor.draftDocument.value?.itemOrder).toEqual([
-      'manual',
-      'title',
-    ]);
+    expect((await wrapper.vm.editor.restoreItem('title')).status).toBe('committed-refreshed');
+    await flushPromises();
+    expect(wrapper.vm.editor.flattenActiveItemIds()).toEqual(['manual', 'title']);
     expect(wrapper.vm.editor.draftDocument.value?.excludedItems).toEqual({});
     expect(wrapper.vm.editor.draftDocument.value?.items.title.description).toBe(
       '見出し説明',
     );
   });
 
-  it('除外保存で MANUAL_ITEM_EXCLUDE が返ると draft を保持したままエラー表示する', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (!init || init.method === 'GET' || !init.method) {
-        return new Response(
-          JSON.stringify({
-            screenId: 'demo',
-            revision: 'sha256:r1',
-            exists: true,
-            document: {
-              ...baseDocument,
-              itemOrder: ['title'],
-              items: {
-                title: {
-                  name: 'タイトル',
-                  type: 'text',
-                  description: 'd',
-                  note: '',
-                },
-              },
-              excludedItems: {},
-            },
-            collectedItemIds: ['title'],
-          }),
-          { status: 200 },
-        );
-      }
-      return new Response(
-        JSON.stringify({
-          code: 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
-          message: 'server message',
-        }),
-        { status: 400 },
-      );
+  it('exclude で MANUAL_ITEM_EXCLUDE が返ると draft を保持したままエラー表示する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '見出し',
+            note: '',
+          },
+          manual: { name: '手動', type: 'text', description: '', note: '' },
+        },
+        collectedItemIds: ['title'],
+      }),
     });
-    vi.stubGlobal('fetch', fetchMock);
 
     const { wrapper } = await mountEditor();
     await wrapper.vm.editor.loadDescription('demo');
     await flushPromises();
 
-    expect(wrapper.vm.editor.excludeItem('title')).toBe(true);
-    const ok = await wrapper.vm.editor.save();
-    expect(ok).toBe(false);
+    const ok = await wrapper.vm.editor.excludeItem('manual');
+    expect(ok.status).toBe('mutation-rejected');
     expect(wrapper.vm.editor.status.value).toBe('error');
     expect(wrapper.vm.editor.statusMessage.value).toContain(
-      '最新の画面設計書を再読み込みしてください',
+      '不要な場合は項目を削除してください',
     );
-    expect(wrapper.vm.editor.dirty.value).toBe(true);
-    expect(wrapper.vm.editor.draftDocument.value?.excludedItems.title).toBeTruthy();
+    expect(wrapper.vm.editor.draftDocument.value?.items.manual).toBeTruthy();
+  });
+
+  it('Item A 保存は PATCH A のみで Item B には触れない', async () => {
+    const { getFetchMock } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['item-a', 'item-b'],
+        items: {
+          'item-a': {
+            name: 'A',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          'item-b': {
+            name: 'B',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('item-a');
+    wrapper.vm.editor.updateItemField('item-a', 'name', 'A変更');
+    await wrapper.vm.editor.saveItemMetadata('item-a');
+    await flushPromises();
+
+    const fetchMock = getFetchMock();
+    const itemPatchCalls = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/item-a') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const itemBPatchCalls = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/item-b') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(itemPatchCalls).toHaveLength(1);
+    expect(itemBPatchCalls).toHaveLength(0);
+  });
+
+  it('Item A draft 中に B を編集すると B 保存は PATCH B のみ', async () => {
+    const { getFetchMock } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['item-a', 'item-b'],
+        items: {
+          'item-a': {
+            name: 'A',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          'item-b': {
+            name: 'B',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('item-a');
+    wrapper.vm.editor.updateItemField('item-a', 'name', 'A draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    wrapper.vm.editor.beginItemEdit('item-b');
+    wrapper.vm.editor.updateItemField('item-b', 'name', 'B draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.saveItemMetadata('item-b');
+    await flushPromises();
+
+    const fetchMock = getFetchMock();
+    const itemAPatchCalls = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/item-a') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const itemBPatchCalls = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/item-b') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(itemAPatchCalls).toHaveLength(0);
+    expect(itemBPatchCalls).toHaveLength(1);
+  });
+
+  it('Item 保存成功後も dirty な Screen draft を保持する', async () => {
+    const { getFetchMock, state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'Screen draft');
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item saved');
+
+    expect(wrapper.vm.editor.screenDirty.value).toBe(true);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.screenDirty.value).toBe(true);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen draft');
+    expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item saved');
+    expect(wrapper.vm.editor.revision.value).not.toBe('sha256:r1');
+    expect(state.get('demo')?.doc.screen.name).toBe('Demo');
+
+    const fetchMock = getFetchMock();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/screen') &&
+          (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+      ),
+    ).toHaveLength(0);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/items/title') &&
+          (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('Screen 保存成功後も dirty な Item draft を保持する', async () => {
+    const { getFetchMock, state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'Screen saved');
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item draft');
+
+    expect(wrapper.vm.editor.screenDirty.value).toBe(true);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.saveScreenMetadata();
+    await flushPromises();
+
+    expect(wrapper.vm.editor.screenDirty.value).toBe(false);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen saved');
+    expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item draft');
+    expect(state.get('demo')?.doc.screen.name).toBe('Screen saved');
+    expect(wrapper.vm.editor.revision.value).not.toBe('sha256:r1');
+
+    const fetchMock = getFetchMock();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/screen') &&
+          (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/items/title') &&
+          (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('deprecated save() は Screen と Item を順に保存し revision を引き継ぐ', async () => {
+    const { getFetchMock, state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'Screen saved');
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item saved');
+
+    const ok = await wrapper.vm.editor.save();
+    await flushPromises();
+
+    expect(ok.status).toBe('committed-refreshed');
+    expect(wrapper.vm.editor.dirty.value).toBe(false);
+    expect(state.get('demo')?.doc.screen.name).toBe('Screen saved');
+    expect(state.get('demo')?.doc.items.title.name).toBe('Item saved');
+
+    const fetchMock = getFetchMock();
+    const screenPatches = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/screen') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const itemPatches = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/title') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(screenPatches).toHaveLength(1);
+    expect(itemPatches).toHaveLength(1);
+
+    const screenBody = JSON.parse(String(screenPatches[0][1]?.body));
+    const itemBody = JSON.parse(String(itemPatches[0][1]?.body));
+    expect(screenBody.expectedRevision).toBe('sha256:r1');
+    expect(itemBody.expectedRevision).not.toBe('sha256:r1');
+  });
+
+  it('mutation 成功後の Tree GET 失敗でも dirty draft を保持する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+    const baseFetch = global.fetch;
+    let itemPatchDone = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          itemPatchDone = true;
+        }
+        if (
+          itemPatchDone &&
+          method === 'GET' &&
+          url.includes('/description-tree/demo')
+        ) {
+          return new Response('reload failed', { status: 500 });
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'Screen draft');
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item draft');
+
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.status.value).toBe('reload-failed');
+    expect(wrapper.vm.editor.screenDirty.value).toBe(true);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen draft');
+    expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item draft');
+  });
+
+  it('409 conflict 後も draft を保持し自動 retry しない', async () => {
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.endsWith('/screen') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'Screen draft');
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item draft');
+
+    const ok = await wrapper.vm.editor.saveScreenMetadata();
+    await flushPromises();
+
+    expect(ok.status).toBe('mutation-rejected');
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.screenDirty.value).toBe(true);
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen draft');
+    expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item draft');
+  });
+
+  it('Screen 切替後は mutationPending が解除され stale 応答で B の状態を変更しない', async () => {
+    let resolveScreenAPatch: (() => void) | undefined;
+    stubDescriptionTreeFetch(
+      {
+        'screen-a': createBaseTreeDoc({
+          screen: { id: 'screen-a', name: 'Screen A', description: '' },
+        }),
+        'screen-b': createBaseTreeDoc({
+          screen: { id: 'screen-b', name: 'Screen B', description: '' },
+        }),
+      },
+      {
+        onFetch: (url, method) => {
+          if (
+            url.includes('/description-tree/screen-a') &&
+            url.endsWith('/screen') &&
+            method === 'PATCH'
+          ) {
+            return new Promise<Response>((resolve) => {
+              resolveScreenAPatch = () => {
+                resolve(
+                  new Response(
+                    JSON.stringify({ status: 'updated', revision: 'sha256:r2' }),
+                    {
+                      status: 200,
+                      headers: { 'Content-Type': 'application/json' },
+                    },
+                  ),
+                );
+              };
+            });
+          }
+          return null;
+        },
+      },
+    );
+
+    const SwitchableHarness = defineComponent({
+      name: 'SwitchableHarness',
+      setup() {
+        const screenId = ref('screen-a');
+        const editor = useDescriptionEditor(() => screenId.value);
+        return { editor, screenId };
+      },
+      template: `
+        <div>
+          <span data-pending>{{ editor.mutationPending.value }}</span>
+          <span data-revision>{{ editor.revision.value || '' }}</span>
+        </div>
+      `,
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory('/spec/'),
+      routes: [
+        { path: '/screens/:screenId', component: SwitchableHarness },
+        { path: '/', redirect: '/screens/screen-a' },
+      ],
+    });
+    await router.push('/screens/screen-a');
+    await router.isReady();
+    const root = mount(
+      defineComponent({
+        setup() {
+          return () => h(RouterView);
+        },
+      }),
+      { global: { plugins: [router] } },
+    );
+    await flushPromises();
+    const wrapper = root.findComponent(SwitchableHarness);
+
+    await wrapper.vm.editor.loadDescription('screen-a');
+    await flushPromises();
+    wrapper.vm.editor.updateScreenField('name', 'A draft');
+    const savePromise = wrapper.vm.editor.saveScreenMetadata();
+    expect(wrapper.vm.editor.mutationPending.value).toBe(true);
+
+    wrapper.vm.screenId = 'screen-b';
+    await wrapper.vm.editor.loadDescription('screen-b', { reason: 'screen-change' });
+    await flushPromises();
+    expect(wrapper.vm.editor.mutationPending.value).toBe(false);
+
+    const bRevision = wrapper.vm.editor.revision.value;
+    const bSnapshotName =
+      wrapper.vm.editor.draftDocument.value?.screen.name ?? '';
+
+    if (resolveScreenAPatch) {
+      resolveScreenAPatch();
+    }
+    await savePromise;
+    await flushPromises();
+
+    expect(wrapper.vm.editor.revision.value).toBe(bRevision);
+    expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe(bSnapshotName);
+    expect(wrapper.vm.editor.mutationPending.value).toBe(false);
+
+    wrapper.vm.editor.updateScreenField('name', 'B saved');
+    const ok = await wrapper.vm.editor.saveScreenMetadata();
+    await flushPromises();
+    expect(ok.status).toBe('committed-refreshed');
+    root.unmount();
+  });
+
+  it('B mutation 中に A の finally が B の pending を解除しない', async () => {
+    let resolveScreenAPatch: (() => void) | undefined;
+    let resolveScreenBPatch: (() => void) | undefined;
+    stubDescriptionTreeFetch(
+      {
+        'screen-a': createBaseTreeDoc({
+          screen: { id: 'screen-a', name: 'Screen A', description: '' },
+        }),
+        'screen-b': createBaseTreeDoc({
+          screen: { id: 'screen-b', name: 'Screen B', description: '' },
+        }),
+      },
+      {
+        onFetch: (url, method) => {
+          if (
+            url.includes('/description-tree/screen-a') &&
+            url.endsWith('/screen') &&
+            method === 'PATCH'
+          ) {
+            return new Promise<Response>((resolve) => {
+              resolveScreenAPatch = () => {
+                resolve(
+                  new Response(
+                    JSON.stringify({ status: 'updated', revision: 'sha256:a2' }),
+                    {
+                      status: 200,
+                      headers: { 'Content-Type': 'application/json' },
+                    },
+                  ),
+                );
+              };
+            });
+          }
+          if (
+            url.includes('/description-tree/screen-b') &&
+            url.endsWith('/screen') &&
+            method === 'PATCH'
+          ) {
+            return new Promise<Response>((resolve) => {
+              resolveScreenBPatch = () => {
+                resolve(
+                  new Response(
+                    JSON.stringify({ status: 'updated', revision: 'sha256:b2' }),
+                    {
+                      status: 200,
+                      headers: { 'Content-Type': 'application/json' },
+                    },
+                  ),
+                );
+              };
+            });
+          }
+          return null;
+        },
+      },
+    );
+
+    const SwitchableHarness = defineComponent({
+      name: 'SwitchableHarness',
+      setup() {
+        const screenId = ref('screen-a');
+        const editor = useDescriptionEditor(() => screenId.value);
+        return { editor, screenId };
+      },
+      template: `<span data-pending>{{ editor.mutationPending.value }}</span>`,
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory('/spec/'),
+      routes: [
+        { path: '/screens/:screenId', component: SwitchableHarness },
+        { path: '/', redirect: '/screens/screen-a' },
+      ],
+    });
+    await router.push('/screens/screen-a');
+    await router.isReady();
+    const root = mount(
+      defineComponent({
+        setup() {
+          return () => h(RouterView);
+        },
+      }),
+      { global: { plugins: [router] } },
+    );
+    await flushPromises();
+    const wrapper = root.findComponent(SwitchableHarness);
+
+    await wrapper.vm.editor.loadDescription('screen-a');
+    await flushPromises();
+    wrapper.vm.editor.updateScreenField('name', 'A draft');
+    void wrapper.vm.editor.saveScreenMetadata();
+
+    wrapper.vm.screenId = 'screen-b';
+    await wrapper.vm.editor.loadDescription('screen-b', { reason: 'screen-change' });
+    await flushPromises();
+
+    wrapper.vm.editor.updateScreenField('name', 'B draft');
+    void wrapper.vm.editor.saveScreenMetadata();
+    expect(wrapper.vm.editor.mutationPending.value).toBe(true);
+
+    if (resolveScreenAPatch) {
+      resolveScreenAPatch();
+    }
+    await flushPromises();
+    expect(wrapper.vm.editor.mutationPending.value).toBe(true);
+
+    if (resolveScreenBPatch) {
+      resolveScreenBPatch();
+    }
+    await flushPromises();
+    expect(wrapper.vm.editor.mutationPending.value).toBe(false);
+    root.unmount();
+  });
+
+  it('same-target delete 後は item draft を除去する', async () => {
+    const { getFetchMock } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          manual: {
+            name: '手動',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title'],
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('manual');
+    wrapper.vm.editor.updateItemField('manual', 'name', '手動 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.deleteItem('manual');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(
+      getFetchMock().mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/items/manual') &&
+          (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('same-target exclude 後は item draft を除去する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'layout'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          layout: {
+            name: '枠',
+            type: 'container',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title', 'layout'],
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('layout');
+    wrapper.vm.editor.updateItemField('layout', 'name', '枠 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.excludeItem('layout');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+  });
+
+  it('別 Item delete 後も既存 item draft を保持する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          manual: {
+            name: '手動',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title'],
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'タイトル draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.deleteItem('manual');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBe('title');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('タイトル draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+  });
+
+  it('delete 後に同 ID を restore しても過去 draft は復活しない', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'manual'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          manual: {
+            name: '手動',
+            type: 'text',
+            description: '旧説明',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title'],
+      }),
+    });
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('manual');
+    wrapper.vm.editor.updateItemField('manual', 'name', '手動 draft');
+    await wrapper.vm.editor.deleteItem('manual');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+
+    await wrapper.vm.editor.createItem({
+      itemId: 'manual',
+      name: '手動',
+      type: 'text',
+      description: '旧説明',
+      note: '',
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(wrapper.vm.editor.draftDocument.value?.items.manual?.name).toBe('手動');
   });
 });

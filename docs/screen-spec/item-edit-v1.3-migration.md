@@ -1,8 +1,7 @@
 # Screen Spec v1.3 項目編集移行設計
 
-> **Phase 7F-1C-4A — 調査・設計のみ**
-> 本書は Description v1.3 Item Tree 上で、既存 Viewer の **Item 編集機能を失わない** ための移行設計です。
-> **domain mutation / HTTP API / Viewer UI の実装は含みません。**
+> **Phase 7F-1C-4A — 調査・設計**
+> **Phase 7F-1D-2 — Viewer Item 編集 v1.3 接続 実装済み**（本書後半の HTTP / Viewer 契約は実装反映済み。Group 編集 UI は 7F-1D-3）
 
 関連:
 
@@ -17,15 +16,7 @@
 
 Phase 7F-1D-1 により Viewer は `GET /_jskim/spec/description-tree/:screenId` で **読み取り専用 Item Tree** を表示できます。
 
-一方、既存 Item 編集 UI（`ItemDescriptionTable` 等）は引き続き **legacy flat Description API** を使用します。
-
-```http
-GET  /_jskim/spec/descriptions/:screenId
-PUT  /_jskim/spec/descriptions/:screenId
-```
-
-v1.3 永続ファイルに対する legacy PUT は **fail-closed**（`409 SPEC_DESCRIPTION_UNSUPPORTED_SCHEMA`）です。
-Group 作成などで lazy migration が発生した画面では、**Item metadata の編集すら保存できない dead-end** が発生します。
+一方、Item 編集 UI は **Phase 7F-1D-2** により Description Tree mutation API に接続済みです（legacy 全体 PUT は Viewer 編集経路では使用しません）。
 
 本設計は、tree-aware な **Item 単位 mutation** を定義し、Viewer を legacy PUT から段階的に移行するための契約です。
 
@@ -658,11 +649,12 @@ lazy migration → v1.3
 次を **すべて満たすまで** Group 作成・編集 Viewer UI（7F-1D-3）を **公開しない**。
 
 ```text
-□ updateItem / createItem domain + HTTP 実装済み（Phase 7F-1C-4B）
-□ deleteItem / excludeItem / restoreItem domain + HTTP 実装済み（Phase 7F-1C-4C）
-□ Viewer Item editor の v1.3 Item API 接続（7F-1D-2）
-□ shared descriptionRevision + mutation / GET race 防御 + 409 conflict UI 検証
-□ v1.2 → v1.3 lazy migration（Item mutation 経由）の regression テスト
+☑ updateItem / createItem domain + HTTP 実装済み（Phase 7F-1C-4B）
+☑ deleteItem / excludeItem / restoreItem domain + HTTP 実装済み（Phase 7F-1C-4C）
+☑ Viewer Item editor の v1.3 Item API 接続（7F-1D-2）
+☑ shared descriptionRevision + mutation / GET race 防御 + 409 conflict UI 検証
+☑ v1.2 → v1.3 lazy migration（Item mutation 経由）の regression テスト
+☐ Group 作成・編集 Viewer UI（7F-1D-3 — 次 Phase）
 ```
 
 未達時に Group UI のみ公開すると lazy migration → legacy PUT dead-end が再発する。
@@ -802,7 +794,7 @@ Item Tree GET race（Phase 7F-1D-1）とは **別問題**。
 |-------|------|
 | **7F-1C-4B** | `updateDescriptionItem` / `createDescriptionItem` domain + HTTP — **実装済み** |
 | **7F-1C-4C** | `deleteDescriptionItem` / `excludeDescriptionItem` / `restoreDescriptionItem` domain + HTTP |
-| **7F-1D-2** | Viewer Item editor → tree Item API 接続、revision 共有、409 UI |
+| **7F-1D-2** | Viewer Item editor → tree Item API 接続、revision 共有、409 UI — **実装済み** |
 | **7F-1D-3** | Group 作成・編集 UI |
 | **7F-1D-4** | move / reorder UI |
 | **7F-1D-5** | Group 解除・subtree 削除 UI |
@@ -835,6 +827,15 @@ Item Tree GET race（Phase 7F-1D-1）とは **別問題**。
 - legacy PUT の v1.3 対応
 - Collector v1.3 Item 書き込み
 - Group 作成・編集 Viewer UI
+
+---
+
+## 19. Phase 7F-1D-2 検証（push 前）
+
+- Viewer Item 編集は Description Tree mutation API のみ（`PUT /_jskim/spec/descriptions/:screenId` は **0 回**）。legacy server / 回帰テストは維持
+- 選択 Item 単位 draft / save（`saveItemMetadata` → PATCH 1 item）。未選択行は read-only 入力
+- shared revision / 409 conflict / reload-failed 契約は composable + `test/viewer-item-edit-e2e.test.js`（TEMP workspace + `jskim spec dev`）で検証
+- Group 作成・編集 Viewer UI は **未公開**（7F-1D-3 gate）
 
 ---
 

@@ -4,16 +4,20 @@ import { onBeforeUnmount, onMounted } from 'vue';
 const props = defineProps<{
   itemId: string;
   itemName: string;
+  pending?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  confirm: [];
+  confirm: [payload: { itemId: string }];
 }>();
 
 const titleId = 'delete-item-dialog-title';
 
 function requestClose(): void {
+  if (props.pending) {
+    return;
+  }
   emit('close');
 }
 
@@ -22,6 +26,9 @@ function onOverlayClick(): void {
 }
 
 function onWindowKeydown(event: KeyboardEvent): void {
+  if (props.pending) {
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
     requestClose();
@@ -29,8 +36,10 @@ function onWindowKeydown(event: KeyboardEvent): void {
 }
 
 function onConfirm(): void {
-  emit('confirm');
-  emit('close');
+  if (props.pending) {
+    return;
+  }
+  emit('confirm', { itemId: props.itemId });
 }
 
 onMounted(() => {
@@ -67,6 +76,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="spec-page__btn spec-page__btn--secondary"
+            :disabled="pending"
             @click="requestClose"
           >
             キャンセル
@@ -75,6 +85,7 @@ onBeforeUnmount(() => {
             type="button"
             class="spec-page__btn spec-page__btn--danger"
             data-action="confirm-delete"
+            :disabled="pending"
             @click="onConfirm"
           >
             削除

@@ -16,6 +16,17 @@ const { createDeviceCaptureApi } = require('./create-device-capture-api');
 const { createReferenceImageApi } = require('./create-reference-image-api');
 const { createVersionHistoryApi } = require('./create-version-history-api');
 const { createFeatureApi } = require('./create-feature-api');
+const path = require('node:path');
+
+/** 開発リポジトリ内テスト向け fallback（ユーザープロジェクトでは node_modules 解決を優先） */
+const DEFAULT_COMPANION_MODULE_PATH = path.join(
+  __dirname,
+  '..',
+  '..',
+  'jskim-screen-spec',
+  'dist',
+  'index.js',
+);
 
 /**
  * jskim spec dev の実行ランタイム（CLI の process.exit は含まない）。
@@ -103,6 +114,7 @@ function createSpecDevRuntime(options = {}) {
     let deleteDescriptionItem = options.deleteDescriptionItem;
     let excludeDescriptionItem = options.excludeDescriptionItem;
     let restoreDescriptionItem = options.restoreDescriptionItem;
+    let updateDescriptionScreen = options.updateDescriptionScreen;
     let collectCollectedItemIdsForScreen = options.collectCollectedItemIdsForScreen;
     let formatDescriptionTreeForApi = options.formatDescriptionTreeForApi;
 
@@ -112,14 +124,30 @@ function createSpecDevRuntime(options = {}) {
       typeof classifyPath !== 'function' ||
       typeof mergeKinds !== 'function' ||
       typeof createFileDescriptionStore !== 'function' ||
-      typeof loadScreenSpecProject !== 'function';
+      typeof loadScreenSpecProject !== 'function' ||
+      typeof readDescriptionTreeState !== 'function' ||
+      typeof readDescriptionRevision !== 'function' ||
+      typeof createDescriptionGroup !== 'function' ||
+      typeof updateDescriptionGroup !== 'function' ||
+      typeof moveDescriptionNode !== 'function' ||
+      typeof reorderDescriptionChildren !== 'function' ||
+      typeof deleteDescriptionGroup !== 'function' ||
+      typeof deleteDescriptionGroupSubtree !== 'function' ||
+      typeof createDescriptionItem !== 'function' ||
+      typeof updateDescriptionItem !== 'function' ||
+      typeof deleteDescriptionItem !== 'function' ||
+      typeof excludeDescriptionItem !== 'function' ||
+      typeof restoreDescriptionItem !== 'function' ||
+      typeof updateDescriptionScreen !== 'function' ||
+      typeof collectCollectedItemIdsForScreen !== 'function' ||
+      typeof formatDescriptionTreeForApi !== 'function';
 
     if (needsCompanion) {
       let companion;
       try {
         companion = await resolveScreenSpecModule({
           projectRoot: workspaceRoot,
-          modulePath: options.modulePath,
+          modulePath: options.modulePath || DEFAULT_COMPANION_MODULE_PATH,
           requireCollect: true,
           requireWatchHelpers: true,
           requireEditing: true,
@@ -224,6 +252,8 @@ function createSpecDevRuntime(options = {}) {
         excludeDescriptionItem || companion.excludeDescriptionItem;
       restoreDescriptionItem =
         restoreDescriptionItem || companion.restoreDescriptionItem;
+      updateDescriptionScreen =
+        updateDescriptionScreen || companion.updateDescriptionScreen;
       collectCollectedItemIdsForScreen =
         collectCollectedItemIdsForScreen ||
         companion.collectCollectedItemIdsForScreen;
@@ -358,6 +388,7 @@ function createSpecDevRuntime(options = {}) {
       typeof deleteDescriptionItem === 'function' &&
       typeof excludeDescriptionItem === 'function' &&
       typeof restoreDescriptionItem === 'function' &&
+      typeof updateDescriptionScreen === 'function' &&
       typeof collectCollectedItemIdsForScreen === 'function' &&
       typeof formatDescriptionTreeForApi === 'function'
         ? createDescriptionTreeApi({
@@ -380,6 +411,7 @@ function createSpecDevRuntime(options = {}) {
               deleteDescriptionItem,
               excludeDescriptionItem,
               restoreDescriptionItem,
+              updateDescriptionScreen,
               collectCollectedItemIdsForScreen,
               formatDescriptionTreeForApi,
             },

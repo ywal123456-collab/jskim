@@ -53,6 +53,7 @@ describe('DuplicateItemDialog', () => {
     await wrapper.find('form').trigger('submit');
     expect(wrapper.emitted('create')![0]).toEqual([
       {
+        sourceItemId: 'title',
         itemId: 'title-copy',
         name: 'タイトル',
         type: 'text',
@@ -67,5 +68,27 @@ describe('DuplicateItemDialog', () => {
     expect(
       (wrapper.find('[data-field="item-id"]').element as HTMLInputElement).value,
     ).toBe('title-copy-2');
+  });
+
+  it('pending 中は close / confirm を抑止する', async () => {
+    const wrapper = await mountDialog();
+    await wrapper.setProps({ pending: true });
+
+    expect(
+      (wrapper.find('button[type="submit"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.find('button.spec-page__btn--secondary')
+          .element as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    await wrapper.find('button.spec-page__btn--secondary').trigger('click');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await nextTick();
+    await wrapper.find('form').trigger('submit');
+    expect(wrapper.emitted('close')).toBeFalsy();
+    expect(wrapper.emitted('create')).toBeFalsy();
   });
 });

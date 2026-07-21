@@ -83,6 +83,11 @@ export { applyDeleteItem, type DeleteItemInput, type ApplyDeleteItemResult } fro
 export { applyExcludeItem, type ExcludeItemInput, type ApplyExcludeItemResult } from './exclude-item.js';
 export { applyRestoreItem, type RestoreItemInput, type ApplyRestoreItemResult } from './restore-item.js';
 export {
+  applyUpdateScreen,
+  type UpdateScreenInput,
+  type ApplyUpdateScreenResult,
+} from './update-screen.js';
+export {
   mutateDescriptionTree,
   createDescriptionGroup,
   updateDescriptionGroup,
@@ -95,6 +100,7 @@ export {
   deleteDescriptionItem,
   excludeDescriptionItem,
   restoreDescriptionItem,
+  updateDescriptionScreen,
   readDescriptionTreeState,
   type DescriptionTreeMutationContext,
   type DescriptionTreeMutationAdapters,

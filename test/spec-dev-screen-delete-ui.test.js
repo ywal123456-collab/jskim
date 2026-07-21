@@ -125,6 +125,22 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       createFileDescriptionStore: companion.createFileDescriptionStore,
       loadScreenSpecProject: companion.loadScreenSpecProject,
       withDescriptionScreenLock: companion.withDescriptionScreenLock,
+      readDescriptionTreeState: companion.readDescriptionTreeState,
+      readDescriptionRevision: companion.readDescriptionRevision,
+      createDescriptionGroup: companion.createDescriptionGroup,
+      updateDescriptionGroup: companion.updateDescriptionGroup,
+      moveDescriptionNode: companion.moveDescriptionNode,
+      reorderDescriptionChildren: companion.reorderDescriptionChildren,
+      deleteDescriptionGroup: companion.deleteDescriptionGroup,
+      deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
+      createDescriptionItem: companion.createDescriptionItem,
+      updateDescriptionItem: companion.updateDescriptionItem,
+      deleteDescriptionItem: companion.deleteDescriptionItem,
+      excludeDescriptionItem: companion.excludeDescriptionItem,
+      restoreDescriptionItem: companion.restoreDescriptionItem,
+      updateDescriptionScreen: companion.updateDescriptionScreen,
+      collectCollectedItemIdsForScreen: companion.collectCollectedItemIdsForScreen,
+      formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
     });
     await runtime.start();
     sessions.push({
@@ -132,6 +148,23 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       cleanup: () => fsp.rm(workspaceRoot, { recursive: true, force: true }),
     });
     return { port, runtime };
+  }
+
+  async function waitDeleteScreenReady(page, screenId) {
+    await page.waitForFunction(
+      async (id) => {
+        const res = await fetch(
+          `/_jskim/spec/description-tree/${encodeURIComponent(id)}`,
+        );
+        if (!res.ok) {
+          return false;
+        }
+        const btn = document.querySelector('[data-action="delete-screen"]');
+        return Boolean(btn && !btn.disabled);
+      },
+      screenId,
+      { timeout: 45000 },
+    );
   }
 
   it(
@@ -164,6 +197,7 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       await page.waitForSelector('[data-action="delete-screen"]', {
         timeout: 30000,
       });
+      await waitDeleteScreenReady(page, 'screen-b');
       await page.click('[data-action="delete-screen"]');
       await page.waitForSelector('[data-action="confirm-delete-screen"]');
       assert.match(await page.textContent('body'), /画面設計を削除しますか？/);
@@ -181,6 +215,7 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       await page.waitForSelector('[data-action="delete-screen"]', {
         timeout: 30000,
       });
+      await waitDeleteScreenReady(page, 'screen-c');
       await page.click('[data-action="delete-screen"]');
       await page.click('[data-action="confirm-delete-screen"]');
       await page.waitForURL(/\/screens\/screen-a(?:\?|$)/, { timeout: 45000 });
@@ -191,6 +226,7 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       await page.waitForSelector('[data-action="delete-screen"]', {
         timeout: 30000,
       });
+      await waitDeleteScreenReady(page, 'screen-a');
       await page.click('[data-action="delete-screen"]');
       await page.click('[data-action="confirm-delete-screen"]');
       await page.waitForURL(/\/screens\/_empty(?:\?|$)/, { timeout: 45000 });
@@ -229,7 +265,7 @@ describe('same-port Viewer 画面設計削除 UI', () => {
           {
             schemaVersion: '1.0',
             screen: { id: 'linked-ui', path: '/' },
-            states: [{ id: 'default', name: '初期' }],
+            states: [{ id: 'default', name: '初期', viewer: { visible: true, order: 1 } }],
             interactions: [],
           },
           null,
@@ -292,6 +328,7 @@ describe('same-port Viewer 画面設計削除 UI', () => {
       await page.waitForSelector('[data-action="delete-screen"]', {
         timeout: 30000,
       });
+      await waitDeleteScreenReady(page, 'linked-ui');
       await page.click('[data-action="delete-screen"]');
       await page.waitForSelector('[data-action="confirm-delete-screen"]');
       const dialogText = await page.textContent('body');

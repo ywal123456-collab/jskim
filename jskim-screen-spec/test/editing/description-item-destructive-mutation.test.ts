@@ -14,6 +14,7 @@ import {
   applyRestoreItem,
   deleteDescriptionItem,
   excludeDescriptionItem,
+  createDescriptionItem,
   readDescriptionRevision,
   restoreDescriptionItem,
   type NormalizedDescription,
@@ -151,6 +152,30 @@ function createMemoryFs(initial: Record<string, Buffer> = {}) {
   };
 
   return { io, files, failOn };
+}
+
+function filePathFor(root: string): string {
+  return path.join(root, 'spec', 'demo', 'src', 'data', 'demo-screen.json');
+}
+
+function persistFailAdapters(root: string, original: string) {
+  const filePath = filePathFor(root);
+  const { io, failOn } = createMemoryFs({
+    [filePath]: Buffer.from(original),
+  });
+  return {
+    adapters: {
+      fs: io,
+      writeFileAtomic: (
+        target: string,
+        content: string | Buffer,
+        options?: Parameters<typeof writeFileAtomic>[2],
+      ) => writeFileAtomic(target, content, { ...options, fs: io }),
+      readFileSync: ((p) => io.readFileSync(String(p))) as typeof fs.readFileSync,
+      existsSync: ((p) => io.existsSync(String(p))) as typeof fs.existsSync,
+    },
+    failOn,
+  };
 }
 
 afterEach(() => {
@@ -299,6 +324,27 @@ describe('deleteItem domain', () => {
     );
   });
 
+  it('snapshot が空でも manual delete を許可する', async () => {
+    const root = tempRoot();
+    writeSnapshot(root, '<main></main>');
+    writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'item', id: 'manual-a' }],
+      groups: [],
+      items: { 'manual-a': emptyItem() },
+      excludedItems: {},
+    });
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    await deleteDescriptionItem(ctx(root), {
+      itemId: 'manual-a',
+      expectedRevision: revision,
+    });
+    const saved = readSaved(root);
+    expect(saved.rootNodes).toEqual([]);
+    expect(saved.items).not.toHaveProperty('manual-a');
+  });
+
   it('snapshot 無し delete は fail-closed で bytes 不変', async () => {
     const root = tempRoot();
     const original = writeDescriptionFile(root, {
@@ -407,7 +453,47 @@ describe('excludeItem domain', () => {
     expect(saved.items).not.toHaveProperty('collected-a');
     expect(
       (saved.excludedItems as Record<string, Record<string, string>>)['collected-a'],
-    ).toMatchObject({ name: 'A', type: 'text', description: 'd', note: 'n' });
+    ).toEqual({ name: 'A', type: 'text', description: 'd', note: 'n' });
+  });
+
+  it('persist 失敗時は bytes / revision / mtime を維持し lock を解放する', async () => {
+    const root = tempRoot();
+    writeSnapshot(root, '<div data-jskim-spec-item="collected-a"></div>');
+    const original = writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'item', id: 'collected-a' }],
+      groups: [],
+      items: {
+        'collected-a': itemFields({ name: 'A', type: 'text', description: 'd', note: 'n' }),
+      },
+      excludedItems: {},
+    });
+    const filePath = filePathFor(root);
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    const mtimeBefore = fs.statSync(filePath).mtimeMs;
+    const { adapters, failOn } = persistFailAdapters(root, original);
+    failOn.writeFileSync = Object.assign(new Error('disk full'), {
+      code: 'ENOSPC',
+    });
+    await expect(
+      excludeDescriptionItem(ctx(root), {
+        itemId: 'collected-a',
+        expectedRevision: revision,
+        adapters,
+      }),
+    ).rejects.toThrow();
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+    expect(readDescriptionRevision(root, 'demo', 'demo-screen')).toBe(revision);
+    expect(fs.statSync(filePath).mtimeMs).toBe(mtimeBefore);
+
+    await excludeDescriptionItem(ctx(root), {
+      itemId: 'collected-a',
+      expectedRevision: revision,
+    });
+    const saved = readSaved(root);
+    expect(saved.rootNodes).toEqual([]);
+    expect(saved.excludedItems).toHaveProperty('collected-a');
   });
 
   it('manual Item exclude を拒否する', async () => {
@@ -458,6 +544,69 @@ describe('restoreItem domain', () => {
     ]);
     expect(saved.items).toHaveProperty('restored-a');
     expect(saved.excludedItems).not.toHaveProperty('restored-a');
+    expect(
+      (saved.items as Record<string, Record<string, string>>)['restored-a'],
+    ).toEqual({
+      name: 'R',
+      type: 'text',
+      description: '',
+      note: '',
+    });
+  });
+
+  it('persist 失敗時は bytes / revision / mtime を維持し lock を解放する', async () => {
+    const root = tempRoot();
+    const original = writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'item', id: 'item-a' }],
+      groups: [],
+      items: { 'item-a': emptyItem() },
+      excludedItems: {
+        'restored-a': itemFields({
+          name: 'R',
+          type: 'text',
+          description: 'desc',
+          note: 'note',
+        }),
+      },
+    });
+    const filePath = filePathFor(root);
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    const mtimeBefore = fs.statSync(filePath).mtimeMs;
+    const { adapters, failOn } = persistFailAdapters(root, original);
+    failOn.writeFileSync = Object.assign(new Error('disk full'), {
+      code: 'ENOSPC',
+    });
+    await expect(
+      restoreDescriptionItem(ctx(root), {
+        itemId: 'restored-a',
+        expectedRevision: revision,
+        adapters,
+      }),
+    ).rejects.toThrow();
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+    expect(readDescriptionRevision(root, 'demo', 'demo-screen')).toBe(revision);
+    expect(fs.statSync(filePath).mtimeMs).toBe(mtimeBefore);
+
+    await restoreDescriptionItem(ctx(root), {
+      itemId: 'restored-a',
+      expectedRevision: revision,
+    });
+    const saved = readSaved(root);
+    expect(saved.rootNodes).toEqual([
+      { type: 'item', id: 'item-a' },
+      { type: 'item', id: 'restored-a' },
+    ]);
+    expect(saved.excludedItems).not.toHaveProperty('restored-a');
+    expect(
+      (saved.items as Record<string, Record<string, string>>)['restored-a'],
+    ).toEqual({
+      name: 'R',
+      type: 'text',
+      description: 'desc',
+      note: 'note',
+    });
   });
 
   it('active / Group / tree ref 衝突を拒否する', () => {
@@ -566,6 +715,76 @@ describe('deleteItem concurrency', () => {
     expect(codes.filter((c) => c === 'SPEC_DESCRIPTION_REVISION_CONFLICT')).toHaveLength(
       1,
     );
+  });
+});
+
+describe('createItem vs deleteItem concurrency', () => {
+  it('同一 revision の並行 create/delete は 1 成功 1 conflict', async () => {
+    const root = tempRoot();
+    writeSnapshot(root, '');
+    writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'item', id: 'manual-a' }],
+      groups: [],
+      items: { 'manual-a': emptyItem() },
+      excludedItems: {},
+    });
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    const results = await Promise.allSettled([
+      createDescriptionItem(ctx(root), {
+        itemId: 'manual-b',
+        name: 'B',
+        type: 'text',
+        description: '',
+        note: '',
+        expectedRevision: revision,
+      }),
+      deleteDescriptionItem(ctx(root), {
+        itemId: 'manual-a',
+        expectedRevision: revision,
+      }),
+    ]);
+    const codes = results.map((result) =>
+      result.status === 'fulfilled' ? 'ok' : docErrorCode(result.reason),
+    );
+    expect(codes.filter((c) => c === 'ok')).toHaveLength(1);
+    expect(codes.filter((c) => c === 'SPEC_DESCRIPTION_REVISION_CONFLICT')).toHaveLength(
+      1,
+    );
+    const saved = readSaved(root);
+    expect(saved.schemaVersion).toBe('1.3');
+    const hasA = Object.hasOwn(saved.items as object, 'manual-a');
+    const hasB = Object.hasOwn(saved.items as object, 'manual-b');
+    expect((hasA && hasB) || (!hasA && !hasB)).toBe(true);
+  });
+});
+
+describe('duplicate Item ref corruption', () => {
+  it('tree 上で Item ref が重複している fixture では delete が fail-closed', async () => {
+    const root = tempRoot();
+    writeSnapshot(root, '');
+    const original = writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [
+        { type: 'item', id: 'manual-a' },
+        { type: 'item', id: 'manual-a' },
+      ],
+      groups: [],
+      items: { 'manual-a': emptyItem() },
+      excludedItems: {},
+    });
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    await expectDocErrorCode(
+      () =>
+        deleteDescriptionItem(ctx(root), {
+          itemId: 'manual-a',
+          expectedRevision: revision,
+        }),
+      'SPEC_DESCRIPTION_NODE_DUPLICATE',
+    );
+    expect(fs.readFileSync(filePathFor(root), 'utf8')).toBe(original);
   });
 });
 

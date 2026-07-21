@@ -81,6 +81,7 @@ export {
   deleteDescriptionItem,
   excludeDescriptionItem,
   restoreDescriptionItem,
+  updateDescriptionScreen,
   mutateDescriptionTree,
   readDescriptionTreeState,
   findNodeLocation,
@@ -93,6 +94,7 @@ export {
   applyDeleteItem,
   applyExcludeItem,
   applyRestoreItem,
+  applyUpdateScreen,
   collectGroupSubtree,
 } from './editing/description-document/index.js';
 export {

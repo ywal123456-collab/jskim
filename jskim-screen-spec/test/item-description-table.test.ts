@@ -186,6 +186,20 @@ describe('ItemDescriptionTable', () => {
     expect(rows[1].findAll('td')[1].text()).toContain('title');
   });
 
+  it('editable=true でも選択行だけ入力欄を表示する', async () => {
+    const { wrapper } = await mountTable('title', {
+      editable: true,
+      draftItems: {
+        title: screen.items.title,
+        save: screen.items.save,
+      },
+    });
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows[0].findAll('input, textarea')).toHaveLength(4);
+    expect(rows[1].findAll('input, textarea')).toHaveLength(0);
+    expect(rows[1].findAll('td')[2].text()).toBe('保存');
+  });
+
   it('editable=true のとき複製ボタンを出し、collected 項目は除外・manual は削除を出す', async () => {
     const { wrapper } = await mountTable(null, {
       editable: true,

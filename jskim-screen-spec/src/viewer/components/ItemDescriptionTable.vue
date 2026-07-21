@@ -80,6 +80,10 @@ function itemField(
 function isCollected(itemId: string): boolean {
   return collectedSet.value.has(itemId);
 }
+
+function itemFieldEditable(itemId: string): boolean {
+  return Boolean(props.editable && props.selectedItemId === itemId);
+}
 </script>
 
 <template>
@@ -110,7 +114,7 @@ function isCollected(itemId: string): boolean {
           </td>
           <td>
             <input
-              v-if="editable"
+              v-if="itemFieldEditable(itemId)"
               :value="itemField(itemId, 'name')"
               type="text"
               @click.stop
@@ -127,7 +131,7 @@ function isCollected(itemId: string): boolean {
           </td>
           <td>
             <input
-              v-if="editable"
+              v-if="itemFieldEditable(itemId)"
               :value="itemField(itemId, 'type')"
               type="text"
               @click.stop
@@ -144,7 +148,7 @@ function isCollected(itemId: string): boolean {
           </td>
           <td>
             <textarea
-              v-if="editable"
+              v-if="itemFieldEditable(itemId)"
               :value="itemField(itemId, 'description')"
               rows="2"
               @click.stop
@@ -161,7 +165,7 @@ function isCollected(itemId: string): boolean {
           </td>
           <td>
             <textarea
-              v-if="editable"
+              v-if="itemFieldEditable(itemId)"
               :value="itemField(itemId, 'note')"
               rows="2"
               @click.stop

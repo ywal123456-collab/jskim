@@ -70,6 +70,8 @@ const UPDATE_ITEM_FORBIDDEN_KEYS = new Set([
   'parent',
 ]);
 
+const UPDATE_SCREEN_KEYS = new Set(['expectedRevision', 'name', 'description']);
+
 const REVISION_ONLY_KEYS = new Set(['expectedRevision']);
 
 const SPEC_NODE_REF_KEYS = new Set(['type', 'id']);
@@ -118,6 +120,7 @@ function createDescriptionTreeApi(options) {
     'deleteDescriptionItem',
     'excludeDescriptionItem',
     'restoreDescriptionItem',
+    'updateDescriptionScreen',
     'collectCollectedItemIdsForScreen',
     'formatDescriptionTreeForApi',
   ];
@@ -177,6 +180,13 @@ function createDescriptionTreeApi(options) {
         return handleGetTree(res, method, route.screenId);
       }
       return sendMethodNotAllowed(res, 'GET, HEAD');
+    }
+
+    if (route.kind === 'screen') {
+      if (method === 'PATCH') {
+        return handleUpdateScreen(req, res, route.screenId);
+      }
+      return sendMethodNotAllowed(res, 'PATCH');
     }
 
     if (route.kind === 'groups') {
@@ -290,11 +300,11 @@ function createDescriptionTreeApi(options) {
         return true;
       }
 
-      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+      const collectedItemIds = facade.collectCollectedItemIdsForScreen(
         ctx(screenId),
       );
       const state = facade.readDescriptionTreeState(ctx(screenId), {
-        collectedOrder,
+        collectedOrder: collectedItemIds,
       });
       if ('error' in state) {
         sendDescriptionTreeError(res, state.error);
@@ -309,6 +319,7 @@ function createDescriptionTreeApi(options) {
       sendJson(res, 200, {
         revision,
         sourceSchemaVersion: state.normalized.sourceSchemaVersion,
+        collectedItemIds,
         description: facade.formatDescriptionTreeForApi(state.normalized),
       });
     } catch (err) {
@@ -447,6 +458,55 @@ function createDescriptionTreeApi(options) {
         collectedOrder,
       });
       sendJson(res, 201, {
+        status: result.status,
+        revision: result.revision,
+      });
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
+  async function handleUpdateScreen(req, res, screenId) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, UPDATE_SCREEN_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+
+    if (body.name === undefined && body.description === undefined) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'updateScreen には name / description のいずれかが必要です。',
+      });
+      return true;
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const input = {
+        expectedRevision: body.expectedRevision,
+      };
+      if (body.name !== undefined) {
+        input.name = body.name;
+      }
+      if (body.description !== undefined) {
+        input.description = body.description;
+      }
+
+      const result = await facade.updateDescriptionScreen(ctx(screenId), {
+        ...input,
+        collectedOrder,
+      });
+      sendJson(res, 200, {
         status: result.status,
         revision: result.revision,
       });
@@ -875,6 +935,9 @@ function parseDescriptionTreePath(pathname) {
 
   if (parts.length === 1) {
     return { kind: 'tree', screenId };
+  }
+  if (parts.length === 2 && parts[1] === 'screen') {
+    return { kind: 'screen', screenId };
   }
   if (parts.length === 2 && parts[1] === 'groups') {
     return { kind: 'groups', screenId };

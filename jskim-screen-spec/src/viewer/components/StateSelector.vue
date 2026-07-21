@@ -5,6 +5,7 @@ import type { ScreenState } from '../types';
 const props = defineProps<{
   states: ScreenState[];
   selectedStateId: string;
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -18,6 +19,13 @@ const visibleOrderedStates = computed(() =>
     .slice()
     .sort((a, b) => (a.viewer.order ?? 0) - (b.viewer.order ?? 0)),
 );
+
+function onSelect(stateId: string): void {
+  if (props.disabled) {
+    return;
+  }
+  emit('select', stateId);
+}
 </script>
 
 <template>
@@ -28,7 +36,9 @@ const visibleOrderedStates = computed(() =>
       type="button"
       class="state-selector__button"
       :class="{ 'is-active': state.id === selectedStateId }"
-      @click="emit('select', state.id)"
+      :disabled="disabled"
+      :aria-disabled="disabled ? 'true' : undefined"
+      @click="onSelect(state.id)"
     >
       {{ state.name }}
     </button>

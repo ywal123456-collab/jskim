@@ -20,15 +20,24 @@ import {
   waitForDeviceCaptureRevision,
   type DeviceCaptureRuntimeState,
 } from './device-capture-client.js';
+import type { ScreenDataReloadOutcome } from '../screen-view-bundle.js';
 import {
   clearPendingDeviceCapture,
   peekPendingDeviceCapture,
   setPendingDeviceCapture,
   type PendingDeviceCapture,
 } from './pending-device-capture.js';
+import {
+  createPanelOperationController,
+  type PanelFetchFn,
+  type PanelWorkIdentity,
+} from './panel-operation-lifecycle.js';
 import type { DeviceCaptureViewport } from './preview-provider.js';
 
 const POLL_INTERVAL_MS = 800;
+
+const RELOAD_FAILED_MESSAGE =
+  'Device Previewは更新されましたが、画面を再読み込みできませんでした。最新内容を再読み込みしてください。';
 
 export type UseDeviceCapturePanelOptions = {
   projectName: ComputedRef<string> | Ref<string> | (() => string);
@@ -38,9 +47,9 @@ export type UseDeviceCapturePanelOptions = {
   screen: ComputedRef<ScreenData | null> | Ref<ScreenData | null> | (() => ScreenData | null);
   editable: ComputedRef<boolean> | Ref<boolean> | (() => boolean);
   /** screen JSON 再読込（manifest revision 反映後） */
-  reloadScreen: () => Promise<void>;
+  reloadScreen: () => Promise<ScreenDataReloadOutcome>;
   screenDataUrl: (screenId: string) => string;
-  fetchFn?: typeof fetch;
+  fetchFn?: PanelFetchFn;
   pollIntervalMs?: number;
 };
 
@@ -55,11 +64,10 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
   const runtime = ref<DeviceCaptureRuntimeState>({ status: 'idle' });
   const localPending = ref(false);
   const awaitingManifest = ref(false);
+  const reloadPending = ref(false);
   const statusMessage = ref('');
   const errorMessage = ref('');
   const infoMessage = ref('');
-  /** 進行中リクエストの key（stale response 無視用） */
-  const activeRequestKey = ref<string | null>(null);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let waitAbort: AbortController | null = null;
@@ -73,6 +81,12 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     return `${resolve(options.screenId)}\0${resolve(options.stateId)}\0${vp}`;
   });
 
+  const operation = createPanelOperationController(
+    () => currentKey.value,
+    () => disposed,
+    { localPending, awaitingManifest, reloadPending },
+  );
+
   const persistedCapture = computed((): DeviceCaptureManifestEntry | null => {
     const vp = resolve(options.viewport);
     const scr = resolve(options.screen);
@@ -85,8 +99,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
 
   const isCollecting = computed(
     () =>
-      localPending.value ||
-      awaitingManifest.value ||
+      operation.hasActiveWork() ||
       runtime.value.status === 'collecting',
   );
 
@@ -108,6 +121,70 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     statusMessage.value = '';
     errorMessage.value = '';
     infoMessage.value = '';
+  }
+
+  function setRuntimeIdle(): void {
+    runtime.value = { status: 'idle' };
+  }
+
+  async function completeAfterServerSuccess(
+    identity: PanelWorkIdentity,
+    successInfoMessage: string,
+  ): Promise<void> {
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    statusMessage.value = '';
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    if (reloadOutcome.status === 'applied') {
+      infoMessage.value = successInfoMessage;
+      errorMessage.value = '';
+    } else if (reloadOutcome.status === 'failed') {
+      infoMessage.value = '';
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    if (operation.finishWork(identity)) {
+      setRuntimeIdle();
+    }
+  }
+
+  /** local operation identity 内で reconcile reload を完了してから finish */
+  async function reconcileWithinOperation(
+    identity: PanelWorkIdentity,
+  ): Promise<void> {
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    if (reloadOutcome.status === 'failed' && !errorMessage.value) {
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    if (operation.finishWork(identity)) {
+      setRuntimeIdle();
+    }
+  }
+
+  async function runBackgroundReload(contextKey: string): Promise<boolean> {
+    const identity = operation.beginReload(contextKey);
+    if (!identity) {
+      return false;
+    }
+    stopPolling();
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return true;
+    }
+    if (reloadOutcome.status === 'failed' && !errorMessage.value) {
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    operation.finishWork(identity);
+    return true;
   }
 
   async function refreshStatus(): Promise<void> {
@@ -134,10 +211,13 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     if (!result.ok) {
       return;
     }
-    runtime.value = result.data.runtime;
+    // local / reload work 中は API runtime で上書きしない（busy 契約を壊さない）
+    if (!operation.hasActiveWork()) {
+      runtime.value = result.data.runtime;
+    }
     if (result.data.runtime.status === 'collecting') {
       startPolling();
-    } else {
+    } else if (!operation.hasActiveWork()) {
       stopPolling();
       if (result.data.runtime.status === 'failed') {
         const msg =
@@ -146,6 +226,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
         errorMessage.value = msg;
       }
     }
+    // hasActiveWork 中に idle を見ても polling は維持（完了後の再試行用）
   }
 
   function startPolling(): void {
@@ -158,17 +239,24 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
         if (disposed) {
           return;
         }
-        if (runtime.value.status === 'idle' && !localPending.value) {
-          stopPolling();
-          // collecting 完了後に manifest を取り直す
-          await options.reloadScreen();
+        const contextKey = currentKey.value;
+        if (!contextKey) {
+          return;
         }
+        // local / 別 reload 中は reload せず timer を維持して次 tick で再評価
+        if (operation.hasActiveWork()) {
+          return;
+        }
+        if (runtime.value.status !== 'idle') {
+          return;
+        }
+        await runBackgroundReload(contextKey);
       });
     }, interval);
   }
 
   async function resumePendingIfNeeded(): Promise<void> {
-    if (!resolve(options.editable)) {
+    if (!resolve(options.editable) || operation.hasActiveWork()) {
       return;
     }
     const pending = peekPendingDeviceCapture(resolve(options.projectName));
@@ -176,23 +264,31 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
       return;
     }
     const vp = resolve(options.viewport);
+    const contextKey = currentKey.value;
     if (
       !vp ||
+      !contextKey ||
       pending.screenId !== resolve(options.screenId) ||
       pending.stateId !== resolve(options.stateId) ||
       pending.viewport !== vp
     ) {
       return;
     }
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
+      return;
+    }
     awaitingManifest.value = true;
     statusMessage.value = '収集結果を反映しています…';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
   }
 
-  async function waitForPending(pending: PendingDeviceCapture): Promise<void> {
+  async function waitForPending(
+    pending: PendingDeviceCapture,
+    identity: PanelWorkIdentity,
+  ): Promise<void> {
     stopWait();
     waitAbort = new AbortController();
-    const keyAtStart = captureKeyOf(pending);
     const ok = await waitForDeviceCaptureRevision({
       screenDataUrl: options.screenDataUrl(pending.screenId),
       stateId: pending.stateId,
@@ -201,32 +297,27 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
       signal: waitAbort.signal,
       fetchFn: options.fetchFn,
     });
-    if (disposed || currentKey.value !== keyAtStart) {
+    if (!operation.isActiveWork(identity)) {
       return;
     }
-    if (ok) {
-      clearPendingDeviceCapture(resolve(options.projectName));
-      awaitingManifest.value = false;
-      localPending.value = false;
-      activeRequestKey.value = null;
+    if (!ok) {
       statusMessage.value = '';
-      infoMessage.value = 'Device Previewを更新しました。';
-      errorMessage.value = '';
-      await options.reloadScreen();
-      runtime.value = { status: 'idle' };
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
+      return;
     }
-  }
-
-  function captureKeyOf(p: {
-    screenId: string;
-    stateId: string;
-    viewport: DeviceCaptureViewport;
-  }): string {
-    return `${p.screenId}\0${p.stateId}\0${p.viewport}`;
+    clearPendingDeviceCapture(resolve(options.projectName));
+    awaitingManifest.value = true;
+    await completeAfterServerSuccess(identity, 'Device Previewを更新しました。');
   }
 
   async function collectCurrent(): Promise<void> {
-    if (!resolve(options.editable) || isCollecting.value) {
+    if (!resolve(options.editable)) {
+      return;
+    }
+    const contextKey = currentKey.value;
+    if (!contextKey) {
       return;
     }
     const vp = resolve(options.viewport);
@@ -237,11 +328,16 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     if (!scr?.hasImplementation || !resolve(options.stateId)) {
       return;
     }
+    if (operation.hasActiveWork()) {
+      return;
+    }
+
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
+      return;
+    }
 
     clearUiMessages();
-    const reqKey = `${resolve(options.screenId)}\0${resolve(options.stateId)}\0${vp}`;
-    activeRequestKey.value = reqKey;
-    localPending.value = true;
     statusMessage.value = '収集中…';
     runtime.value = { status: 'collecting' };
 
@@ -252,33 +348,31 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
       fetchFn: options.fetchFn,
     });
 
-    if (disposed || activeRequestKey.value !== reqKey) {
-      // stale response — 進行中 UI は触らない（別キーへ移っている）
+    if (!operation.isActiveWork(identity)) {
       return;
     }
 
     if (!result.ok) {
-      localPending.value = false;
-      activeRequestKey.value = null;
       statusMessage.value = '';
 
       if (result.error.code === 'SPEC_DEVICE_CAPTURE_IN_PROGRESS') {
         statusMessage.value = '同じDevice Previewを収集中です。';
+        if (operation.finishWork(identity)) {
+          setRuntimeIdle();
+        }
         await refreshStatus();
         return;
       }
       if (result.error.code === 'SPEC_DEVICE_CAPTURE_INPUT_CHANGED') {
         errorMessage.value =
           '収集中に画面またはリソースが変更されました。最新の状態で再度収集してください。';
-        runtime.value = { status: 'idle' };
         await refreshStatus();
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return;
       }
       if (result.error.status === 404) {
         errorMessage.value = result.error.message;
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return;
       }
       errorMessage.value = result.error.message;
@@ -286,26 +380,26 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
         status: 'failed',
         error: { code: result.error.code, message: result.error.message },
       };
+      operation.finishWork(identity);
       return;
     }
 
     if (result.data.result === 'unchanged') {
-      localPending.value = false;
-      activeRequestKey.value = null;
-      awaitingManifest.value = false;
       clearPendingDeviceCapture(resolve(options.projectName));
       statusMessage.value = '';
       infoMessage.value = 'Device Previewは最新です。';
-      runtime.value = { status: 'idle' };
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
       return;
     }
 
-    // created / updated — watcher reload を待つ
     const imageRevision = result.data.capture.imageRevision;
     if (!imageRevision) {
-      localPending.value = false;
-      activeRequestKey.value = null;
       errorMessage.value = '収集結果の revision を取得できませんでした。';
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
       return;
     }
 
@@ -319,7 +413,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     setPendingDeviceCapture(resolve(options.projectName), pending);
     awaitingManifest.value = true;
     statusMessage.value = '収集結果を反映しています…';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
   }
 
   watch(
@@ -327,9 +421,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     () => {
       stopPolling();
       stopWait();
-      localPending.value = false;
-      awaitingManifest.value = false;
-      activeRequestKey.value = null;
+      operation.invalidateAllWork();
       clearUiMessages();
       runtime.value = { status: 'idle' };
       if (resolve(options.viewport) && resolve(options.editable)) {
@@ -343,6 +435,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     disposed = true;
     stopPolling();
     stopWait();
+    operation.invalidateAllWork();
   });
 
   return {
@@ -350,6 +443,7 @@ export function useDeviceCapturePanel(options: UseDeviceCapturePanelOptions) {
     persistedCapture,
     localPending,
     awaitingManifest,
+    reloadPending,
     isCollecting,
     statusMessage,
     errorMessage,

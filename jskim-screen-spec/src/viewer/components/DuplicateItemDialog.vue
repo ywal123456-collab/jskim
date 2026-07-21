@@ -16,11 +16,13 @@ const props = defineProps<{
   initialType: string;
   initialDescription: string;
   initialNote: string;
+  pending?: boolean;
+  submitDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  create: [payload: CreateItemPayload];
+  create: [payload: CreateItemPayload & { sourceItemId: string }];
 }>();
 
 const titleId = 'duplicate-item-dialog-title';
@@ -40,6 +42,9 @@ function fieldError(field: keyof CreateItemFieldErrors): string {
 }
 
 function requestClose(): void {
+  if (props.pending) {
+    return;
+  }
   if (dirty.value) {
     const ok = window.confirm(
       '入力内容が保存されていません。このダイアログを閉じますか？',
@@ -56,6 +61,9 @@ function onOverlayClick(): void {
 }
 
 function onWindowKeydown(event: KeyboardEvent): void {
+  if (props.pending) {
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
     requestClose();
@@ -63,6 +71,9 @@ function onWindowKeydown(event: KeyboardEvent): void {
 }
 
 function onSubmit(): void {
+  if (props.pending || props.submitDisabled) {
+    return;
+  }
   const input = {
     itemId: itemId.value,
     name: name.value,
@@ -76,8 +87,10 @@ function onSubmit(): void {
   if (hasCreateItemErrors(errors)) {
     return;
   }
-  emit('create', toCreateItemPayload(input));
-  emit('close');
+  emit('create', {
+    sourceItemId: props.sourceItemId,
+    ...toCreateItemPayload(input),
+  });
 }
 
 onMounted(() => {
@@ -187,11 +200,18 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="spec-page__btn spec-page__btn--secondary"
+            :disabled="pending"
             @click="requestClose"
           >
             キャンセル
           </button>
-          <button type="submit" class="spec-page__btn">複製</button>
+          <button
+            type="submit"
+            class="spec-page__btn"
+            :disabled="pending || submitDisabled"
+          >
+            複製
+          </button>
         </div>
       </form>
     </div>

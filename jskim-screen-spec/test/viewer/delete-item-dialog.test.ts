@@ -32,14 +32,37 @@ describe('DeleteItemDialog', () => {
     expect(wrapper.text()).toContain('manual-note');
     expect(wrapper.text()).toContain('補足');
     await wrapper.find('[data-action="confirm-delete"]').trigger('click');
-    expect(wrapper.emitted('confirm')).toBeTruthy();
-    expect(wrapper.emitted('close')).toBeTruthy();
+    expect(wrapper.emitted('confirm')).toEqual([[{ itemId: 'manual-note' }]]);
+    expect(wrapper.emitted('close')).toBeFalsy();
   });
 
   it('キャンセルで close のみ emit する', async () => {
     const wrapper = await mountDialog();
     await wrapper.find('button.spec-page__btn--secondary').trigger('click');
     expect(wrapper.emitted('close')).toBeTruthy();
+    expect(wrapper.emitted('confirm')).toBeFalsy();
+  });
+
+  it('pending 中は close / confirm を抑止する', async () => {
+    const wrapper = await mountDialog();
+    await wrapper.setProps({ pending: true });
+
+    expect(
+      (wrapper.find('[data-action="confirm-delete"]').element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.find('button.spec-page__btn--secondary')
+          .element as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    await wrapper.find('button.spec-page__btn--secondary').trigger('click');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await nextTick();
+    await wrapper.find('[data-action="confirm-delete"]').trigger('click');
+    expect(wrapper.emitted('close')).toBeFalsy();
     expect(wrapper.emitted('confirm')).toBeFalsy();
   });
 });

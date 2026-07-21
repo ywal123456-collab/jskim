@@ -34,8 +34,17 @@ import {
   type FigmaWidthMismatchConfirmation,
   type ReferenceImageRuntimeState,
 } from './reference-image-client.js';
+import type { ScreenDataReloadOutcome } from '../screen-view-bundle.js';
+import {
+  createPanelOperationController,
+  type PanelFetchFn,
+  type PanelWorkIdentity,
+} from './panel-operation-lifecycle.js';
 
 const POLL_INTERVAL_MS = 800;
+
+const RELOAD_FAILED_MESSAGE =
+  '処理は完了しましたが、最新の画面情報を取得できませんでした。最新内容を再読み込みしてください。';
 
 export type UseReferenceImagePanelOptions = {
   projectName: ComputedRef<string> | Ref<string> | (() => string);
@@ -47,9 +56,9 @@ export type UseReferenceImagePanelOptions = {
   editable: ComputedRef<boolean> | Ref<boolean> | (() => boolean);
   /** 画面 create/delete/duplicate 等の他 pending */
   blocked: ComputedRef<boolean> | Ref<boolean> | (() => boolean);
-  reloadScreen: () => Promise<void>;
+  reloadScreen: () => Promise<ScreenDataReloadOutcome>;
   screenDataUrl: (screenId: string) => string;
-  fetchFn?: typeof fetch;
+  fetchFn?: PanelFetchFn;
   pollIntervalMs?: number;
 };
 
@@ -64,10 +73,10 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
   const runtime = ref<ReferenceImageRuntimeState>({ status: 'idle' });
   const localPending = ref(false);
   const awaitingManifest = ref(false);
+  const reloadPending = ref(false);
   const statusMessage = ref('');
   const errorMessage = ref('');
   const infoMessage = ref('');
-  const activeRequestKey = ref<string | null>(null);
   const dialogError = ref('');
   const figmaConfirmation = ref<FigmaWidthMismatchConfirmation | null>(null);
 
@@ -85,6 +94,12 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     return referenceImageKey(resolve(options.screenId), vp);
   });
 
+  const operation = createPanelOperationController(
+    () => currentKey.value,
+    () => disposed,
+    { localPending, awaitingManifest, reloadPending },
+  );
+
   const persistedReference = computed((): ReferenceImageManifestEntry => {
     const vp = resolve(options.viewport);
     const scr = resolve(options.screen);
@@ -96,8 +111,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
 
   const isBusy = computed(
     () =>
-      localPending.value ||
-      awaitingManifest.value ||
+      operation.hasActiveWork() ||
       runtime.value.status === 'uploading' ||
       runtime.value.status === 'deleting' ||
       runtime.value.status === 'importing',
@@ -143,6 +157,69 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     figmaConfirmation.value = null;
   }
 
+  function setRuntimeIdle(): void {
+    runtime.value = { status: 'idle' };
+  }
+
+  async function completeAfterServerSuccess(
+    identity: PanelWorkIdentity,
+    successInfoMessage: string,
+  ): Promise<void> {
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    statusMessage.value = '';
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    if (reloadOutcome.status === 'applied') {
+      infoMessage.value = successInfoMessage;
+      errorMessage.value = '';
+    } else if (reloadOutcome.status === 'failed') {
+      infoMessage.value = '';
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    if (operation.finishWork(identity)) {
+      setRuntimeIdle();
+    }
+  }
+
+  async function reconcileWithinOperation(
+    identity: PanelWorkIdentity,
+  ): Promise<void> {
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return;
+    }
+    if (reloadOutcome.status === 'failed' && !errorMessage.value) {
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    if (operation.finishWork(identity)) {
+      setRuntimeIdle();
+    }
+  }
+
+  async function runBackgroundReload(contextKey: string): Promise<boolean> {
+    const identity = operation.beginReload(contextKey);
+    if (!identity) {
+      return false;
+    }
+    stopPolling();
+    const reloadOutcome = await operation.reloadWithOutcome(options.reloadScreen);
+    if (!operation.isActiveWork(identity)) {
+      return true;
+    }
+    if (reloadOutcome.status === 'failed' && !errorMessage.value) {
+      errorMessage.value = RELOAD_FAILED_MESSAGE;
+    }
+    operation.finishWork(identity);
+    return true;
+  }
+
   async function refreshStatus(): Promise<void> {
     if (!resolve(options.editable) || !resolve(options.active)) {
       runtime.value = { status: 'idle' };
@@ -165,24 +242,28 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       return;
     }
     if (!result.ok) {
-      if (result.error.status === 404) {
+      if (result.error.status === 404 && !operation.hasActiveWork()) {
         runtime.value = { status: 'idle' };
         stopPolling();
         errorMessage.value = result.error.message;
       }
       return;
     }
-    runtime.value = result.data.runtime;
+    if (!operation.hasActiveWork()) {
+      runtime.value = result.data.runtime;
+    }
     if (
       result.data.runtime.status === 'uploading' ||
       result.data.runtime.status === 'deleting'
     ) {
       startPolling();
-      statusMessage.value =
-        result.data.runtime.status === 'uploading'
-          ? 'アップロード中…'
-          : '削除中…';
-    } else {
+      if (!operation.hasActiveWork()) {
+        statusMessage.value =
+          result.data.runtime.status === 'uploading'
+            ? 'アップロード中…'
+            : '削除中…';
+      }
+    } else if (!operation.hasActiveWork()) {
       stopPolling();
       if (result.data.runtime.status === 'failed') {
         const op = result.data.runtime.operation;
@@ -205,20 +286,23 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         if (disposed) {
           return;
         }
-        if (
-          runtime.value.status === 'idle' &&
-          !localPending.value &&
-          !awaitingManifest.value
-        ) {
-          stopPolling();
-          await options.reloadScreen();
+        const contextKey = currentKey.value;
+        if (!contextKey) {
+          return;
         }
+        if (operation.hasActiveWork()) {
+          return;
+        }
+        if (runtime.value.status !== 'idle') {
+          return;
+        }
+        await runBackgroundReload(contextKey);
       });
     }, interval);
   }
 
   async function resumePendingIfNeeded(): Promise<void> {
-    if (!resolve(options.editable) || !resolve(options.active)) {
+    if (!resolve(options.editable) || !resolve(options.active) || operation.hasActiveWork()) {
       return;
     }
     const pending = peekPendingReferenceImage(resolve(options.projectName));
@@ -226,11 +310,17 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       return;
     }
     const vp = resolve(options.viewport);
+    const contextKey = currentKey.value;
     if (
       !vp ||
+      !contextKey ||
       pending.screenId !== resolve(options.screenId) ||
       pending.viewport !== vp
     ) {
+      return;
+    }
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
       return;
     }
     awaitingManifest.value = true;
@@ -238,13 +328,15 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       pending.operation === 'delete'
         ? '削除結果を反映しています…'
         : 'アップロード結果を反映しています…';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
   }
 
-  async function waitForPending(pending: PendingReferenceImage): Promise<void> {
+  async function waitForPending(
+    pending: PendingReferenceImage,
+    identity: PanelWorkIdentity,
+  ): Promise<void> {
     stopWait();
     waitAbort = new AbortController();
-    const keyAtStart = referenceImageKey(pending.screenId, pending.viewport);
     const ok =
       pending.operation === 'delete'
         ? await waitForReferenceImageManifest({
@@ -262,34 +354,35 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
             signal: waitAbort.signal,
             fetchFn: options.fetchFn,
           });
-    if (disposed || currentKey.value !== keyAtStart) {
+    if (!operation.isActiveWork(identity)) {
       return;
     }
-    if (ok) {
-      clearPendingReferenceImage(resolve(options.projectName));
-      awaitingManifest.value = false;
-      localPending.value = false;
-      activeRequestKey.value = null;
+    if (!ok) {
       statusMessage.value = '';
-      infoMessage.value =
-        pending.operation === 'delete'
-          ? '参照画像を削除しました。'
-          : '参照画像を更新しました。';
-      errorMessage.value = '';
-      await options.reloadScreen();
-      runtime.value = { status: 'idle' };
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
+      return;
     }
+    clearPendingReferenceImage(resolve(options.projectName));
+    awaitingManifest.value = true;
+    const successInfoMessage =
+      pending.operation === 'delete'
+        ? '参照画像を削除しました。'
+        : '参照画像を更新しました。';
+    await completeAfterServerSuccess(identity, successInfoMessage);
   }
 
   async function uploadOrReplace(optionsUpload: {
     file: File;
     expectedImageRevision: string | null;
   }): Promise<{ ok: true; result: string } | { ok: false; keepDialog: boolean }> {
-    if (!resolve(options.editable) || actionsDisabled.value) {
+    if (!resolve(options.editable)) {
       return { ok: false, keepDialog: true };
     }
+    const contextKey = currentKey.value;
     const vp = resolve(options.viewport);
-    if (!vp) {
+    if (!contextKey || !vp || operation.hasActiveWork() || resolve(options.blocked)) {
       return { ok: false, keepDialog: true };
     }
 
@@ -299,10 +392,12 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       return { ok: false, keepDialog: true };
     }
 
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
+      return { ok: false, keepDialog: true };
+    }
+
     clearUiMessages();
-    const reqKey = referenceImageKey(resolve(options.screenId), vp);
-    activeRequestKey.value = reqKey;
-    localPending.value = true;
     statusMessage.value = 'アップロード中…';
     runtime.value = { status: 'uploading' };
 
@@ -318,40 +413,36 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
 
     const result = await putReferenceImageMultipart(putOpts);
 
-    if (disposed || activeRequestKey.value !== reqKey) {
+    if (!operation.isActiveWork(identity)) {
       return { ok: false, keepDialog: false };
     }
 
     if (!result.ok) {
-      localPending.value = false;
-      activeRequestKey.value = null;
       statusMessage.value = '';
 
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_IN_PROGRESS') {
         statusMessage.value =
           '同じ参照画像を更新または削除しています。完了後に再度実行してください。';
+        if (operation.finishWork(identity)) {
+          setRuntimeIdle();
+        }
         await refreshStatus();
         return { ok: false, keepDialog: false };
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
-        // refreshStatus は runtime.failed の API 文言で上書きするため呼ばない。
-        // 最新 persisted 状態は reloadScreen で reconciliate する。
         errorMessage.value =
           '参照画像が別の操作で更新されました。最新の状態を確認してから再度実行してください。';
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return { ok: false, keepDialog: false };
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_INVALID') {
         errorMessage.value = result.error.message;
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return { ok: false, keepDialog: false };
       }
       if (result.error.status === 404) {
         errorMessage.value = result.error.message;
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return { ok: false, keepDialog: false };
       }
       if (
@@ -361,6 +452,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       ) {
         dialogError.value = result.error.message;
         runtime.value = { status: 'idle' };
+        operation.finishWork(identity);
         return { ok: false, keepDialog: true };
       }
       errorMessage.value = result.error.message;
@@ -369,17 +461,17 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         operation: 'upload',
         error: { code: result.error.code, message: result.error.message },
       };
+      operation.finishWork(identity);
       return { ok: false, keepDialog: false };
     }
 
     if (result.data.result === 'unchanged') {
-      localPending.value = false;
-      activeRequestKey.value = null;
-      awaitingManifest.value = false;
       clearPendingReferenceImage(resolve(options.projectName));
       statusMessage.value = '';
       infoMessage.value = '同じ参照画像が登録されています。';
-      runtime.value = { status: 'idle' };
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
       return { ok: true, result: 'unchanged' };
     }
 
@@ -394,7 +486,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     setPendingReferenceImage(resolve(options.projectName), pending);
     awaitingManifest.value = true;
     statusMessage.value = 'アップロード結果を反映しています…';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
     return { ok: true, result: result.data.result };
   }
 
@@ -408,11 +500,12 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     expectedImageRevision: string | null;
     confirmWidthMismatch: boolean;
   }): Promise<FigmaMutationResult> {
-    if (!resolve(options.editable) || actionsDisabled.value) {
+    if (!resolve(options.editable)) {
       return { ok: false, keepDialog: true };
     }
+    const contextKey = currentKey.value;
     const vp = resolve(options.viewport);
-    if (!vp) {
+    if (!contextKey || !vp || operation.hasActiveWork() || resolve(options.blocked)) {
       return { ok: false, keepDialog: true };
     }
 
@@ -427,15 +520,17 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       return { ok: false, keepDialog: true };
     }
 
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
+      return { ok: false, keepDialog: true };
+    }
+
     clearUiMessages();
     if (!optionsMut.confirmWidthMismatch) {
       figmaConfirmation.value = null;
     }
 
-    const reqKey = referenceImageKey(resolve(options.screenId), vp);
     const seq = ++figmaRequestSeq;
-    activeRequestKey.value = reqKey;
-    localPending.value = true;
     statusMessage.value =
       optionsMut.mode === 'reimport' ? 'Figma 再取り込み中…' : 'Figma 取り込み中…';
     runtime.value = { status: 'importing' };
@@ -464,33 +559,31 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
             fetchFn: options.fetchFn,
           });
 
-    if (
-      disposed ||
-      seq !== figmaRequestSeq ||
-      activeRequestKey.value !== reqKey
-    ) {
+    if (disposed || seq !== figmaRequestSeq || !operation.isActiveWork(identity)) {
       return { ok: false, keepDialog: false };
     }
 
     if (!result.ok) {
-      localPending.value = false;
-      activeRequestKey.value = null;
       statusMessage.value = '';
       figmaAbort = null;
       if (result.aborted) {
-        runtime.value = { status: 'idle' };
+        if (operation.finishWork(identity)) {
+          setRuntimeIdle();
+        }
         return { ok: false, keepDialog: false };
       }
       const message = formatFigmaViewerError(result.error);
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_IN_PROGRESS') {
         statusMessage.value = message;
+        if (operation.finishWork(identity)) {
+          setRuntimeIdle();
+        }
         await refreshStatus();
         return { ok: false, keepDialog: false };
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
         errorMessage.value = message;
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         await refreshStatus();
         return { ok: false, keepDialog: false };
       }
@@ -507,6 +600,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       ) {
         dialogError.value = message;
         runtime.value = { status: 'idle' };
+        operation.finishWork(identity);
         return { ok: false, keepDialog: true };
       }
       errorMessage.value = message;
@@ -515,29 +609,29 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         operation: optionsMut.mode === 'reimport' ? 'reimport' : 'import',
         error: { code: result.error.code, message },
       };
+      operation.finishWork(identity);
       return { ok: false, keepDialog: false };
     }
 
     figmaAbort = null;
 
     if (result.data.result === 'confirmation-required') {
-      localPending.value = false;
-      activeRequestKey.value = null;
       statusMessage.value = '';
-      runtime.value = { status: 'idle' };
       figmaConfirmation.value = result.data.confirmation;
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
       return { ok: false, keepDialog: true, confirmation: true };
     }
 
     if (result.data.result === 'unchanged') {
-      localPending.value = false;
-      activeRequestKey.value = null;
-      awaitingManifest.value = false;
       clearPendingReferenceImage(resolve(options.projectName));
       figmaConfirmation.value = null;
       statusMessage.value = '';
       infoMessage.value = '同じ参照画像が登録されています。';
-      runtime.value = { status: 'idle' };
+      if (operation.finishWork(identity)) {
+        setRuntimeIdle();
+      }
       return { ok: true, result: 'unchanged' };
     }
 
@@ -553,11 +647,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     figmaConfirmation.value = null;
     awaitingManifest.value = true;
     statusMessage.value = '取り込み結果を反映しています…';
-    infoMessage.value =
-      optionsMut.mode === 'reimport'
-        ? 'Figma から再取り込みしました。'
-        : 'Figma から取り込みました。';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
     return { ok: true, result: result.data.result };
   }
 
@@ -588,9 +678,8 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
   function abortFigmaDialogRequest(): void {
     figmaRequestSeq += 1;
     stopFigmaRequest();
-    if (localPending.value && runtime.value.status === 'importing') {
-      localPending.value = false;
-      activeRequestKey.value = null;
+    if (operation.hasActiveOperation() && runtime.value.status === 'importing') {
+      operation.invalidateAllWork();
       statusMessage.value = '';
       runtime.value = { status: 'idle' };
     }
@@ -599,18 +688,21 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
   }
 
   async function deleteCurrent(expectedImageRevision: string): Promise<boolean> {
-    if (!resolve(options.editable) || actionsDisabled.value) {
+    if (!resolve(options.editable)) {
       return false;
     }
+    const contextKey = currentKey.value;
     const vp = resolve(options.viewport);
-    if (!vp) {
+    if (!contextKey || !vp || operation.hasActiveWork() || resolve(options.blocked)) {
+      return false;
+    }
+
+    const identity = operation.beginOperation(contextKey);
+    if (!identity) {
       return false;
     }
 
     clearUiMessages();
-    const reqKey = referenceImageKey(resolve(options.screenId), vp);
-    activeRequestKey.value = reqKey;
-    localPending.value = true;
     statusMessage.value = '削除中…';
     runtime.value = { status: 'deleting' };
 
@@ -621,27 +713,26 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       fetchFn: options.fetchFn,
     });
 
-    if (disposed || activeRequestKey.value !== reqKey) {
+    if (!operation.isActiveWork(identity)) {
       return false;
     }
 
     if (!result.ok) {
-      localPending.value = false;
-      activeRequestKey.value = null;
       statusMessage.value = '';
 
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_IN_PROGRESS') {
         statusMessage.value =
           '同じ参照画像を更新または削除しています。完了後に再度実行してください。';
+        if (operation.finishWork(identity)) {
+          setRuntimeIdle();
+        }
         await refreshStatus();
         return false;
       }
       if (result.error.code === 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT') {
-        // refreshStatus は runtime.failed の API 文言で上書きするため呼ばない。
         errorMessage.value =
           '参照画像が別の操作で更新されました。最新の状態を確認してから再度実行してください。';
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return false;
       }
       if (
@@ -649,8 +740,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         result.error.status === 404
       ) {
         errorMessage.value = result.error.message;
-        runtime.value = { status: 'idle' };
-        await options.reloadScreen();
+        await reconcileWithinOperation(identity);
         return false;
       }
       errorMessage.value = result.error.message;
@@ -659,6 +749,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
         operation: 'delete',
         error: { code: result.error.code, message: result.error.message },
       };
+      operation.finishWork(identity);
       return false;
     }
 
@@ -672,7 +763,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     setPendingReferenceImage(resolve(options.projectName), pending);
     awaitingManifest.value = true;
     statusMessage.value = '削除結果を反映しています…';
-    await waitForPending(pending);
+    await waitForPending(pending, identity);
     return true;
   }
 
@@ -683,9 +774,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
       stopWait();
       stopFigmaRequest();
       figmaRequestSeq += 1;
-      localPending.value = false;
-      awaitingManifest.value = false;
-      activeRequestKey.value = null;
+      operation.invalidateAllWork();
       figmaConfirmation.value = null;
       clearUiMessages();
       runtime.value = { status: 'idle' };
@@ -705,6 +794,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     stopPolling();
     stopWait();
     stopFigmaRequest();
+    operation.invalidateAllWork();
   });
 
   return {
@@ -712,6 +802,7 @@ export function useReferenceImagePanel(options: UseReferenceImagePanelOptions) {
     persistedReference,
     localPending,
     awaitingManifest,
+    reloadPending,
     isBusy,
     actionsDisabled,
     statusMessage,

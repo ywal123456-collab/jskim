@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, ref, watch, type ComputedRef } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch, type ComputedRef } from 'vue';
 import DomPreview, {
   type PreviewStylesheet,
 } from '../components/DomPreview.vue';
@@ -18,8 +18,9 @@ import GroupInfoPanel from '../components/GroupInfoPanel.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
-import { useDescriptionEditor } from '../editing/useDescriptionEditor';
+import { useDescriptionEditor, type DescriptionMutationOutcome, type LoadDescriptionReason } from '../editing/useDescriptionEditor';
 import { useDescriptionTreePanel } from '../editing/use-description-tree-panel';
+import { createDefaultExpandedGroupIds } from '../editing/description-tree-helpers';
 import { useVersionHistory } from '../version-history/use-version-history';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
 import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
@@ -42,6 +43,13 @@ import {
   type ScreenData,
   type ViewerManifest,
 } from '../types';
+import {
+  fetchScreenModelJson,
+  fetchStateResourcesFromScreen,
+  resolveSelectedStateId,
+  type ScreenDataReloadOutcome,
+  type ScreenViewBundle,
+} from '../screen-view-bundle';
 
 const props = defineProps<{
   screenId: string;
@@ -74,6 +82,8 @@ const snapshotHtml = ref('');
 const previewCss = ref('');
 const stylesheets = ref<PreviewStylesheet[]>([]);
 const loadError = ref<string | null>(null);
+/** route load / state 切替中の snapshot・stylesheet 読込 */
+const pageResourcePending = ref(false);
 const preferredProvider = ref<PreviewProvider>('live');
 const referenceViewport = ref<ReferenceViewport>('pc');
 const referencePanelRef = ref<{
@@ -86,6 +96,550 @@ const createItemDialogOpen = ref(false);
 const duplicateSourceItemId = ref<string | null>(null);
 const deleteTargetItemId = ref<string | null>(null);
 const excludeTargetItemId = ref<string | null>(null);
+const duplicateDialogPending = ref(false);
+const deleteDialogPending = ref(false);
+const excludeDialogPending = ref(false);
+const createDialogPending = ref(false);
+
+type UncertainItemMutationPayload = {
+  itemId: string;
+  name: string;
+  type: string;
+  description: string;
+  note: string;
+};
+
+type UncertainItemMutation =
+  | {
+      kind: 'create';
+      screenId: string;
+      submittedPayload: UncertainItemMutationPayload;
+    }
+  | {
+      kind: 'duplicate';
+      screenId: string;
+      sourceItemId: string;
+      submittedPayload: UncertainItemMutationPayload;
+    };
+
+const uncertainItemMutation = ref<UncertainItemMutation | null>(null);
+
+type ItemDialogOperation = {
+  seq: number;
+  screenId: string;
+  itemId: string;
+};
+
+type PageLoadIdentity = {
+  seq: number;
+  screenId: string;
+};
+
+type ResourceLoadIdentity = {
+  seq: number;
+  screenId: string;
+  stateId: string;
+  pageLoadSeq: number;
+  screenModelSeq: number;
+  tracksPagePending: boolean;
+};
+
+type ScreenModelLoadIdentity = {
+  seq: number;
+  screenId: string;
+  pageLoadSeq: number;
+};
+
+type FetchScreenViewBundleResult =
+  | { kind: 'ok'; bundle: ScreenViewBundle }
+  | { kind: 'failed' }
+  | { kind: 'stale-or-aborted' };
+
+let pageMounted = true;
+let pageLoadSeq = 0;
+let activePageLoad: PageLoadIdentity | null = null;
+let pageLoadAbort: AbortController | null = null;
+let resourceLoadSeq = 0;
+let activeResourceLoad: ResourceLoadIdentity | null = null;
+let resourceLoadAbort: AbortController | null = null;
+let screenModelLoadSeq = 0;
+let activeScreenModelLoad: ScreenModelLoadIdentity | null = null;
+let screenModelAbort: AbortController | null = null;
+let appliedScreenModelSeq = 0;
+let duplicateOpSeq = 0;
+let deleteOpSeq = 0;
+let excludeOpSeq = 0;
+let createOpSeq = 0;
+const activeDuplicateOp = ref<ItemDialogOperation | null>(null);
+const activeDeleteOp = ref<ItemDialogOperation | null>(null);
+const activeExcludeOp = ref<ItemDialogOperation | null>(null);
+const activeCreateOp = ref<ItemDialogOperation | null>(null);
+
+function invalidateItemDialogOperations(): void {
+  duplicateOpSeq += 1;
+  deleteOpSeq += 1;
+  excludeOpSeq += 1;
+  createOpSeq += 1;
+  activeDuplicateOp.value = null;
+  activeDeleteOp.value = null;
+  activeExcludeOp.value = null;
+  activeCreateOp.value = null;
+  duplicateDialogPending.value = false;
+  deleteDialogPending.value = false;
+  excludeDialogPending.value = false;
+  createDialogPending.value = false;
+  duplicateSourceItemId.value = null;
+  deleteTargetItemId.value = null;
+  excludeTargetItemId.value = null;
+  createItemDialogOpen.value = false;
+  uncertainItemMutation.value = null;
+}
+
+function isActivePageLoad(identity: PageLoadIdentity): boolean {
+  return (
+    pageMounted &&
+    activePageLoad !== null &&
+    activePageLoad.seq === identity.seq &&
+    activePageLoad.screenId === identity.screenId &&
+    identity.screenId === props.screenId
+  );
+}
+
+function invalidateResourceLoad(): void {
+  if (activeResourceLoad?.tracksPagePending) {
+    pageResourcePending.value = false;
+  }
+  resourceLoadSeq += 1;
+  resourceLoadAbort?.abort();
+  activeResourceLoad = null;
+}
+
+function beginResourceLoad(
+  screenId: string,
+  stateId: string,
+  tracksPagePending = false,
+): ResourceLoadIdentity {
+  if (activeResourceLoad?.tracksPagePending) {
+    pageResourcePending.value = false;
+  }
+  resourceLoadAbort?.abort();
+  resourceLoadAbort = new AbortController();
+  const identity: ResourceLoadIdentity = {
+    seq: ++resourceLoadSeq,
+    screenId,
+    stateId,
+    pageLoadSeq,
+    screenModelSeq: activeScreenModelLoad?.seq ?? appliedScreenModelSeq,
+    tracksPagePending,
+  };
+  activeResourceLoad = identity;
+  if (tracksPagePending) {
+    pageResourcePending.value = true;
+  }
+  return identity;
+}
+
+function expectedScreenModelSeq(): number {
+  return activeScreenModelLoad?.seq ?? appliedScreenModelSeq;
+}
+
+function isActiveResourceLoad(identity: ResourceLoadIdentity): boolean {
+  return (
+    pageMounted &&
+    activeResourceLoad !== null &&
+    activeResourceLoad.seq === identity.seq &&
+    activeResourceLoad.screenId === identity.screenId &&
+    activeResourceLoad.stateId === identity.stateId &&
+    activeResourceLoad.pageLoadSeq === pageLoadSeq &&
+    activeResourceLoad.screenModelSeq === identity.screenModelSeq &&
+    identity.screenModelSeq === expectedScreenModelSeq() &&
+    identity.screenId === props.screenId &&
+    identity.stateId === selectedStateId.value &&
+    resourceLoadAbort !== null &&
+    !resourceLoadAbort.signal.aborted
+  );
+}
+
+function isActiveBundleResourceLoad(
+  identity: ResourceLoadIdentity,
+  modelIdentity: ScreenModelLoadIdentity,
+  bundleStateId: string,
+): boolean {
+  return (
+    pageMounted &&
+    activeResourceLoad !== null &&
+    activeResourceLoad.seq === identity.seq &&
+    activeResourceLoad.screenId === identity.screenId &&
+    activeResourceLoad.stateId === identity.stateId &&
+    activeResourceLoad.pageLoadSeq === pageLoadSeq &&
+    activeResourceLoad.screenModelSeq === identity.screenModelSeq &&
+    identity.screenModelSeq === modelIdentity.seq &&
+    identity.screenId === props.screenId &&
+    identity.stateId === bundleStateId &&
+    isActiveScreenModelLoad(modelIdentity) &&
+    resourceLoadAbort !== null &&
+    !resourceLoadAbort.signal.aborted
+  );
+}
+
+function invalidateScreenModelLoad(): void {
+  screenModelLoadSeq += 1;
+  screenModelAbort?.abort();
+  activeScreenModelLoad = null;
+}
+
+function beginScreenModelLoad(screenId: string): ScreenModelLoadIdentity {
+  screenModelAbort?.abort();
+  invalidateResourceLoad();
+  screenModelAbort = new AbortController();
+  const identity: ScreenModelLoadIdentity = {
+    seq: ++screenModelLoadSeq,
+    screenId,
+    pageLoadSeq,
+  };
+  activeScreenModelLoad = identity;
+  return identity;
+}
+
+function isActiveScreenModelLoad(identity: ScreenModelLoadIdentity): boolean {
+  return (
+    pageMounted &&
+    activeScreenModelLoad !== null &&
+    activeScreenModelLoad.seq === identity.seq &&
+    activeScreenModelLoad.screenId === identity.screenId &&
+    activeScreenModelLoad.pageLoadSeq === pageLoadSeq &&
+    identity.screenId === props.screenId &&
+    screenModelAbort !== null &&
+    !screenModelAbort.signal.aborted
+  );
+}
+
+function invalidatePageLoad(): void {
+  pageLoadSeq += 1;
+  pageLoadAbort?.abort();
+  activePageLoad = null;
+  appliedScreenModelSeq = 0;
+  pageResourcePending.value = false;
+  invalidateResourceLoad();
+  invalidateScreenModelLoad();
+}
+
+function applyScreenViewBundle(
+  bundle: ScreenViewBundle,
+  modelIdentity: ScreenModelLoadIdentity,
+): void {
+  screen.value = bundle.screen;
+  selectedStateId.value = bundle.selectedStateId;
+  snapshotHtml.value = bundle.snapshotHtml;
+  stylesheets.value = bundle.stylesheets;
+  appliedScreenModelSeq = modelIdentity.seq;
+  if (activeScreenModelLoad?.seq === modelIdentity.seq) {
+    activeScreenModelLoad = null;
+  }
+}
+
+function resolveBundleStateId(
+  nextScreen: ScreenData,
+  preferredStateId: string | null,
+): string {
+  const currentSelection = selectedStateId.value;
+  if (currentSelection && nextScreen.states.some((state) => state.id === currentSelection)) {
+    return currentSelection;
+  }
+  return resolveSelectedStateId(nextScreen, preferredStateId);
+}
+
+async function fetchScreenViewBundle(
+  screenId: string,
+  modelIdentity: ScreenModelLoadIdentity,
+  modelSignal: AbortSignal,
+  preferredStateId: string | null,
+): Promise<FetchScreenViewBundleResult> {
+  const entry = manifest?.value.screens.find((s) => s.id === screenId);
+  if (!entry) {
+    return { kind: 'stale-or-aborted' };
+  }
+  const base = import.meta.env.BASE_URL;
+  const modelResult = await fetchScreenModelJson(entry.dataFile, base, modelSignal);
+  if (!isActiveScreenModelLoad(modelIdentity) || modelSignal.aborted) {
+    return { kind: 'stale-or-aborted' };
+  }
+  if (modelResult.kind === 'aborted') {
+    return { kind: 'stale-or-aborted' };
+  }
+  if (modelResult.kind === 'http-error') {
+    return { kind: 'failed' };
+  }
+  const nextScreen = modelResult.data;
+  const resolvedStateId = resolveBundleStateId(nextScreen, preferredStateId);
+  if (!resolvedStateId) {
+    return {
+      kind: 'ok',
+      bundle: {
+        screen: nextScreen,
+        selectedStateId: '',
+        snapshotHtml: '',
+        stylesheets: [],
+      },
+    };
+  }
+  const resourceIdentity = beginResourceLoad(screenId, resolvedStateId);
+  const resourceSignal = resourceLoadAbort!.signal;
+  const resourceResult = await fetchStateResourcesFromScreen(
+    nextScreen,
+    resolvedStateId,
+    resourceSignal,
+    () => isActiveBundleResourceLoad(resourceIdentity, modelIdentity, resolvedStateId),
+    base,
+  );
+  if (resourceResult.kind === 'stale-or-aborted') {
+    return { kind: 'stale-or-aborted' };
+  }
+  if (resourceResult.kind === 'failed') {
+    return { kind: 'failed' };
+  }
+  if (!isActiveScreenModelLoad(modelIdentity) || modelSignal.aborted) {
+    return { kind: 'stale-or-aborted' };
+  }
+  return {
+    kind: 'ok',
+    bundle: {
+      screen: nextScreen,
+      selectedStateId: resolvedStateId,
+      snapshotHtml: resourceResult.snapshotHtml,
+      stylesheets: resourceResult.stylesheets,
+    },
+  };
+}
+
+function beginPageLoad(screenId: string): PageLoadIdentity {
+  pageLoadAbort?.abort();
+  pageLoadAbort = new AbortController();
+  invalidateResourceLoad();
+  invalidateScreenModelLoad();
+  const identity: PageLoadIdentity = {
+    seq: ++pageLoadSeq,
+    screenId,
+  };
+  activePageLoad = identity;
+  return identity;
+}
+
+function isActiveItemDialogOperation(
+  op: ItemDialogOperation,
+  active: ItemDialogOperation | null,
+  currentTargetId: string | null,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!active || active.seq !== op.seq) {
+    return false;
+  }
+  if (active.screenId !== props.screenId) {
+    return false;
+  }
+  if (active.itemId !== op.itemId) {
+    return false;
+  }
+  if (currentTargetId !== op.itemId) {
+    return false;
+  }
+  return true;
+}
+
+function beginDuplicateOperation(sourceItemId: string): ItemDialogOperation | null {
+  if (duplicateDialogPending.value) {
+    return null;
+  }
+  const op: ItemDialogOperation = {
+    seq: ++duplicateOpSeq,
+    screenId: props.screenId,
+    itemId: sourceItemId,
+  };
+  activeDuplicateOp.value = op;
+  duplicateDialogPending.value = true;
+  return op;
+}
+
+function shouldClearDestructiveDialogTarget(
+  outcome: DescriptionMutationOutcome,
+): boolean {
+  return (
+    outcome.status === 'committed-refreshed' ||
+    outcome.status === 'committed-refresh-failed' ||
+    outcome.status === 'commit-unknown'
+  );
+}
+
+function beginCreateOperation(itemId: string): ItemDialogOperation | null {
+  if (createDialogPending.value) {
+    return null;
+  }
+  const op: ItemDialogOperation = {
+    seq: ++createOpSeq,
+    screenId: props.screenId,
+    itemId,
+  };
+  activeCreateOp.value = op;
+  createDialogPending.value = true;
+  return op;
+}
+
+function isActiveCreateOperation(
+  op: ItemDialogOperation,
+  itemId: string,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!createItemDialogOpen.value) {
+    return false;
+  }
+  if (!activeCreateOp.value || activeCreateOp.value.seq !== op.seq) {
+    return false;
+  }
+  if (activeCreateOp.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (activeCreateOp.value.itemId !== op.itemId) {
+    return false;
+  }
+  if (itemId !== op.itemId) {
+    return false;
+  }
+  return true;
+}
+
+function finishCreateOperation(
+  op: ItemDialogOperation,
+  outcome: DescriptionMutationOutcome,
+  payload: UncertainItemMutationPayload,
+): void {
+  if (!isActiveCreateOperation(op, payload.itemId)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  createDialogPending.value = false;
+  activeCreateOp.value = null;
+  if (outcome.status === 'committed-refreshed') {
+    uncertainItemMutation.value = null;
+    closeCreateItemForced();
+    return;
+  }
+  if (outcome.status === 'mutation-rejected') {
+    return;
+  }
+  if (
+    outcome.status === 'commit-unknown' ||
+    outcome.status === 'committed-refresh-failed'
+  ) {
+    uncertainItemMutation.value = {
+      kind: 'create',
+      screenId: props.screenId,
+      submittedPayload: payload,
+    };
+  }
+}
+
+function finishDuplicateOperation(
+  op: ItemDialogOperation,
+  outcome: DescriptionMutationOutcome,
+  payload: UncertainItemMutationPayload,
+): void {
+  if (!isActiveItemDialogOperation(op, activeDuplicateOp.value, duplicateSourceItemId.value)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  duplicateDialogPending.value = false;
+  activeDuplicateOp.value = null;
+  if (outcome.status === 'committed-refreshed') {
+    uncertainItemMutation.value = null;
+    duplicateSourceItemId.value = null;
+    return;
+  }
+  if (outcome.status === 'mutation-rejected') {
+    return;
+  }
+  if (
+    outcome.status === 'commit-unknown' ||
+    outcome.status === 'committed-refresh-failed'
+  ) {
+    uncertainItemMutation.value = {
+      kind: 'duplicate',
+      screenId: props.screenId,
+      sourceItemId: op.itemId,
+      submittedPayload: payload,
+    };
+  }
+}
+
+function beginDeleteOperation(itemId: string): ItemDialogOperation | null {
+  if (deleteDialogPending.value) {
+    return null;
+  }
+  const op: ItemDialogOperation = {
+    seq: ++deleteOpSeq,
+    screenId: props.screenId,
+    itemId,
+  };
+  activeDeleteOp.value = op;
+  deleteDialogPending.value = true;
+  return op;
+}
+
+function finishDeleteOperation(
+  op: ItemDialogOperation,
+  outcome: DescriptionMutationOutcome,
+): void {
+  if (!isActiveItemDialogOperation(op, activeDeleteOp.value, deleteTargetItemId.value)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  deleteDialogPending.value = false;
+  activeDeleteOp.value = null;
+  if (shouldClearDestructiveDialogTarget(outcome)) {
+    deleteTargetItemId.value = null;
+  }
+}
+
+function beginExcludeOperation(itemId: string): ItemDialogOperation | null {
+  if (excludeDialogPending.value) {
+    return null;
+  }
+  const op: ItemDialogOperation = {
+    seq: ++excludeOpSeq,
+    screenId: props.screenId,
+    itemId,
+  };
+  activeExcludeOp.value = op;
+  excludeDialogPending.value = true;
+  return op;
+}
+
+function finishExcludeOperation(
+  op: ItemDialogOperation,
+  outcome: DescriptionMutationOutcome,
+): void {
+  if (!isActiveItemDialogOperation(op, activeExcludeOp.value, excludeTargetItemId.value)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  excludeDialogPending.value = false;
+  activeExcludeOp.value = null;
+  if (shouldClearDestructiveDialogTarget(outcome)) {
+    excludeTargetItemId.value = null;
+  }
+}
+
 const duplicateScreenDialogOpen = ref(false);
 const deleteScreenDialogOpen = ref(false);
 const deleteSuccessMessage = ref('');
@@ -184,6 +738,9 @@ const currentStateName = computed(() => {
 });
 
 const captureDisabledReason = computed(() => {
+  if (pageResourcePending.value) {
+    return 'プレビューリソースを読み込み中です。';
+  }
   if (!screen.value?.hasImplementation) {
     return '実装画面がないため収集できません。';
   }
@@ -197,7 +754,10 @@ const captureDisabledReason = computed(() => {
 });
 
 const referenceBlocked = computed(
-  () => duplicateScreenDialogOpen.value || deleteScreenDialogOpen.value,
+  () =>
+    pageResourcePending.value ||
+    duplicateScreenDialogOpen.value ||
+    deleteScreenDialogOpen.value,
 );
 
 function screenDataUrl(screenId: string): string {
@@ -209,38 +769,31 @@ function screenDataUrl(screenId: string): string {
   return `${base}data/${entry.dataFile}`;
 }
 
-async function reloadScreenData(): Promise<void> {
+async function reloadScreenData(): Promise<ScreenDataReloadOutcome> {
   if (!screen.value || props.screenId === '_empty') {
-    return;
+    return { status: 'stale-or-aborted' };
   }
-  const base = import.meta.env.BASE_URL;
-  const entry = manifest?.value.screens.find((s) => s.id === props.screenId);
-  if (!entry) {
-    return;
+  const preferredStateId = selectedStateId.value;
+  const modelIdentity = beginScreenModelLoad(props.screenId);
+  const modelSignal = screenModelAbort!.signal;
+  const result = await fetchScreenViewBundle(
+    props.screenId,
+    modelIdentity,
+    modelSignal,
+    preferredStateId,
+  );
+  if (result.kind === 'stale-or-aborted') {
+    return { status: 'stale-or-aborted' };
   }
-  try {
-    const screenRes = await fetch(`${base}data/${entry.dataFile}`, {
-      cache: 'no-store',
-    });
-    if (!screenRes.ok) {
-      return;
-    }
-    const data = (await screenRes.json()) as ScreenData;
-    const prevState = selectedStateId.value;
-    screen.value = data;
-    if (prevState && data.states.some((s) => s.id === prevState)) {
-      selectedStateId.value = prevState;
-    } else {
-      const firstVisible =
-        data.states.find((s) => s.viewer.visible) || data.states[0];
-      selectedStateId.value = firstVisible?.id ?? '';
-      if (selectedStateId.value) {
-        await loadSnapshot(selectedStateId.value);
-      }
-    }
-  } catch {
-    // ignore transient reload errors
+  if (result.kind === 'failed') {
+    return { status: 'failed' };
   }
+  if (!isActiveScreenModelLoad(modelIdentity)) {
+    return { status: 'stale-or-aborted' };
+  }
+  applyScreenViewBundle(result.bundle, modelIdentity);
+  initReferenceViewport();
+  return { status: 'applied' };
 }
 
 const deviceCapture = useDeviceCapturePanel({
@@ -355,7 +908,7 @@ const deleteScreenBlockedReason = computed(() => {
   if (editor.dirty.value) {
     return '画面設計を削除する前に、編集中の変更を保存またはキャンセルしてください。';
   }
-  if (editor.saving.value) {
+  if (editor.mutationPending.value) {
     return '保存が完了するまで画面設計を削除できません。';
   }
   if (duplicateScreenDialogOpen.value) {
@@ -413,11 +966,35 @@ const displayName = computed(() => {
 });
 
 const displayItemOrder = computed(() => {
-  if (editor.editingEnabled && editor.draftDocument.value) {
-    return editor.draftDocument.value.itemOrder;
+  if (editor.editingEnabled) {
+    return editor.flattenActiveItemIds();
   }
   return screen.value?.itemOrder ?? [];
 });
+
+const editingExpandedGroupIds = ref<Set<string>>(new Set());
+
+watch(
+  () => editor.treeResponse.value,
+  (response) => {
+    if (!editor.editingEnabled || !response) {
+      return;
+    }
+    editingExpandedGroupIds.value = createDefaultExpandedGroupIds(
+      response.description.rootNodes,
+    );
+  },
+);
+
+function toggleEditingGroupExpanded(groupId: string): void {
+  const next = new Set(editingExpandedGroupIds.value);
+  if (next.has(groupId)) {
+    next.delete(groupId);
+  } else {
+    next.add(groupId);
+  }
+  editingExpandedGroupIds.value = next;
+}
 
 const statusLabel = computed(() => {
   switch (editor.status.value) {
@@ -431,6 +1008,8 @@ const statusLabel = computed(() => {
       return '外部変更の衝突';
     case 'error':
       return '保存失敗';
+    case 'reload-failed':
+      return '再読み込み失敗';
     case 'clean':
       return '保存済み';
     default:
@@ -438,9 +1017,16 @@ const statusLabel = computed(() => {
   }
 });
 
-async function loadScreen(screenId: string): Promise<void> {
+async function loadScreen(
+  screenId: string,
+  reason: LoadDescriptionReason,
+): Promise<void> {
+  const loadIdentity = beginPageLoad(screenId);
+  const signal = pageLoadAbort!.signal;
+
   loadError.value = null;
   isEmptyState.value = false;
+  pageResourcePending.value = false;
   screen.value = null;
   selectedItemId.value = null;
   selectedStateId.value = '';
@@ -448,98 +1034,138 @@ async function loadScreen(screenId: string): Promise<void> {
   stylesheets.value = [];
 
   if (screenId === '_empty') {
-    isEmptyState.value = true;
+    if (isActivePageLoad(loadIdentity)) {
+      isEmptyState.value = true;
+    }
     return;
   }
 
   const base = import.meta.env.BASE_URL;
   const entry = manifest?.value.screens.find((s) => s.id === screenId);
   if (!entry) {
-    loadError.value = `画面「${screenId}」は登録されていません。`;
-    return;
-  }
-
-  const screenRes = await fetch(`${base}data/${entry.dataFile}`);
-  if (!screenRes.ok) {
-    loadError.value = `画面データの読み込みに失敗しました: ${entry.dataFile}`;
-    return;
-  }
-  const data = (await screenRes.json()) as ScreenData;
-  screen.value = data;
-  initReferenceViewport();
-
-  if (editor.editingEnabled) {
-    await editor.loadDescription(screenId);
-  }
-
-  // 状態が無い画面（design-only 等）は default state を発明しない
-  const firstVisible =
-    data.states.find((s) => s.viewer.visible) || data.states[0];
-  selectedStateId.value = firstVisible?.id ?? '';
-
-  if (!previewCss.value) {
-    const cssRes = await fetch(`${base}data/theme/preview.css`);
-    previewCss.value = cssRes.ok ? await cssRes.text() : '';
-  }
-
-  if (firstVisible) {
-    await loadSnapshot(selectedStateId.value);
-  }
-}
-
-async function resolveStylesheets(
-  stateId: string,
-): Promise<PreviewStylesheet[]> {
-  if (!screen.value) {
-    return [];
-  }
-  const state = screen.value.states.find((s) => s.id === stateId);
-  const styles = state?.styles || [];
-  const result: PreviewStylesheet[] = [];
-
-  for (const style of styles) {
-    if (style.disabled) {
-      continue;
+    if (isActivePageLoad(loadIdentity)) {
+      loadError.value = `画面「${screenId}」は登録されていません。`;
     }
-    if (style.kind === 'style') {
-      try {
-        const res = await fetch(style.href);
-        const cssText = res.ok ? await res.text() : '';
-        result.push({ cssText, media: style.media || 'all' });
-      } catch {
-        result.push({ cssText: '', media: style.media || 'all' });
+    return;
+  }
+
+  try {
+    const modelIdentity = beginScreenModelLoad(screenId);
+    const modelSignal = screenModelAbort!.signal;
+    const modelResult = await fetchScreenModelJson(entry.dataFile, base, modelSignal);
+    if (!isActivePageLoad(loadIdentity) || signal.aborted) {
+      return;
+    }
+    if (modelResult.kind === 'aborted') {
+      return;
+    }
+    if (modelResult.kind === 'http-error') {
+      if (isActivePageLoad(loadIdentity) && isActiveScreenModelLoad(modelIdentity)) {
+        loadError.value = `画面データの読み込みに失敗しました: ${entry.dataFile}`;
       }
-    } else {
-      result.push({ href: style.href, media: style.media || 'all' });
+      return;
     }
-  }
+    const nextScreen = modelResult.data;
 
-  return result;
+    if (editor.editingEnabled) {
+      await editor.loadDescription(screenId, { reason });
+    }
+    if (!isActivePageLoad(loadIdentity) || signal.aborted) {
+      return;
+    }
+
+    const resolvedStateId = resolveBundleStateId(nextScreen, null);
+    screen.value = nextScreen;
+    selectedStateId.value = resolvedStateId;
+    appliedScreenModelSeq = modelIdentity.seq;
+    initReferenceViewport();
+
+    if (!previewCss.value) {
+      const cssRes = await fetch(`${base}data/theme/preview.css`, { signal });
+      if (!isActivePageLoad(loadIdentity) || signal.aborted) {
+        return;
+      }
+      const nextPreviewCss = cssRes.ok ? await cssRes.text() : '';
+      if (!isActivePageLoad(loadIdentity) || signal.aborted) {
+        return;
+      }
+      previewCss.value = nextPreviewCss;
+    }
+    if (!isActivePageLoad(loadIdentity) || signal.aborted) {
+      return;
+    }
+
+    if (resolvedStateId && isActiveScreenModelLoad(modelIdentity)) {
+      // route load: model を先に適用し、snapshot/stylesheet は pageResourcePending で待つ。
+      // same-screen reload は fetchScreenViewBundle で旧 bundle を維持したまま atomic 置換する。
+      const resourceIdentity = beginResourceLoad(screenId, resolvedStateId, true);
+      await loadPageResources(resourceIdentity, resourceLoadAbort!.signal);
+    }
+    if (activeScreenModelLoad?.seq === modelIdentity.seq) {
+      activeScreenModelLoad = null;
+    }
+  } catch {
+    if (signal.aborted || !isActivePageLoad(loadIdentity)) {
+      return;
+    }
+    loadError.value = '画面データの読み込みに失敗しました。';
+  }
 }
 
-async function loadSnapshot(stateId: string): Promise<void> {
-  if (!screen.value) {
+async function loadPageResources(
+  identity: ResourceLoadIdentity,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!isActiveResourceLoad(identity) || signal.aborted || !screen.value) {
     return;
   }
-  const state = screen.value.states.find((s) => s.id === stateId);
+  const state = screen.value.states.find((s) => s.id === identity.stateId);
   if (!state) {
-    snapshotHtml.value = '';
-    stylesheets.value = [];
+    if (isActiveResourceLoad(identity)) {
+      snapshotHtml.value = '';
+      stylesheets.value = [];
+    }
     return;
   }
   const base = import.meta.env.BASE_URL;
-  const res = await fetch(`${base}data/${state.snapshotFile}`);
-  if (!res.ok) {
-    loadError.value = `snapshot の読み込みに失敗しました: ${state.snapshotFile}`;
+  const result = await fetchStateResourcesFromScreen(
+    screen.value,
+    identity.stateId,
+    signal,
+    () => isActiveResourceLoad(identity),
+    base,
+  );
+  if (result.kind === 'ok') {
+    if (!isActiveResourceLoad(identity) || signal.aborted) {
+      return;
+    }
+    snapshotHtml.value = result.snapshotHtml;
+    stylesheets.value = result.stylesheets;
+    if (identity.tracksPagePending) {
+      pageResourcePending.value = false;
+    }
     return;
   }
-  snapshotHtml.value = await res.text();
-  stylesheets.value = await resolveStylesheets(stateId);
+  if (result.kind === 'stale-or-aborted') {
+    return;
+  }
+  if (isActiveResourceLoad(identity)) {
+    if (identity.tracksPagePending) {
+      pageResourcePending.value = false;
+    }
+    loadError.value = 'プレビューリソースの読み込みに失敗しました。';
+  }
 }
 
 function onSelectState(stateId: string): void {
   selectedStateId.value = stateId;
-  void loadSnapshot(stateId);
+  if (!screen.value) {
+    return;
+  }
+  snapshotHtml.value = '';
+  stylesheets.value = [];
+  const resourceIdentity = beginResourceLoad(props.screenId, stateId, true);
+  void loadPageResources(resourceIdentity, resourceLoadAbort!.signal);
 }
 
 function scrollToSection(id: string): void {
@@ -558,7 +1184,24 @@ function onSelectItem(itemId: string): void {
   ) {
     return;
   }
+  if (
+    editor.editingEnabled &&
+    selectedItemId.value &&
+    selectedItemId.value !== itemId &&
+    editor.itemDirty.value
+  ) {
+    const ok = window.confirm(
+      '未保存の項目変更があります。選択を切り替えますか？',
+    );
+    if (!ok) {
+      return;
+    }
+    editor.cancelItemEdit();
+  }
   selectedItemId.value = itemId;
+  if (editor.editingEnabled) {
+    editor.beginItemEdit(itemId);
+  }
   const row = document.getElementById(`item-row-${itemId}`);
   if (row) {
     row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -567,7 +1210,7 @@ function onSelectItem(itemId: string): void {
 
 const descriptionTree = useDescriptionTreePanel({
   screenId: () => props.screenId,
-  hasDescription: () => screenHasDescription.value,
+  hasDescription: () => screenHasDescription.value && !editor.editingEnabled,
   onSelectItem,
   onClearItemSelection: () => {
     selectedItemId.value = null;
@@ -575,16 +1218,47 @@ const descriptionTree = useDescriptionTreePanel({
 });
 
 const {
-  treeStatus,
-  treeResponse,
-  treeError,
-  expandedGroupIds,
+  treeStatus: readOnlyTreeStatus,
+  treeResponse: readOnlyTreeResponse,
+  treeError: readOnlyTreeError,
+  expandedGroupIds: readOnlyExpandedGroupIds,
   selectedTreeNode: selectedTreeNodeRef,
-  reloadTree,
-  toggleGroupExpanded,
+  reloadTree: reloadReadOnlyTree,
+  toggleGroupExpanded: toggleReadOnlyGroupExpanded,
   selectTreeGroup,
   selectTreeItem,
 } = descriptionTree;
+
+const treeStatus = computed(() =>
+  editor.editingEnabled ? editor.treeStatus.value : readOnlyTreeStatus.value,
+);
+const treeResponse = computed(() =>
+  editor.editingEnabled ? editor.treeResponse.value : readOnlyTreeResponse.value,
+);
+const treeError = computed(() =>
+  editor.editingEnabled ? editor.treeError.value : readOnlyTreeError.value,
+);
+const expandedGroupIds = computed(() =>
+  editor.editingEnabled
+    ? editingExpandedGroupIds.value
+    : readOnlyExpandedGroupIds.value,
+);
+
+function reloadTree(): void {
+  if (editor.editingEnabled) {
+    void editor.reloadTree();
+    return;
+  }
+  void reloadReadOnlyTree();
+}
+
+function toggleGroupExpanded(groupId: string): void {
+  if (editor.editingEnabled) {
+    toggleEditingGroupExpanded(groupId);
+    return;
+  }
+  toggleReadOnlyGroupExpanded(groupId);
+}
 
 watch(selectedItemId, (itemId) => {
   if (itemId) {
@@ -603,7 +1277,7 @@ function syncSelectionAfterOrderChange(
     return;
   }
   const index = previousOrder.indexOf(removedId);
-  const nextOrder = editor.draftDocument.value?.itemOrder ?? [];
+  const nextOrder = displayItemOrder.value;
   const nextId = nextOrder[index] ?? nextOrder[index - 1] ?? null;
   selectedItemId.value = nextId;
   if (nextId) {
@@ -617,7 +1291,7 @@ function syncSelectionAfterOrderChange(
 
 function onCancelEdits(): void {
   editor.cancel();
-  const order = editor.draftDocument.value?.itemOrder ?? [];
+  const order = displayItemOrder.value;
   if (selectedItemId.value && !order.includes(selectedItemId.value)) {
     selectedItemId.value = order[0] ?? null;
   }
@@ -627,23 +1301,90 @@ function openCreateItem(): void {
   createItemDialogOpen.value = true;
 }
 
-function closeCreateItem(): void {
+function closeCreateItemForced(): void {
   createItemDialogOpen.value = false;
+  uncertainItemMutation.value = null;
 }
 
-function onCreateItem(payload: {
-  itemId: string;
-  name: string;
-  type: string;
-  description: string;
-  note: string;
-}): void {
-  const added = editor.addItem(payload);
-  if (!added) {
+function closeCreateItem(): void {
+  if (createDialogPending.value) {
     return;
   }
-  void nextTick(() => {
-    onSelectItem(payload.itemId);
+  closeCreateItemForced();
+}
+
+function findTargetItemLocation(
+  targetId: string,
+): 'active' | 'excluded' | 'missing' {
+  const snapshot = editor.snapshot.value;
+  if (!snapshot) {
+    return 'missing';
+  }
+  if (snapshot.description.items[targetId]) {
+    return 'active';
+  }
+  if (snapshot.description.excludedItems?.[targetId]) {
+    return 'excluded';
+  }
+  return 'missing';
+}
+
+function reconcileUncertainItemMutations(): void {
+  const uncertain = uncertainItemMutation.value;
+  if (!uncertain || uncertain.screenId !== props.screenId) {
+    return;
+  }
+  if (editor.reloadRequired.value) {
+    return;
+  }
+
+  const targetId = uncertain.submittedPayload.itemId;
+  const location = findTargetItemLocation(targetId);
+  uncertainItemMutation.value = null;
+
+  if (location === 'excluded') {
+    return;
+  }
+
+  if (location === 'active') {
+    if (uncertain.kind === 'create') {
+      closeCreateItemForced();
+      void nextTick(() => {
+        onSelectItem(targetId);
+      });
+      return;
+    }
+    duplicateSourceItemId.value = null;
+    void nextTick(() => {
+      onSelectItem(targetId);
+    });
+    return;
+  }
+}
+
+async function reloadDescriptionLatest(): Promise<void> {
+  await editor.reloadLatest();
+  reconcileUncertainItemMutations();
+}
+
+function onCreateItem(payload: UncertainItemMutationPayload): void {
+  if (createDialogPending.value || editor.reloadRequired.value) {
+    return;
+  }
+  const op = beginCreateOperation(payload.itemId);
+  if (!op) {
+    return;
+  }
+  void editor.createItem(payload).then((outcome) => {
+    if (!isActiveCreateOperation(op, payload.itemId)) {
+      return;
+    }
+    if (outcome.status === 'committed-refreshed') {
+      void nextTick(() => {
+        onSelectItem(payload.itemId);
+      });
+    }
+    finishCreateOperation(op, outcome, payload);
   });
 }
 
@@ -652,6 +1393,9 @@ function openDuplicateItem(itemId: string): void {
 }
 
 function closeDuplicateItem(): void {
+  if (duplicateDialogPending.value) {
+    return;
+  }
   duplicateSourceItemId.value = null;
 }
 
@@ -668,22 +1412,32 @@ const duplicateSourceItem = computed(() => {
 });
 
 function onDuplicateItem(payload: {
+  sourceItemId: string;
   itemId: string;
   name: string;
   type: string;
   description: string;
   note: string;
 }): void {
-  const sourceId = duplicateSourceItemId.value;
+  const sourceId = payload.sourceItemId || duplicateSourceItemId.value;
   if (!sourceId) {
     return;
   }
-  const ok = editor.duplicateItem(sourceId, payload);
-  if (!ok) {
+  const op = beginDuplicateOperation(sourceId);
+  if (!op) {
     return;
   }
-  void nextTick(() => {
-    onSelectItem(payload.itemId);
+  const { sourceItemId: _sourceItemId, ...itemPayload } = payload;
+  void editor.duplicateItem(sourceId, itemPayload).then((outcome) => {
+    if (!isActiveItemDialogOperation(op, activeDuplicateOp.value, duplicateSourceItemId.value)) {
+      return;
+    }
+    if (outcome.status === 'committed-refreshed') {
+      void nextTick(() => {
+        onSelectItem(payload.itemId);
+      });
+    }
+    finishDuplicateOperation(op, outcome, itemPayload);
   });
 }
 
@@ -695,6 +1449,9 @@ function openDeleteItem(itemId: string): void {
 }
 
 function closeDeleteItem(): void {
+  if (deleteDialogPending.value) {
+    return;
+  }
   deleteTargetItemId.value = null;
 }
 
@@ -710,18 +1467,26 @@ const deleteTargetItem = computed(() => {
   return { itemId: id, name: item.name };
 });
 
-function onConfirmDeleteItem(): void {
-  const itemId = deleteTargetItemId.value;
-  if (!itemId || !editor.draftDocument.value) {
+function onConfirmDeleteItem(payload: { itemId: string }): void {
+  const itemId = payload.itemId || deleteTargetItemId.value;
+  if (!itemId) {
     return;
   }
-  const order = [...editor.draftDocument.value.itemOrder];
+  const op = beginDeleteOperation(itemId);
+  if (!op) {
+    return;
+  }
   const wasSelected = selectedItemId.value === itemId;
-  const removed = editor.removeItem(itemId);
-  if (!removed) {
-    return;
-  }
-  syncSelectionAfterOrderChange(order, itemId, wasSelected);
+  const order = [...displayItemOrder.value];
+  void editor.deleteItem(itemId).then((outcome) => {
+    if (!isActiveItemDialogOperation(op, activeDeleteOp.value, deleteTargetItemId.value)) {
+      return;
+    }
+    if (outcome.status === 'committed-refreshed') {
+      syncSelectionAfterOrderChange(order, itemId, wasSelected);
+    }
+    finishDeleteOperation(op, outcome);
+  });
 }
 
 function openExcludeItem(itemId: string): void {
@@ -735,6 +1500,9 @@ function openExcludeItem(itemId: string): void {
 }
 
 function closeExcludeItem(): void {
+  if (excludeDialogPending.value) {
+    return;
+  }
   excludeTargetItemId.value = null;
 }
 
@@ -750,40 +1518,57 @@ const excludeTargetItem = computed(() => {
   return { itemId: id, name: item.name };
 });
 
-function onConfirmExcludeItem(): void {
-  const itemId = excludeTargetItemId.value;
-  if (!itemId || !editor.draftDocument.value) {
+function onConfirmExcludeItem(payload: { itemId: string }): void {
+  const itemId = payload.itemId || excludeTargetItemId.value;
+  if (!itemId) {
     return;
   }
-  const order = [...editor.draftDocument.value.itemOrder];
+  const op = beginExcludeOperation(itemId);
+  if (!op) {
+    return;
+  }
+  const order = [...displayItemOrder.value];
   const wasSelected = selectedItemId.value === itemId;
-  const ok = editor.excludeItem(itemId);
-  if (!ok) {
-    return;
-  }
-  syncSelectionAfterOrderChange(order, itemId, wasSelected);
+  void editor.excludeItem(itemId).then((outcome) => {
+    if (!isActiveItemDialogOperation(op, activeExcludeOp.value, excludeTargetItemId.value)) {
+      return;
+    }
+    if (outcome.status === 'committed-refreshed') {
+      syncSelectionAfterOrderChange(order, itemId, wasSelected);
+    }
+    finishExcludeOperation(op, outcome);
+  });
 }
 
 function onRestoreExcludedItem(itemId: string): void {
-  const ok = editor.restoreItem(itemId);
-  if (!ok) {
-    return;
-  }
-  void nextTick(() => {
-    onSelectItem(itemId);
+  void editor.restoreItem(itemId).then((outcome) => {
+    if (outcome.status !== 'committed-refreshed') {
+      return;
+    }
+    void nextTick(() => {
+      onSelectItem(itemId);
+    });
   });
 }
 
 function copyDraftJson(): void {
-  if (!editor.draftDocument.value) {
-    return;
-  }
-  const text = JSON.stringify(editor.draftDocument.value, null, 2);
-  void navigator.clipboard?.writeText(text);
+  void editor.copyDraftJson();
+}
+
+function onMoveItemUp(itemId: string): void {
+  void editor.moveItemUp(itemId);
+}
+
+function onMoveItemDown(itemId: string): void {
+  void editor.moveItemDown(itemId);
 }
 
 function openDuplicateScreen(): void {
-  if (editor.dirty.value || editor.saving.value || deleteScreenDialogOpen.value) {
+  if (
+    editor.dirty.value ||
+    editor.mutationPending.value ||
+    deleteScreenDialogOpen.value
+  ) {
     return;
   }
   duplicateScreenDialogOpen.value = true;
@@ -812,7 +1597,7 @@ async function onDeleteScreenCompleted(payload: {
   if (payload.kind === 'linked') {
     deleteSuccessMessage.value =
       '画面設計書を削除しました。この画面は「実装のみ」として残ります。';
-    await loadScreen(props.screenId);
+    await loadScreen(props.screenId, 'same-screen-reload');
     return;
   }
   deleteSuccessMessage.value = '画面設計を削除しました。';
@@ -820,7 +1605,7 @@ async function onDeleteScreenCompleted(payload: {
 
 function onDeleteReloadLatest(): void {
   deleteScreenDialogOpen.value = false;
-  void editor.reloadLatest();
+  void reloadDescriptionLatest();
 }
 
 /** 複製元は保存済み（loaded）内容。dirty draft は使わない */
@@ -855,12 +1640,23 @@ const deleteDialogStatus = computed((): 'design-only' | 'linked' => {
 
 watch(
   () => props.screenId,
-  (id) => {
+  (id, prev) => {
     deleteSuccessMessage.value = '';
-    void loadScreen(id);
+    if (prev !== undefined && prev !== id) {
+      invalidateItemDialogOperations();
+    }
+    const reason: LoadDescriptionReason =
+      prev === undefined ? 'initial-load' : 'screen-change';
+    void loadScreen(id, reason);
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => {
+  pageMounted = false;
+  invalidatePageLoad();
+  invalidateItemDialogOperations();
+});
 </script>
 
 <template>
@@ -885,7 +1681,7 @@ watch(
   <div v-else-if="!screen" class="spec-page">
     <p>読み込み中…</p>
   </div>
-  <div v-else class="spec-page" :class="{ 'spec-page--editing': editor.editingEnabled }">
+  <div v-else class="spec-page" :class="{ 'spec-page--editing': editor.editingEnabled }" :aria-busy="pageResourcePending ? 'true' : undefined">
     <header class="spec-page__header">
       <div class="spec-page__header-main">
         <div class="spec-page__title-row">
@@ -927,7 +1723,7 @@ watch(
           data-action="duplicate-screen"
           :disabled="
             editor.dirty.value ||
-            editor.saving.value ||
+            editor.mutationPending.value ||
             deleteScreenDialogOpen
           "
           :title="
@@ -955,20 +1751,33 @@ watch(
           type="button"
           class="spec-page__btn"
           :disabled="
-            !editor.dirty.value ||
-            editor.saving.value ||
+            !editor.screenDirty.value ||
+            editor.mutationPending.value ||
             deleteScreenDialogOpen
           "
-          @click="editor.save()"
+          @click="editor.saveScreenMetadata()"
         >
-          保存
+          基本情報を保存
+        </button>
+        <button
+          v-if="selectedItemId"
+          type="button"
+          class="spec-page__btn"
+          :disabled="
+            !editor.itemDirty.value ||
+            editor.mutationPending.value ||
+            deleteScreenDialogOpen
+          "
+          @click="selectedItemId && editor.saveItemMetadata(selectedItemId)"
+        >
+          項目を保存
         </button>
         <button
           type="button"
           class="spec-page__btn spec-page__btn--secondary"
           :disabled="
             !editor.dirty.value ||
-            editor.saving.value ||
+            editor.mutationPending.value ||
             deleteScreenDialogOpen
           "
           @click="onCancelEdits"
@@ -994,8 +1803,8 @@ watch(
     >
       <p>{{ editor.statusMessage.value }}</p>
       <div v-if="editor.status.value === 'conflict'" class="spec-page__banner-actions">
-        <button type="button" class="spec-page__btn" @click="editor.reloadLatest()">
-          最新内容を読み込む
+        <button type="button" class="spec-page__btn" @click="reloadDescriptionLatest()">
+          最新内容を再読み込み
         </button>
         <button
           type="button"
@@ -1005,12 +1814,21 @@ watch(
           編集中の内容をコピー
         </button>
       </div>
+      <div
+        v-else-if="editor.status.value === 'reload-failed'"
+        class="spec-page__banner-actions"
+      >
+        <button type="button" class="spec-page__btn" @click="reloadDescriptionLatest()">
+          再読み込み
+        </button>
+      </div>
     </div>
 
     <StateSelector
       v-if="screen.states.length > 0 && effectiveProvider !== 'reference'"
       :states="screen.states"
       :selected-state-id="selectedStateId"
+      :disabled="pageResourcePending"
       @select="onSelectState"
     />
 
@@ -1035,8 +1853,16 @@ watch(
         </div>
 
         <template v-if="showPreviewTabs">
+          <p
+            v-if="pageResourcePending"
+            class="spec-page__resource-loading"
+            data-testid="page-resource-loading"
+            role="status"
+          >
+            プレビューリソースを読み込み中…
+          </p>
           <div
-            v-show="effectiveProvider === 'live' && canShowDeviceTabs"
+            v-show="effectiveProvider === 'live' && canShowDeviceTabs && !pageResourcePending"
             :id="`${previewTabsIdPrefix}-panel-live`"
             role="tabpanel"
             :aria-labelledby="`${previewTabsIdPrefix}-tab-live`"
@@ -1053,7 +1879,7 @@ watch(
             />
           </div>
           <DeviceCapturePanel
-            v-if="captureViewport"
+            v-if="captureViewport && !pageResourcePending"
             :viewport="captureViewport"
             :screen-name="displayName || screen.id"
             :state-name="currentStateName"
@@ -1071,7 +1897,7 @@ watch(
             @collect="deviceCapture.collectCurrent()"
           />
           <ReferenceImagePanel
-            v-if="effectiveProvider === 'reference'"
+            v-if="effectiveProvider === 'reference' && !pageResourcePending"
             ref="referencePanelRef"
             :viewport="referenceViewport"
             :screen-name="displayName || screen.id"
@@ -1194,8 +2020,8 @@ watch(
                 @update-item="
                   (itemId, field, value) => editor.updateItemField(itemId, field, value)
                 "
-                @move-up="editor.moveItemUp"
-                @move-down="editor.moveItemDown"
+                @move-up="onMoveItemUp"
+                @move-down="onMoveItemDown"
                 @duplicate="openDuplicateItem"
                 @remove="openDeleteItem"
                 @exclude="openExcludeItem"
@@ -1244,6 +2070,8 @@ watch(
     <CreateItemDialog
       v-if="createItemDialogOpen"
       :existing-item-ids="existingItemIdsForCreate"
+      :pending="createDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
       @close="closeCreateItem"
       @create="onCreateItem"
     />
@@ -1256,6 +2084,8 @@ watch(
       :initial-type="duplicateSourceItem.type"
       :initial-description="duplicateSourceItem.description"
       :initial-note="duplicateSourceItem.note"
+      :pending="duplicateDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
       @close="closeDuplicateItem"
       @create="onDuplicateItem"
     />
@@ -1264,6 +2094,7 @@ watch(
       v-if="deleteTargetItem"
       :item-id="deleteTargetItem.itemId"
       :item-name="deleteTargetItem.name"
+      :pending="deleteDialogPending"
       @close="closeDeleteItem"
       @confirm="onConfirmDeleteItem"
     />
@@ -1272,6 +2103,7 @@ watch(
       v-if="excludeTargetItem"
       :item-id="excludeTargetItem.itemId"
       :item-name="excludeTargetItem.name"
+      :pending="excludeDialogPending"
       @close="closeExcludeItem"
       @confirm="onConfirmExcludeItem"
     />

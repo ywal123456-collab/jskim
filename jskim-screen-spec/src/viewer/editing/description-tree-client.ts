@@ -33,6 +33,13 @@ function isDescriptionTreeResponse(body: unknown): body is DescriptionTreeGetRes
   if (typeof row.revision !== 'string' || typeof row.sourceSchemaVersion !== 'string') {
     return false;
   }
+  if (
+    row.collectedItemIds !== undefined &&
+    (!Array.isArray(row.collectedItemIds) ||
+      row.collectedItemIds.some((entry) => typeof entry !== 'string'))
+  ) {
+    return false;
+  }
   if (!row.description || typeof row.description !== 'object' || Array.isArray(row.description)) {
     return false;
   }

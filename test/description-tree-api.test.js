@@ -147,6 +147,7 @@ describe('description-tree API', () => {
         deleteDescriptionItem: companion.deleteDescriptionItem,
         excludeDescriptionItem: companion.excludeDescriptionItem,
         restoreDescriptionItem: companion.restoreDescriptionItem,
+        updateDescriptionScreen: companion.updateDescriptionScreen,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -463,6 +464,7 @@ describe('description-tree API', () => {
         deleteDescriptionItem: companion.deleteDescriptionItem,
         excludeDescriptionItem: companion.excludeDescriptionItem,
         restoreDescriptionItem: companion.restoreDescriptionItem,
+        updateDescriptionScreen: companion.updateDescriptionScreen,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -645,6 +647,7 @@ describe('description-tree API', () => {
         deleteDescriptionItem: companion.deleteDescriptionItem,
         excludeDescriptionItem: companion.excludeDescriptionItem,
         restoreDescriptionItem: companion.restoreDescriptionItem,
+        updateDescriptionScreen: companion.updateDescriptionScreen,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,

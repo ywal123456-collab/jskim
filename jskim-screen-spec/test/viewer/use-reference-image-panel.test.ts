@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, nextTick, ref } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
+import type { ScreenDataReloadOutcome } from '../../src/viewer/screen-view-bundle.js';
 import { useReferenceImagePanel } from '../../src/viewer/preview/useReferenceImagePanel.js';
 import type { ScreenData } from '../../src/viewer/types.js';
 import { peekPendingReferenceImage } from '../../src/viewer/preview/pending-reference-image.js';
@@ -48,21 +49,28 @@ function pngFile(): File {
   return new File([new Uint8Array(10)], 'a.png', { type: 'image/png' });
 }
 
+type TestFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 function mountPanel(options: {
-  fetchFn: typeof fetch;
+  fetchFn: TestFetch;
   viewport?: ReferenceViewport | null;
   active?: boolean;
   editable?: boolean;
   blocked?: boolean;
   screen?: ScreenData;
-  reloadScreen?: () => Promise<void>;
+  reloadScreen?: () => Promise<ScreenDataReloadOutcome>;
+  pollIntervalMs?: number;
 }) {
   const screen = ref(options.screen ?? makeScreen('current'));
   const viewport = ref<ReferenceViewport | null>(
     options.viewport === undefined ? 'pc' : options.viewport,
   );
   const active = ref(options.active !== false);
-  const reload = options.reloadScreen ?? (async () => {});
+  const reload =
+    options.reloadScreen ?? (async () => ({ status: 'applied' as const }));
   let api: ReturnType<typeof useReferenceImagePanel> | null = null;
 
   const Comp = defineComponent({
@@ -78,7 +86,7 @@ function mountPanel(options: {
         reloadScreen: reload,
         screenDataUrl: () => '/spec/data/screens/demo.json',
         fetchFn: options.fetchFn,
-        pollIntervalMs: 20,
+        pollIntervalMs: options.pollIntervalMs ?? 20,
       });
       return () => null;
     },
@@ -372,7 +380,7 @@ describe('useReferenceImagePanel', () => {
   });
 
   it('revision conflict は Viewer 案内を保ち reloadScreen する', async () => {
-    const reloadScreen = vi.fn(async () => {});
+    const reloadScreen = vi.fn(async () => ({ status: 'applied' as const }));
     let statusCalls = 0;
     const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -581,6 +589,717 @@ describe('useReferenceImagePanel', () => {
     expect(api.runtime.value.status).toBe('idle');
     expect(api.localPending.value).toBe(false);
     expect(api.figmaConfirmation.value).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('PUT created 後 reload failed は success 専用メッセージを出さない', async () => {
+    let screenReads = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const referenceImages =
+          screenReads >= 2
+            ? {
+                pc: {
+                  status: 'current',
+                  imageRevision: 'sha256:' + 'e'.repeat(64),
+                },
+              }
+            : { pc: { status: 'missing' } };
+        return jsonResponse({ referenceImages });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const reloadScreen = vi.fn(async () => ({ status: 'failed' as const }));
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+      reloadScreen,
+    });
+    await flushPromises();
+    await api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.awaitingManifest.value) {
+        break;
+      }
+    }
+    expect(reloadScreen).toHaveBeenCalled();
+    expect(api.infoMessage.value).not.toContain('更新しました');
+    expect(api.errorMessage.value).toContain('最新の画面情報を取得できませんでした');
+    wrapper.unmount();
+  });
+
+  it('DELETE 後 reload failed は削除 success 専用メッセージを出さない', async () => {
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+          },
+        });
+      }
+      if (method === 'DELETE' && url.includes('/reference-images/demo/pc')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'deleted',
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        return jsonResponse({ referenceImages: { pc: { status: 'missing' } } });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const reloadScreen = vi.fn(async () => ({ status: 'failed' as const }));
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('current'),
+      reloadScreen,
+    });
+    await flushPromises();
+    await api.deleteCurrent('sha256:' + 'b'.repeat(64));
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.awaitingManifest.value) {
+        break;
+      }
+    }
+    expect(api.infoMessage.value).not.toContain('削除しました');
+    expect(api.errorMessage.value).toContain('最新の画面情報を取得できませんでした');
+    wrapper.unmount();
+  });
+
+  it('upload 成功後 reload stale-or-aborted はメッセージを変更しない', async () => {
+    let screenReads = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const referenceImages =
+          screenReads >= 2
+            ? {
+                pc: {
+                  status: 'current',
+                  imageRevision: 'sha256:' + 'e'.repeat(64),
+                },
+              }
+            : { pc: { status: 'missing' } };
+        return jsonResponse({ referenceImages });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const reloadScreen = vi.fn(async () => ({ status: 'stale-or-aborted' as const }));
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+      reloadScreen,
+    });
+    await flushPromises();
+    await api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.awaitingManifest.value) {
+        break;
+      }
+    }
+    expect(api.infoMessage.value).toBe('');
+    expect(api.errorMessage.value).toBe('');
+    wrapper.unmount();
+  });
+
+  it('upload reload pending 中は 2 回目 upload API を呼ばない', async () => {
+    let screenReads = 0;
+    let putCalls = 0;
+    let resolveReload1!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload1 = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        putCalls += 1;
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const referenceImages =
+          screenReads >= 2
+            ? {
+                pc: {
+                  status: 'current',
+                  imageRevision: 'sha256:' + 'e'.repeat(64),
+                },
+              }
+            : { pc: { status: 'missing' } };
+        return jsonResponse({ referenceImages });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+      reloadScreen,
+    });
+    await flushPromises();
+    void api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (reloadScreen.mock.calls.length > 0) {
+        break;
+      }
+    }
+
+    expect(putCalls).toBe(1);
+    expect(api.localPending.value).toBe(true);
+    void api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    expect(putCalls).toBe(1);
+
+    resolveReload1({ status: 'applied' });
+    await flushPromises();
+    expect(api.localPending.value).toBe(false);
+    expect(api.infoMessage.value).toContain('更新しました');
+    wrapper.unmount();
+  });
+
+  it('delete reload pending 中は upload API を呼ばない', async () => {
+    let resolveReload1!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload1 = resolve;
+        }),
+    );
+    let deleteCalls = 0;
+    let putCalls = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+          },
+        });
+      }
+      if (method === 'DELETE' && url.includes('/reference-images/demo/pc')) {
+        deleteCalls += 1;
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'deleted',
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        putCalls += 1;
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        return jsonResponse({ referenceImages: { pc: { status: 'missing' } } });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('current'),
+      reloadScreen,
+    });
+    await flushPromises();
+    void api.deleteCurrent('sha256:' + 'b'.repeat(64));
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (reloadScreen.mock.calls.length > 0) {
+        break;
+      }
+    }
+
+    expect(deleteCalls).toBe(1);
+    expect(api.localPending.value).toBe(true);
+    void api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    expect(putCalls).toBe(0);
+
+    resolveReload1({ status: 'applied' });
+    await flushPromises();
+    expect(api.localPending.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('reload pending 中に viewport 変更すると old completion が新 context message を上書きしない', async () => {
+    let screenReads = 0;
+    let resolveReload1!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload1 = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: url.includes('/sp') ? 'sp' : 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'PUT') {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const referenceImages =
+          screenReads >= 2
+            ? {
+                pc: {
+                  status: 'current',
+                  imageRevision: 'sha256:' + 'e'.repeat(64),
+                },
+              }
+            : { pc: { status: 'missing' } };
+        return jsonResponse({ referenceImages });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api, viewport } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+      reloadScreen,
+    });
+    await flushPromises();
+    void api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (reloadScreen.mock.calls.length > 0) {
+        break;
+      }
+    }
+
+    viewport.value = 'sp';
+    await nextTick();
+    await flushPromises();
+    expect(api.infoMessage.value).toBe('');
+    expect(api.errorMessage.value).toBe('');
+
+    resolveReload1({ status: 'applied' });
+    await flushPromises();
+    expect(api.infoMessage.value).toBe('');
+    expect(api.errorMessage.value).toBe('');
+    wrapper.unmount();
+  });
+
+  it('reload reject でも pending を解消し partial-success を表示する', async () => {
+    let screenReads = 0;
+    const reloadScreen = vi.fn(async () => {
+      throw new Error('reload rejected');
+    });
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'created',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'e'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const referenceImages =
+          screenReads >= 2
+            ? {
+                pc: {
+                  status: 'current',
+                  imageRevision: 'sha256:' + 'e'.repeat(64),
+                },
+              }
+            : { pc: { status: 'missing' } };
+        return jsonResponse({ referenceImages });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      screen: makeScreen('missing'),
+      reloadScreen,
+    });
+    await flushPromises();
+    await api.uploadOrReplace({ file: pngFile(), expectedImageRevision: null });
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.localPending.value) {
+        break;
+      }
+    }
+    expect(api.localPending.value).toBe(false);
+    expect(api.errorMessage.value).toContain('最新の画面情報を取得できませんでした');
+    wrapper.unmount();
+  });
+
+  it('polling reload pending 中は upload/delete/Figma API を呼ばない', async () => {
+    vi.useFakeTimers();
+    let statusPhase: 'uploading' | 'idle' = 'uploading';
+    let putCalls = 0;
+    let deleteCalls = 0;
+    let figmaCalls = 0;
+    let resolveReload!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: statusPhase },
+          referenceImage: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        putCalls += 1;
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'unchanged',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      if (method === 'DELETE') {
+        deleteCalls += 1;
+        return jsonResponse({ screenId: 'demo', viewport: 'pc', result: 'deleted' });
+      }
+      if (method === 'POST' && url.includes('figma:import')) {
+        figmaCalls += 1;
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'unchanged',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      screen: makeScreen('current'),
+      pollIntervalMs: 20,
+    });
+    await flushPromises();
+
+    statusPhase = 'idle';
+    await vi.advanceTimersByTimeAsync(20);
+    await flushPromises();
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+    expect(api.isBusy.value).toBe(true);
+
+    void api.uploadOrReplace({
+      file: pngFile(),
+      expectedImageRevision: 'sha256:' + 'b'.repeat(64),
+    });
+    void api.deleteCurrent('sha256:' + 'b'.repeat(64));
+    void api.importFromFigma({
+      figmaUrl: 'https://www.figma.com/design/AAA/Name?node-id=1-2',
+      expectedImageRevision: null,
+      confirmWidthMismatch: false,
+    });
+    await flushPromises();
+    expect(putCalls).toBe(0);
+    expect(deleteCalls).toBe(0);
+    expect(figmaCalls).toBe(0);
+
+    resolveReload({ status: 'applied' });
+    await flushPromises();
+    expect(api.isBusy.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('reconcile reload pending 中は upload API を呼ばない', async () => {
+    vi.useFakeTimers();
+    let putCalls = 0;
+    let resolveReload!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          runtime: { status: 'idle' },
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+          },
+        });
+      }
+      if (method === 'PUT' && url.includes('/reference-images/demo/pc')) {
+        putCalls += 1;
+        if (putCalls === 1) {
+          return jsonResponse(
+            {
+              code: 'SPEC_REFERENCE_IMAGE_REVISION_CONFLICT',
+              message: 'conflict',
+            },
+            409,
+          );
+        }
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: 'pc',
+          result: 'unchanged',
+          referenceImage: {
+            status: 'current',
+            imageRevision: 'sha256:' + 'b'.repeat(64),
+            imageWidth: 1440,
+            imageHeight: 900,
+            uploadedAt: '2026-07-18T00:00:00.000Z',
+          },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      screen: makeScreen('current'),
+    });
+    await flushPromises();
+
+    void api.uploadOrReplace({
+      file: pngFile(),
+      expectedImageRevision: 'sha256:' + 'b'.repeat(64),
+    });
+    await flushPromises();
+    expect(putCalls).toBe(1);
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+    expect(api.isBusy.value).toBe(true);
+
+    void api.uploadOrReplace({
+      file: pngFile(),
+      expectedImageRevision: 'sha256:' + 'b'.repeat(64),
+    });
+    await flushPromises();
+    expect(putCalls).toBe(1);
+
+    resolveReload({ status: 'failed' });
+    await flushPromises();
+    expect(api.isBusy.value).toBe(false);
+    expect(api.errorMessage.value).toContain('別の操作で更新');
+    wrapper.unmount();
+  });
+
+  it('background reload pending 中の context 変更後は old completion が message を変えない', async () => {
+    vi.useFakeTimers();
+    let statusPhase: 'uploading' | 'idle' = 'uploading';
+    let resolveReload!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('reference-images/status')) {
+        return jsonResponse({
+          screenId: 'demo',
+          viewport: url.includes('/sp') ? 'sp' : 'pc',
+          runtime: { status: statusPhase },
+          referenceImage: { status: 'missing' },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api, viewport } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      screen: makeScreen('missing'),
+      pollIntervalMs: 20,
+    });
+    await flushPromises();
+
+    statusPhase = 'idle';
+    await vi.advanceTimersByTimeAsync(20);
+    await flushPromises();
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+
+    viewport.value = 'sp';
+    await nextTick();
+    await flushPromises();
+    expect(api.errorMessage.value).toBe('');
+    expect(api.infoMessage.value).toBe('');
+
+    resolveReload({ status: 'failed' });
+    await flushPromises();
+    expect(api.errorMessage.value).toBe('');
+    expect(api.infoMessage.value).toBe('');
     wrapper.unmount();
   });
 });

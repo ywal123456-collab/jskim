@@ -83,7 +83,7 @@ describe('CreateItemDialog', () => {
     expect(wrapper.emitted('create')).toBeFalsy();
   });
 
-  it('正常な入力で create と close を emit する', async () => {
+  it('正常な入力で create を emit する（close は親が決める）', async () => {
     const wrapper = await mountDialog(['title']);
     await fillValidItem(wrapper, 'submit-button');
     await wrapper.find('form').trigger('submit');
@@ -97,7 +97,18 @@ describe('CreateItemDialog', () => {
         note: '備考',
       },
     ]);
-    expect(wrapper.emitted('close')).toBeTruthy();
+    expect(wrapper.emitted('close')).toBeFalsy();
+  });
+
+  it('pending または submitDisabled のとき submit しない', async () => {
+    const wrapper = mount(CreateItemDialog, {
+      props: { existingItemIds: [], pending: false, submitDisabled: true },
+      attachTo: document.body,
+    });
+    mountedWrappers.push(wrapper);
+    await fillValidItem(wrapper, 'submit-button');
+    await wrapper.find('form').trigger('submit');
+    expect(wrapper.emitted('create')).toBeFalsy();
   });
 
   it('dirty 状態で cancel すると確認し、拒否すれば閉じない', async () => {

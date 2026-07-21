@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, nextTick, ref } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
+import type { ScreenDataReloadOutcome } from '../../src/viewer/screen-view-bundle.js';
 import { useDeviceCapturePanel } from '../../src/viewer/preview/useDeviceCapturePanel.js';
 import type { ScreenData } from '../../src/viewer/types.js';
 import {
@@ -47,16 +48,23 @@ function makeScreen(captureStatus: 'missing' | 'current' | 'stale' = 'missing'):
   };
 }
 
+type TestFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 function mountPanel(options: {
-  fetchFn: typeof fetch;
+  fetchFn: TestFetch;
   viewport?: 'pc' | 'sp' | null;
   editable?: boolean;
   screen?: ScreenData;
-  reloadScreen?: () => Promise<void>;
+  reloadScreen?: () => Promise<ScreenDataReloadOutcome>;
+  pollIntervalMs?: number;
 }) {
   const screen = ref(options.screen ?? makeScreen('current'));
   const viewport = ref<'pc' | 'sp' | null>(options.viewport ?? 'pc');
-  const reload = options.reloadScreen ?? (async () => {});
+  const reload =
+    options.reloadScreen ?? (async () => ({ status: 'applied' as const }));
   let api: ReturnType<typeof useDeviceCapturePanel> | null = null;
 
   const Comp = defineComponent({
@@ -71,7 +79,7 @@ function mountPanel(options: {
         reloadScreen: reload,
         screenDataUrl: () => '/spec/data/screens/demo.json',
         fetchFn: options.fetchFn,
-        pollIntervalMs: 20,
+        pollIntervalMs: options.pollIntervalMs ?? 20,
       });
       return () => null;
     },
@@ -336,6 +344,707 @@ describe('useDeviceCapturePanel', () => {
     await flushPromises();
     await api.collectCurrent();
     expect(fetchFn).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('POST created 後 reload failed は success 専用メッセージを出さない', async () => {
+    let screenReads = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'created',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const reloadScreen = vi.fn(async () => ({ status: 'failed' as const }));
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    await api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.awaitingManifest.value) {
+        break;
+      }
+    }
+    expect(reloadScreen).toHaveBeenCalled();
+    expect(api.infoMessage.value).not.toContain('更新しました');
+    expect(api.errorMessage.value).toContain('再読み込みできませんでした');
+    expect(api.runtime.value.status).toBe('idle');
+    wrapper.unmount();
+  });
+
+  it('capture 成功後 reload stale-or-aborted はメッセージを変更しない', async () => {
+    let screenReads = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'created',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const reloadScreen = vi.fn(async () => ({ status: 'stale-or-aborted' as const }));
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    await api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.awaitingManifest.value) {
+        break;
+      }
+    }
+    expect(api.infoMessage.value).toBe('');
+    expect(api.errorMessage.value).toBe('');
+    wrapper.unmount();
+  });
+
+  it('reload pending 中は同一 context で 2 回目 capture を開始しない', async () => {
+    let screenReads = 0;
+    let postCalls = 0;
+    let resolveReload1!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload1 = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        postCalls += 1;
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'created',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    void api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (reloadScreen.mock.calls.length > 0) {
+        break;
+      }
+    }
+
+    expect(postCalls).toBe(1);
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+    expect(api.localPending.value).toBe(true);
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(1);
+    expect(api.localPending.value).toBe(true);
+
+    resolveReload1({ status: 'applied' });
+    await flushPromises();
+    expect(api.localPending.value).toBe(false);
+    expect(api.infoMessage.value).toContain('更新しました');
+    wrapper.unmount();
+  });
+
+  it('reload pending 中の 1 回目 completion が 2 回目 message を上書きしない', async () => {
+    let screenReads = 0;
+    let postCalls = 0;
+    let resolveReload1!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload1 = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        postCalls += 1;
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: postCalls === 1 ? 'created' : 'unchanged',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    void api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (reloadScreen.mock.calls.length > 0) {
+        break;
+      }
+    }
+
+    resolveReload1({ status: 'applied' });
+    await flushPromises();
+    expect(api.infoMessage.value).toContain('更新しました');
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(2);
+    expect(api.infoMessage.value).toContain('最新です');
+    expect(api.infoMessage.value).not.toContain('更新しました');
+    wrapper.unmount();
+  });
+
+  it('reload stale-or-aborted 後も pending を解消する', async () => {
+    let screenReads = 0;
+    const reloadScreen = vi.fn(async () => ({ status: 'stale-or-aborted' as const }));
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'created',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    await api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.localPending.value) {
+        break;
+      }
+    }
+    expect(api.localPending.value).toBe(false);
+    expect(api.infoMessage.value).toBe('');
+    wrapper.unmount();
+  });
+
+  it('reload reject でも pending を解消し partial-success を表示する', async () => {
+    let screenReads = 0;
+    const reloadScreen = vi.fn(async () => {
+      throw new Error('reload rejected');
+    });
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'created',
+            capture: {
+              status: 'current',
+              imageRevision: 'sha256:' + 'e'.repeat(64),
+              inputRevision: 'sha256:' + 'f'.repeat(64),
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/screens/demo.json')) {
+        screenReads += 1;
+        const rev =
+          screenReads >= 2 ? 'sha256:' + 'e'.repeat(64) : 'sha256:' + 'b'.repeat(64);
+        return new Response(
+          JSON.stringify({
+            states: [
+              {
+                id: 'default',
+                deviceCaptures: {
+                  pc: {
+                    status: 'current',
+                    imageRevision: rev,
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { wrapper, api } = mountPanel({ fetchFn, reloadScreen });
+    await flushPromises();
+    await api.collectCurrent();
+    await flushPromises();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 30));
+      await flushPromises();
+      if (!api.localPending.value) {
+        break;
+      }
+    }
+    expect(api.localPending.value).toBe(false);
+    expect(api.errorMessage.value).toContain('再読み込みできませんでした');
+    wrapper.unmount();
+  });
+
+  it('polling reload pending 中は同一 context の collect を開始しない', async () => {
+    vi.useFakeTimers();
+    let statusPhase: 'collecting' | 'idle' = 'collecting';
+    let postCalls = 0;
+    let resolveReload!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: statusPhase },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        postCalls += 1;
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'unchanged',
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      pollIntervalMs: 20,
+    });
+    await flushPromises();
+    expect(api.runtime.value.status).toBe('collecting');
+
+    statusPhase = 'idle';
+    await vi.advanceTimersByTimeAsync(20);
+    await flushPromises();
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+    expect(api.isCollecting.value).toBe(true);
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(0);
+
+    resolveReload({ status: 'failed' });
+    await flushPromises();
+    expect(api.errorMessage.value).toContain('再読み込みできませんでした');
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(1);
+    wrapper.unmount();
+  });
+
+  it('reconcile reload pending 中は同一 context の collect を開始しない', async () => {
+    vi.useFakeTimers();
+    let postCalls = 0;
+    let resolveReload!: (outcome: ScreenDataReloadOutcome) => void;
+    const reloadScreen = vi.fn(
+      () =>
+        new Promise<ScreenDataReloadOutcome>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: 'idle' },
+            capture: { status: 'stale' },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        postCalls += 1;
+        if (postCalls === 1) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DEVICE_CAPTURE_INPUT_CHANGED',
+              message: 'input changed',
+            }),
+            { status: 409 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            result: 'unchanged',
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      screen: makeScreen('stale'),
+    });
+    await flushPromises();
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(1);
+    expect(reloadScreen).toHaveBeenCalledTimes(1);
+    expect(api.isCollecting.value).toBe(true);
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(1);
+
+    resolveReload({ status: 'failed' });
+    await flushPromises();
+    expect(api.isCollecting.value).toBe(false);
+    expect(api.errorMessage.value).toContain('変更されました');
+
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(2);
+    wrapper.unmount();
+  });
+
+  it('local operation 中は polling reload せず、完了後の次 tick で reload する', async () => {
+    vi.useFakeTimers();
+    let statusPhase: 'collecting' | 'idle' = 'collecting';
+    let postCalls = 0;
+    const reloadScreen = vi.fn(async () => ({ status: 'applied' as const }));
+    let resolvePost!: (value: Response) => void;
+    const deferredPost = new Promise<Response>((resolve) => {
+      resolvePost = resolve;
+    });
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || 'GET').toUpperCase();
+      if (url.includes('device-captures/status')) {
+        return new Response(
+          JSON.stringify({
+            screenId: 'demo',
+            stateId: 'default',
+            viewport: 'pc',
+            runtime: { status: statusPhase },
+            capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+          }),
+          { status: 200 },
+        );
+      }
+      if (method === 'POST' && url.includes('device-captures:collect')) {
+        postCalls += 1;
+        return deferredPost;
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const { wrapper, api } = mountPanel({
+      fetchFn,
+      reloadScreen,
+      pollIntervalMs: 20,
+    });
+    await flushPromises();
+
+    statusPhase = 'idle';
+    void api.collectCurrent();
+    await flushPromises();
+    expect(postCalls).toBe(1);
+    const reloadsDuringLocal = reloadScreen.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(40);
+    await flushPromises();
+    expect(reloadScreen.mock.calls.length).toBe(reloadsDuringLocal);
+
+    resolvePost(
+      new Response(
+        JSON.stringify({
+          screenId: 'demo',
+          stateId: 'default',
+          viewport: 'pc',
+          result: 'unchanged',
+          capture: { status: 'current', imageRevision: 'sha256:' + 'b'.repeat(64) },
+        }),
+        { status: 200 },
+      ),
+    );
+    await flushPromises();
+    expect(api.localPending.value).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(20);
+    await flushPromises();
+    expect(reloadScreen.mock.calls.length).toBeGreaterThan(reloadsDuringLocal);
     wrapper.unmount();
   });
 });

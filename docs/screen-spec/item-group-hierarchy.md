@@ -627,8 +627,8 @@ PATCH /_jskim/spec/description-tree/:screenId/items/:itemId
 - POST/PATCH / action POST: `{ status, revision }` を返す。v1.0–v1.2 への初回 tree mutation 成功時のみ v1.3 へ lazy migration。**updateItem unchanged** は bytes / revision 不変
 - **Phase 7F-1C-4B 実装済み**: `updateItem` / `createItem` domain + HTTP（POST/PATCH items）
 - **Phase 7F-1C-4C 実装済み**: `deleteItem` / `excludeItem` / `restoreItem` domain + HTTP（POST action routes）。delete/manual-only、exclude/collected-only、restore/root tail。collected 判定不能時は delete/exclude fail-closed
-- Viewer Item editor / Collector Group annotation は **未実装**（Viewer は legacy flat PUT）
-- **Phase 7F-1D-1**: Viewer Item Tree 参照・探索 UI 実装済み（GET `/_jskim/spec/description-tree/:screenId` のみ）。Group 編集 UI は未実装（Item 編集 API 接続後に公開 gate 維持）
+- **Phase 7F-1D-2**: Viewer Item 編集を Description Tree mutation API に接続済み（legacy Viewer PUT 非使用、shared revision、409/reload 契約）。Group 作成・編集・移動 UI は **未公開**（7F-1D-3 gate 維持）
+- **Phase 7F-1D-1**: Viewer Item Tree 参照・探索 UI 実装済み（GET `/_jskim/spec/description-tree/:screenId` のみ）
 - legacy flat Description PUT / Collector v1.3 mutation は **従来どおり fail-closed**
 
 **moveNode 例:**

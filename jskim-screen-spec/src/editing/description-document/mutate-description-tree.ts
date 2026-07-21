@@ -39,6 +39,8 @@ import type { ExcludeItemInput } from './exclude-item.js';
 import { applyExcludeItem } from './exclude-item.js';
 import type { RestoreItemInput } from './restore-item.js';
 import { applyRestoreItem } from './restore-item.js';
+import type { ApplyUpdateScreenResult, UpdateScreenInput } from './update-screen.js';
+import { applyUpdateScreen } from './update-screen.js';
 import {
   collectCollectedItemIdsForDestructiveMutation,
   collectCollectedItemIdsForScreen,
@@ -517,6 +519,30 @@ export async function restoreDescriptionItem(
     operation: 'restore-item',
     adapters,
     apply: (normalized) => applyRestoreItem(normalized, restoreInput).normalized,
+  });
+}
+
+export async function updateDescriptionScreen(
+  ctx: DescriptionTreeMutationContext,
+  options: UpdateScreenInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...updateInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'update-screen',
+    adapters,
+    apply: (normalized) => {
+      const result: ApplyUpdateScreenResult = applyUpdateScreen(normalized, updateInput);
+      if (result.status === 'unchanged') {
+        return 'unchanged';
+      }
+      return result.normalized;
+    },
   });
 }
 

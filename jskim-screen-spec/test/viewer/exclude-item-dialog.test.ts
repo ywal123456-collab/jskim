@@ -34,8 +34,8 @@ describe('ExcludeItemDialog', () => {
     expect(wrapper.text()).toContain('入力済みの説明は保持されます');
     expect(wrapper.text()).not.toContain('削除');
     await wrapper.find('[data-action="confirm-exclude"]').trigger('click');
-    expect(wrapper.emitted('confirm')).toBeTruthy();
-    expect(wrapper.emitted('close')).toBeTruthy();
+    expect(wrapper.emitted('confirm')).toEqual([[{ itemId: 'layout-wrapper' }]]);
+    expect(wrapper.emitted('close')).toBeFalsy();
   });
 
   it('キャンセル / Escape で close のみ emit する', async () => {
@@ -49,5 +49,28 @@ describe('ExcludeItemDialog', () => {
     await nextTick();
     expect(again.emitted('close')).toBeTruthy();
     expect(again.emitted('confirm')).toBeFalsy();
+  });
+
+  it('pending 中は close / confirm を抑止する', async () => {
+    const wrapper = await mountDialog();
+    await wrapper.setProps({ pending: true });
+
+    expect(
+      (wrapper.find('[data-action="confirm-exclude"]').element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.find('button.spec-page__btn--secondary')
+          .element as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    await wrapper.find('button.spec-page__btn--secondary').trigger('click');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await nextTick();
+    await wrapper.find('[data-action="confirm-exclude"]').trigger('click');
+    expect(wrapper.emitted('close')).toBeFalsy();
+    expect(wrapper.emitted('confirm')).toBeFalsy();
   });
 });

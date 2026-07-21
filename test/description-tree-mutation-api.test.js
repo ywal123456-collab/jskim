@@ -195,6 +195,7 @@ describe('description-tree mutation API', () => {
         deleteDescriptionItem: companion.deleteDescriptionItem,
         excludeDescriptionItem: companion.excludeDescriptionItem,
         restoreDescriptionItem: companion.restoreDescriptionItem,
+        updateDescriptionScreen: companion.updateDescriptionScreen,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -951,7 +952,45 @@ describe('description-tree mutation API', () => {
       headers: { Host: `127.0.0.1:${port}` },
     });
     assert.equal(extraSubtree.status, 404);
-    assert.equal(parseJson(extraSubtree).code, 'SPEC_DESCRIPTION_TREE_ROUTE_NOT_FOUND');
+    const getExclude = await httpRequest({
+      port,
+      method: 'GET',
+      path: treePath('demo-screen', '/items/item-a/exclude'),
+      headers: { Host: `127.0.0.1:${port}` },
+    });
+    assert.equal(getExclude.status, 405);
+    assert.match(getExclude.headers.allow || '', /POST/);
+
+    const getRestore = await httpRequest({
+      port,
+      method: 'GET',
+      path: treePath('demo-screen', '/items/excluded-item/restore'),
+      headers: { Host: `127.0.0.1:${port}` },
+    });
+    assert.equal(getRestore.status, 405);
+    assert.match(getRestore.headers.allow || '', /POST/);
+
+    const patchExclude = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a/exclude'),
+      headers,
+      body: '{}',
+    });
+    assert.equal(patchExclude.status, 405);
+    assert.match(patchExclude.headers.allow || '', /POST/);
+    assert.equal(patchExclude.headers['x-content-type-options'], 'nosniff');
+
+    const deleteRestore = await httpRequest({
+      port,
+      method: 'DELETE',
+      path: treePath('demo-screen', '/items/excluded-item/restore'),
+      headers,
+      body: JSON.stringify({ expectedRevision: 'sha256:x' }),
+    });
+    assert.equal(deleteRestore.status, 405);
+    assert.match(deleteRestore.headers.allow || '', /POST/);
+    assert.equal(deleteRestore.headers['x-content-type-options'], 'nosniff');
   });
 
   it('HTTP CAS: move vs reorder / delete vs update / deleteSubtree vs move', async () => {
@@ -1065,6 +1104,43 @@ describe('description-tree mutation API', () => {
     ]);
     assert.deepEqual([subtreeRes.status, moveRes2.status].sort(), [200, 409]);
     assertNoLockResidue(subtreeSession.rootDir);
+    assertNoLockResidue(rootDir);
+  });
+
+  it('PATCH screen metadata は v1.2 を v1.3 に migration する', async () => {
+    const session = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.2',
+        screen: { id: 'demo-screen', name: 'Old', description: 'd' },
+        itemOrder: ['item-a'],
+        items: { 'item-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    const { rootDir, port } = session;
+    const before = await getTree(port);
+    const res = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/screen'),
+      headers: jsonHeaders(port),
+      body: JSON.stringify({
+        expectedRevision: before.revision,
+        name: 'New',
+      }),
+    });
+    assert.equal(res.status, 200);
+    const json = parseJson(res);
+    assert.equal(json.status, 'updated');
+    await assertRevisionAligned(rootDir, port, json, before.revision);
+    const saved = JSON.parse(
+      fs.readFileSync(
+        path.join(session.dataDir, 'demo-screen.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(saved.schemaVersion, '1.3');
+    assert.equal(saved.screen.name, 'New');
     assertNoLockResidue(rootDir);
   });
 

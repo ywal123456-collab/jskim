@@ -1,0 +1,239 @@
+import { vi } from 'vitest';
+
+export type MockItemFields = {
+  name: string;
+  type: string;
+  description: string;
+  note: string;
+};
+
+export type MockTreeDoc = {
+  screen: { id: string; name: string; description: string };
+  itemOrder: string[];
+  items: Record<string, MockItemFields>;
+  excludedItems?: Record<string, MockItemFields>;
+  collectedItemIds?: string[];
+};
+
+type TreeEntry = {
+  revision: string;
+  doc: MockTreeDoc;
+};
+
+function parseBody(init?: RequestInit): Record<string, unknown> {
+  if (!init?.body || typeof init.body !== 'string') {
+    return {};
+  }
+  return JSON.parse(init.body) as Record<string, unknown>;
+}
+
+function toTreeJson(entry: TreeEntry) {
+  const { doc, revision } = entry;
+  return {
+    revision,
+    sourceSchemaVersion: '1.2',
+    collectedItemIds: doc.collectedItemIds ?? [],
+    description: {
+      schemaVersion: '1.3',
+      screen: doc.screen,
+      rootNodes: doc.itemOrder.map((id) => ({ type: 'item', id })),
+      groups: [],
+      items: doc.items,
+      excludedItems: doc.excludedItems ?? {},
+    },
+  };
+}
+
+/**
+ * Description Tree GET + mutation API の簡易 mock（component test 用）。
+ */
+export function stubDescriptionTreeFetch(
+  initial: Record<string, MockTreeDoc>,
+  options?: {
+    onFetch?: (
+      url: string,
+      method: string,
+      body: Record<string, unknown>,
+    ) => Response | Promise<Response> | null;
+    extraHandler?: (
+      url: string,
+      init?: RequestInit,
+    ) => Response | null | undefined;
+  },
+): { state: Map<string, TreeEntry>; getFetchMock: () => ReturnType<typeof vi.fn> } {
+  const state = new Map<string, TreeEntry>();
+  for (const [screenId, doc] of Object.entries(initial)) {
+    state.set(screenId, {
+      revision: 'sha256:r1',
+      doc: {
+        ...doc,
+        excludedItems: doc.excludedItems ?? {},
+      },
+    });
+  }
+  let revCounter = 1;
+
+  function bumpRevision(entry: TreeEntry): string {
+    revCounter += 1;
+    entry.revision = `sha256:r${revCounter}`;
+    return entry.revision;
+  }
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const extra = options?.extraHandler?.(url, init);
+    if (extra) {
+      return extra;
+    }
+
+    const treeMatch = url.match(/\/_jskim\/spec\/description-tree\/([^/?#]+)/);
+    if (treeMatch) {
+      const screenId = decodeURIComponent(treeMatch[1]);
+      const entry = state.get(screenId);
+      if (!entry) {
+        return new Response('not found', { status: 404 });
+      }
+
+      if (method === 'GET') {
+        return new Response(JSON.stringify(toTreeJson(entry)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = parseBody(init);
+      const custom = options?.onFetch?.(url, method, body);
+      if (custom) {
+        return await custom;
+      }
+
+      const suffix = url.slice(url.indexOf(treeMatch[1]) + treeMatch[1].length);
+
+      if (suffix === '/screen' && method === 'PATCH') {
+        if (typeof body.name === 'string') {
+          entry.doc.screen.name = body.name;
+        }
+        if (typeof body.description === 'string') {
+          entry.doc.screen.description = body.description;
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (suffix === '/items' && method === 'POST') {
+        const itemId = String(body.itemId ?? '');
+        entry.doc.items[itemId] = {
+          name: String(body.name ?? ''),
+          type: String(body.type ?? ''),
+          description: String(body.description ?? ''),
+          note: String(body.note ?? ''),
+        };
+        const insertIndex =
+          typeof body.insertIndex === 'number' ? body.insertIndex : entry.doc.itemOrder.length;
+        entry.doc.itemOrder.splice(insertIndex, 0, itemId);
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const itemPatch = suffix.match(/^\/items\/([^/]+)$/);
+      if (itemPatch && method === 'PATCH') {
+        const itemId = decodeURIComponent(itemPatch[1]);
+        const item = entry.doc.items[itemId];
+        if (item) {
+          for (const key of ['name', 'type', 'description', 'note'] as const) {
+            if (typeof body[key] === 'string') {
+              item[key] = body[key];
+            }
+          }
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const deleteMatch = suffix.match(/^\/items\/([^/]+)\/delete$/);
+      if (deleteMatch && method === 'POST') {
+        const itemId = decodeURIComponent(deleteMatch[1]);
+        if ((entry.doc.collectedItemIds ?? []).includes(itemId)) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED',
+              message: '収集項目は削除できません。',
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        delete entry.doc.items[itemId];
+        entry.doc.itemOrder = entry.doc.itemOrder.filter((id) => id !== itemId);
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const excludeMatch = suffix.match(/^\/items\/([^/]+)\/exclude$/);
+      if (excludeMatch && method === 'POST') {
+        const itemId = decodeURIComponent(excludeMatch[1]);
+        if (!(entry.doc.collectedItemIds ?? []).includes(itemId)) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
+              message: '手動項目は除外できません。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (!entry.doc.excludedItems) {
+          entry.doc.excludedItems = {};
+        }
+        entry.doc.excludedItems[itemId] = entry.doc.items[itemId];
+        delete entry.doc.items[itemId];
+        entry.doc.itemOrder = entry.doc.itemOrder.filter((id) => id !== itemId);
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const restoreMatch = suffix.match(/^\/items\/([^/]+)\/restore$/);
+      if (restoreMatch && method === 'POST') {
+        const itemId = decodeURIComponent(restoreMatch[1]);
+        const excluded = entry.doc.excludedItems?.[itemId];
+        if (excluded) {
+          if (!entry.doc.excludedItems) {
+            entry.doc.excludedItems = {};
+          }
+          entry.doc.items[itemId] = excluded;
+          delete entry.doc.excludedItems[itemId];
+          entry.doc.itemOrder.push(itemId);
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (suffix === '/children/reorder' && method === 'POST') {
+        const ordered = body.orderedNodes as Array<{ type: string; id: string }>;
+        if (Array.isArray(ordered) && body.parentGroupId == null) {
+          entry.doc.itemOrder = ordered.filter((node) => node.type === 'item').map((node) => node.id);
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
+    return new Response('not found', { status: 404 });
+  });
+
+  vi.stubGlobal('fetch', fetchMock);
+  return { state, getFetchMock: () => fetchMock };
+}

@@ -5,6 +5,10 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import ScreenSpecPage from '../../src/viewer/pages/ScreenSpecPage.vue';
 import DomPreview from '../../src/viewer/components/DomPreview.vue';
 import type { ManifestScreen, ScreenData, ViewerManifest } from '../../src/viewer/types';
+import {
+  stubDescriptionTreeFetch,
+  type MockTreeDoc,
+} from '../helpers/description-tree-fetch-mock';
 
 const designOnlyManifestScreen: ManifestScreen = {
   id: 'design-screen',
@@ -82,18 +86,32 @@ function mockFetchFor(
   screens: Record<string, ScreenData>,
   snapshots: Record<string, string> = {},
   description?: Record<string, unknown>,
+  options?: {
+    onFetch?: (
+      url: string,
+      method: string,
+      body: Record<string, unknown>,
+    ) => Response | Promise<Response> | null;
+  },
 ): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (
-        description &&
-        url.includes('/_jskim/spec/descriptions/') &&
-        (!init || init.method === 'GET' || !init.method)
-      ) {
-        return jsonResponse(description);
-      }
+  const treeInitial: Record<string, MockTreeDoc> = {};
+  if (description && typeof description === 'object') {
+    const screenId = String(description.screenId ?? '');
+    const document = description.document as Record<string, unknown> | undefined;
+    if (screenId && document) {
+      treeInitial[screenId] = {
+        screen: document.screen as MockTreeDoc['screen'],
+        itemOrder: (document.itemOrder as string[]) ?? [],
+        items: (document.items as MockTreeDoc['items']) ?? {},
+        excludedItems: (document.excludedItems as MockTreeDoc['excludedItems']) ?? {},
+        collectedItemIds: (description.collectedItemIds as string[]) ?? [],
+      };
+    }
+  }
+
+  stubDescriptionTreeFetch(treeInitial, {
+    onFetch: options?.onFetch,
+    extraHandler: (url, init) => {
       for (const [dataFile, data] of Object.entries(screens)) {
         if (url.endsWith(`/data/screens/${dataFile}.json`)) {
           return jsonResponse(data);
@@ -107,9 +125,16 @@ function mockFetchFor(
       if (url.endsWith('/data/theme/preview.css')) {
         return textResponse('/* preview */');
       }
-      return new Response('not found', { status: 404 });
-    }),
-  );
+      if (
+        description &&
+        url.includes('/_jskim/spec/descriptions/') &&
+        (!init || init.method === 'GET' || !init.method)
+      ) {
+        return jsonResponse(description);
+      }
+      return undefined;
+    },
+  });
 }
 
 async function mountPage(options: {
@@ -365,8 +390,8 @@ describe('ScreenSpecPage', () => {
     expect(wrapper.find('.excluded-items-panel__toggle').text()).toContain(
       '除外した項目（1）',
     );
-    expect(wrapper.find('.spec-page__status').attributes('data-status')).toBe(
-      'dirty',
+    expect(['saved', 'clean']).toContain(
+      wrapper.find('.spec-page__status').attributes('data-status'),
     );
 
     await flushPromises();
@@ -605,5 +630,110 @@ describe('ScreenSpecPage', () => {
     });
     expect(wrapper.text()).toContain('画面がまだありません');
     expect(wrapper.find('[data-action="delete-screen"]').exists()).toBe(false);
+  });
+
+  it('削除 mutation 失敗時は dialog と対象を保持する', async () => {
+    window.__JSKIM_SPEC_EDIT__ = {
+      enabled: true,
+      apiBase: '/_jskim/spec/descriptions',
+    };
+
+    const linkedManifest: ManifestScreen = {
+      id: 'linked-manual',
+      name: '手動削除',
+      path: '/linked-manual.html',
+      dataFile: 'screens/linked-manual.json',
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+    const linkedScreen: ScreenData = {
+      id: 'linked-manual',
+      name: '手動削除',
+      description: '',
+      path: '/linked-manual.html',
+      itemOrder: ['title', 'manual'],
+      items: {
+        title: { name: 'タイトル', type: 'text', description: '', note: '' },
+        manual: { name: '手動', type: 'text', description: '', note: '' },
+      },
+      states: [
+        {
+          id: 'default',
+          name: '初期',
+          viewer: { visible: true, order: 1 },
+          snapshotFile: 'snapshots/linked-manual/default.html',
+        },
+      ],
+      interactions: [],
+      status: 'linked',
+      hasDescription: true,
+      hasImplementation: true,
+      hasPreview: true,
+    };
+
+    stubDescriptionTreeFetch(
+      {
+        'linked-manual': {
+          screen: { id: 'linked-manual', name: '手動削除', description: '' },
+          itemOrder: ['title', 'manual'],
+          items: {
+            title: { name: 'タイトル', type: 'text', description: '', note: '' },
+            manual: { name: '手動', type: 'text', description: '', note: '' },
+          },
+          collectedItemIds: ['title'],
+        },
+      },
+      {
+        onFetch: (url, method) => {
+          if (url.includes('/items/manual/delete') && method === 'POST') {
+            return new Response(
+              JSON.stringify({
+                code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+                message: '衝突',
+              }),
+              {
+                status: 409,
+                headers: { 'Content-Type': 'application/json' },
+              },
+            );
+          }
+          return null;
+        },
+        extraHandler: (url) => {
+          if (url.endsWith('/data/screens/linked-manual.json')) {
+            return jsonResponse(linkedScreen);
+          }
+          if (url.endsWith('/data/snapshots/linked-manual/default.html')) {
+            return textResponse('<main></main>');
+          }
+          if (url.endsWith('/data/theme/preview.css')) {
+            return textResponse('/* preview */');
+          }
+          return undefined;
+        },
+      },
+    );
+
+    const wrapper = await mountPage({
+      screenId: 'linked-manual',
+      manifestScreens: [linkedManifest],
+      editingEnabled: true,
+    });
+    await flushPromises();
+
+    const manualRow = wrapper.find('#item-row-manual');
+    expect(manualRow.exists()).toBe(true);
+    await manualRow.find('[aria-label="削除"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('項目を削除しますか？');
+
+    await wrapper.find('[data-action="confirm-delete"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('項目を削除しますか？');
+    expect(wrapper.find('[data-action="confirm-delete"]').exists()).toBe(true);
+    expect(wrapper.find('#item-row-manual').exists()).toBe(true);
   });
 });

@@ -10,6 +10,8 @@ import {
 
 const props = defineProps<{
   existingItemIds: string[];
+  pending?: boolean;
+  submitDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +43,9 @@ function fieldError(field: keyof CreateItemFieldErrors): string {
 }
 
 function requestClose(): void {
+  if (props.pending) {
+    return;
+  }
   if (dirty.value) {
     const ok = window.confirm(
       '入力内容が保存されていません。このダイアログを閉じますか？',
@@ -57,6 +62,9 @@ function onOverlayClick(): void {
 }
 
 function onWindowKeydown(event: KeyboardEvent): void {
+  if (props.pending) {
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
     requestClose();
@@ -64,6 +72,9 @@ function onWindowKeydown(event: KeyboardEvent): void {
 }
 
 function onSubmit(): void {
+  if (props.pending || props.submitDisabled) {
+    return;
+  }
   const input = {
     itemId: itemId.value,
     name: name.value,
@@ -78,7 +89,6 @@ function onSubmit(): void {
     return;
   }
   emit('create', toCreateItemPayload(input));
-  emit('close');
 }
 
 onMounted(() => {
@@ -190,11 +200,18 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="spec-page__btn spec-page__btn--secondary"
+            :disabled="pending"
             @click="requestClose"
           >
             キャンセル
           </button>
-          <button type="submit" class="spec-page__btn">追加</button>
+          <button
+            type="submit"
+            class="spec-page__btn"
+            :disabled="pending || submitDisabled"
+          >
+            追加
+          </button>
         </div>
       </form>
     </div>
