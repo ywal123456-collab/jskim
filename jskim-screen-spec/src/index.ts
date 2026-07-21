@@ -68,6 +68,7 @@ export {
   validateDescriptionTreeSemantics,
   cloneNormalizedDescription,
   formatDescriptionDocumentV13,
+  formatDescriptionTreeForApi,
   readDescriptionRevision,
   createDescriptionGroup,
   updateDescriptionGroup,
@@ -108,6 +109,7 @@ export type {
   DescriptionTreeMutationContext,
   DescriptionTreeMutationResult,
   DescriptionTreeMutationAdapters,
+  DescriptionTreeApiDocument,
 } from './editing/description-document/index.js';
 export {
   writeFileAtomic,

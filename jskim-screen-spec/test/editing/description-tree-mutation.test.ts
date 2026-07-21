@@ -195,6 +195,28 @@ describe('Description tree mutation', () => {
     expect(fs.statSync(filePath).mtimeMs).toBe(mtime);
   });
 
+  it('Description ファイル無し read は NOT_FOUND', () => {
+    const root = tempRoot();
+    const state = readDescriptionTreeState(ctx(root));
+    expect(state).toHaveProperty('error');
+    if (!('error' in state)) {
+      return;
+    }
+    expect(state.error.code).toBe('SPEC_DESCRIPTION_NOT_FOUND');
+  });
+
+  it('Description ファイル無し mutation は NOT_FOUND', async () => {
+    const root = tempRoot();
+    await expect(
+      createDescriptionGroup(ctx(root), {
+        groupId: 'section',
+        name: 'Section',
+        kind: 'SECTION',
+        expectedRevision: 'sha256:deadbeef',
+      }),
+    ).rejects.toMatchObject({ code: 'SPEC_DESCRIPTION_NOT_FOUND' });
+  });
+
   it('expectedRevision 欠落を拒否する', async () => {
     const root = tempRoot();
     writeDescriptionFile(root, {

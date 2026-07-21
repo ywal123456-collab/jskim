@@ -607,6 +607,32 @@ subtree 削除時も **`excludedItems` 側のエントリは触らない**（tre
 
 Feature API（`createFeature`, `moveScreen`, …）と同型の **revision + expectedRevision CAS** を前提とする。
 
+### 11.0 Item Tree HTTP API（7F-1C-3A 実装済み）
+
+dev サーバー（`jskim spec dev`）の route 例:
+
+```text
+GET   /_jskim/spec/description-tree/:screenId
+POST  /_jskim/spec/description-tree/:screenId/groups
+PATCH /_jskim/spec/description-tree/:screenId/groups/:groupId
+```
+
+- GET: persisted raw `revision` + `sourceSchemaVersion` + normalized `description`（`schemaVersion: "1.3"` 表現）。**read-only**（lazy migration なし）
+- POST/PATCH: `{ status, revision }` を返す。v1.0–v1.2 への初回 Group mutation 成功時のみ v1.3 へ lazy migration
+- move / reorder / delete Group API は **未実装**
+- legacy flat Description PUT / Collector v1.3 mutation は **従来どおり fail-closed**
+
+**HTTP エラー mapping（domain code → status）:**
+
+| code | HTTP |
+|------|-----:|
+| `SPEC_DESCRIPTION_NOT_FOUND` / `SPEC_DESCRIPTION_SCREEN_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND` | 404 |
+| `SPEC_DESCRIPTION_INVALID` / `SPEC_DESCRIPTION_REVISION_REQUIRED` / `SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID` / `SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED` | 400 |
+| `SPEC_DESCRIPTION_REVISION_CONFLICT` / `SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS` / `SPEC_DESCRIPTION_NODE_ID_CONFLICT` / `SPEC_DESCRIPTION_MUTATION_IN_PROGRESS` | 409 |
+| 想定外（`SPEC_DESCRIPTION_INTERNAL` 等） | 500（汎用 message、path/stack 非露出） |
+
+message 文字列による status 判定は行わない。
+
 ### 11.1 最小 operation 一覧
 
 | operation | 概要 |
@@ -859,3 +885,4 @@ Revision API 投影も Item と同様 **browser-safe 文字列** のみ。
 | 2026-07-21 | 7F-1C-1A | Description mutation lock を `withDescriptionScreenLock` へ統合（project + screenId、filesystem lock、lock 後 revision 再検証） |
 | 2026-07-21 | 7F-1C-2A | moveNode / reorderChildren domain mutation（CAS + lazy migration + unchanged） |
 | 2026-07-21 | 7F-1C-2B | deleteGroup / deleteGroupSubtree domain mutation（children 昇格・subtree 削除・collected 保護） |
+| 2026-07-21 | 7F-1C-3A | Item Tree GET / createGroup / updateGroup HTTP API（legacy PUT は v1.3 fail-closed 維持） |

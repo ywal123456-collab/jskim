@@ -81,6 +81,11 @@ function createWatchRuntime(options) {
     typeof options.descriptionEditApi.handleRequest === 'function'
       ? options.descriptionEditApi
       : null;
+  const descriptionTreeApi =
+    options.descriptionTreeApi &&
+    typeof options.descriptionTreeApi.handleRequest === 'function'
+      ? options.descriptionTreeApi
+      : null;
   const deviceCaptureApi =
     options.deviceCaptureApi &&
     typeof options.deviceCaptureApi.handleRequest === 'function'
@@ -244,6 +249,12 @@ function createWatchRuntime(options) {
         if (
           descriptionEditApi &&
           (await descriptionEditApi.handleRequest(req, res, meta))
+        ) {
+          return true;
+        }
+        if (
+          descriptionTreeApi &&
+          (await descriptionTreeApi.handleRequest(req, res, meta))
         ) {
           return true;
         }

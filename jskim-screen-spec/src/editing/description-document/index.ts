@@ -42,6 +42,10 @@ export {
 } from './types.js';
 export { cloneNormalizedDescription } from './clone-normalized.js';
 export { formatDescriptionDocumentV13 } from './canonical-writer.js';
+export {
+  formatDescriptionTreeForApi,
+  type DescriptionTreeApiDocument,
+} from './format-description-tree-response.js';
 export { sortDescriptionItemMapKeys } from './sort-item-map-keys.js';
 export {
   descriptionDataFilePath,

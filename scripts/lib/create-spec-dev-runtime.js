@@ -11,6 +11,7 @@ const { runScreenSpecCollect } = require('./run-screen-spec-collect');
 const { createWatchRuntime } = require('./create-watch-runtime');
 const { createSpecDevOrchestrator } = require('./create-spec-dev-orchestrator');
 const { createDescriptionEditApi } = require('./create-description-edit-api');
+const { createDescriptionTreeApi } = require('./create-description-tree-api');
 const { createDeviceCaptureApi } = require('./create-device-capture-api');
 const { createReferenceImageApi } = require('./create-reference-image-api');
 const { createVersionHistoryApi } = require('./create-version-history-api');
@@ -89,6 +90,12 @@ function createSpecDevRuntime(options = {}) {
     let reorderFeatureScreens = options.reorderFeatureScreens;
     let moveFeatureDirection = options.moveFeatureDirection;
     let moveScreenFeatureDirection = options.moveScreenFeatureDirection;
+    let readDescriptionTreeState = options.readDescriptionTreeState;
+    let readDescriptionRevision = options.readDescriptionRevision;
+    let createDescriptionGroup = options.createDescriptionGroup;
+    let updateDescriptionGroup = options.updateDescriptionGroup;
+    let collectCollectedItemIdsForScreen = options.collectCollectedItemIdsForScreen;
+    let formatDescriptionTreeForApi = options.formatDescriptionTreeForApi;
 
     const needsCompanion =
       typeof collectScreenSpecProject !== 'function' ||
@@ -182,6 +189,19 @@ function createSpecDevRuntime(options = {}) {
         moveFeatureDirection || companion.moveFeatureDirection;
       moveScreenFeatureDirection =
         moveScreenFeatureDirection || companion.moveScreenFeatureDirection;
+      readDescriptionTreeState =
+        readDescriptionTreeState || companion.readDescriptionTreeState;
+      readDescriptionRevision =
+        readDescriptionRevision || companion.readDescriptionRevision;
+      createDescriptionGroup =
+        createDescriptionGroup || companion.createDescriptionGroup;
+      updateDescriptionGroup =
+        updateDescriptionGroup || companion.updateDescriptionGroup;
+      collectCollectedItemIdsForScreen =
+        collectCollectedItemIdsForScreen ||
+        companion.collectCollectedItemIdsForScreen;
+      formatDescriptionTreeForApi =
+        formatDescriptionTreeForApi || companion.formatDescriptionTreeForApi;
     }
 
     // テスト注入で companion を読まない場合のフォールバック（Capture API は 500）
@@ -289,6 +309,38 @@ function createSpecDevRuntime(options = {}) {
       withScreenLock: boundDescriptionScreenLock,
     });
 
+    const listProjectScreenIds = () => {
+      const loaded = loadScreenSpecProject({
+        rootDir: workspaceRoot,
+        projectName,
+      });
+      return loaded.screens.map((s) => s.screenId);
+    };
+
+    const descriptionTreeApi =
+      typeof readDescriptionTreeState === 'function' &&
+      typeof readDescriptionRevision === 'function' &&
+      typeof createDescriptionGroup === 'function' &&
+      typeof updateDescriptionGroup === 'function' &&
+      typeof collectCollectedItemIdsForScreen === 'function' &&
+      typeof formatDescriptionTreeForApi === 'function'
+        ? createDescriptionTreeApi({
+            rootDir: workspaceRoot,
+            projectName,
+            host,
+            port,
+            listScreenIds: listProjectScreenIds,
+            facade: {
+              readDescriptionTreeState,
+              readDescriptionRevision,
+              createDescriptionGroup,
+              updateDescriptionGroup,
+              collectCollectedItemIdsForScreen,
+              formatDescriptionTreeForApi,
+            },
+          })
+        : null;
+
     const deviceCaptureApi = createDeviceCaptureApi({
       rootDir: workspaceRoot,
       projectName,
@@ -395,6 +447,7 @@ function createSpecDevRuntime(options = {}) {
       injectVersionHistory: options.injectVersionHistory !== false,
       injectFeatureEditing: options.injectFeatureEditing !== false,
       descriptionEditApi,
+      descriptionTreeApi,
       deviceCaptureApi,
       referenceImageApi,
       versionHistoryApi,

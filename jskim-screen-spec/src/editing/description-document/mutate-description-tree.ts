@@ -212,7 +212,7 @@ async function runDescriptionTreeMutation(
 
   if (!existsSync(filePath)) {
     throw new DescriptionDocumentError({
-      code: 'SPEC_DESCRIPTION_INVALID',
+      code: 'SPEC_DESCRIPTION_NOT_FOUND',
       message: `画面「${ctx.screenId}」の Description JSON が存在しません。`,
     });
   }
@@ -419,7 +419,7 @@ export function readDescriptionTreeState(
   if (!fs.existsSync(filePath)) {
     return {
       error: {
-        code: 'SPEC_DESCRIPTION_INVALID',
+        code: 'SPEC_DESCRIPTION_NOT_FOUND',
         message: `画面「${ctx.screenId}」の Description JSON が存在しません。`,
       },
     };
