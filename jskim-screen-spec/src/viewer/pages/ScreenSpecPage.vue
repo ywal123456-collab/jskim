@@ -13,10 +13,13 @@ import DuplicateItemDialog from '../components/DuplicateItemDialog.vue';
 import DeleteItemDialog from '../components/DeleteItemDialog.vue';
 import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
+import ItemTreePanel from '../components/ItemTreePanel.vue';
+import GroupInfoPanel from '../components/GroupInfoPanel.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
 import { useDescriptionEditor } from '../editing/useDescriptionEditor';
+import { useDescriptionTreePanel } from '../editing/use-description-tree-panel';
 import { useVersionHistory } from '../version-history/use-version-history';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
 import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
@@ -88,6 +91,20 @@ const deleteScreenDialogOpen = ref(false);
 const deleteSuccessMessage = ref('');
 
 const editor = useDescriptionEditor(() => props.screenId);
+
+const manifestEntry = computed(
+  () => manifest?.value.screens.find((s) => s.id === props.screenId) ?? null,
+);
+
+const screenHasDescription = computed(() => {
+  if (props.screenId === '_empty') {
+    return false;
+  }
+  if (manifestEntry.value?.hasDescription != null) {
+    return manifestEntry.value.hasDescription;
+  }
+  return Boolean(screen.value?.hasDescription);
+});
 
 const projectName = computed(
   () => manifest?.value.projectName || 'default',
@@ -547,6 +564,35 @@ function onSelectItem(itemId: string): void {
     row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
+
+const descriptionTree = useDescriptionTreePanel({
+  screenId: () => props.screenId,
+  hasDescription: () => screenHasDescription.value,
+  onSelectItem,
+  onClearItemSelection: () => {
+    selectedItemId.value = null;
+  },
+});
+
+const {
+  treeStatus,
+  treeResponse,
+  treeError,
+  expandedGroupIds,
+  selectedTreeNode: selectedTreeNodeRef,
+  reloadTree,
+  toggleGroupExpanded,
+  selectTreeGroup,
+  selectTreeItem,
+} = descriptionTree;
+
+watch(selectedItemId, (itemId) => {
+  if (itemId) {
+    selectedTreeNodeRef.value = { type: 'item', id: itemId };
+  } else if (selectedTreeNodeRef.value?.type === 'item') {
+    selectedTreeNodeRef.value = null;
+  }
+});
 
 function syncSelectionAfterOrderChange(
   previousOrder: string[],
@@ -1108,38 +1154,89 @@ watch(
               ＋ 項目を追加
             </button>
           </div>
-          <ItemDescriptionTable
-            :screen="screen"
-            :selected-item-id="selectedItemId"
-            :editable="editor.editingEnabled"
-            :draft-items="editor.draftDocument.value?.items || null"
-            :item-order="editor.editingEnabled ? displayItemOrder : null"
-            :collected-item-ids="
-              editor.editingEnabled ? editor.collectedItemIds.value : null
-            "
-            @select="onSelectItem"
-            @change-state="onSelectState"
-            @update-item="
-              (itemId, field, value) => editor.updateItemField(itemId, field, value)
-            "
-            @move-up="editor.moveItemUp"
-            @move-down="editor.moveItemDown"
-            @duplicate="openDuplicateItem"
-            @remove="openDeleteItem"
-            @exclude="openExcludeItem"
-          />
 
-          <ExcludedItemsPanel
-            v-if="
-              editor.editingEnabled &&
-              editor.draftDocument.value &&
-              Object.keys(editor.draftDocument.value.excludedItems || {}).length >
-                0
-            "
-            :excluded-items="editor.draftDocument.value.excludedItems"
-            :collected-item-ids="editor.collectedItemIds.value"
-            @restore="onRestoreExcludedItem"
-          />
+          <div
+            v-if="screenHasDescription"
+            class="spec-page__items-workspace"
+          >
+            <ItemTreePanel
+              :status="treeStatus"
+              :response="treeResponse"
+              :error-message="treeError"
+              :expanded-group-ids="expandedGroupIds"
+              :selected-tree-node="selectedTreeNodeRef"
+              @reload="reloadTree()"
+              @toggle-group="toggleGroupExpanded"
+              @select-group="selectTreeGroup"
+              @select-item="selectTreeItem"
+            />
+
+            <div class="spec-page__items-detail">
+              <GroupInfoPanel
+                v-if="
+                  selectedTreeNodeRef?.type === 'group' &&
+                  treeResponse
+                "
+                :group-id="selectedTreeNodeRef.id"
+                :response="treeResponse"
+              />
+              <ItemDescriptionTable
+                :screen="screen"
+                :selected-item-id="selectedItemId"
+                :editable="editor.editingEnabled"
+                :draft-items="editor.draftDocument.value?.items || null"
+                :item-order="editor.editingEnabled ? displayItemOrder : null"
+                :collected-item-ids="
+                  editor.editingEnabled ? editor.collectedItemIds.value : null
+                "
+                @select="onSelectItem"
+                @change-state="onSelectState"
+                @update-item="
+                  (itemId, field, value) => editor.updateItemField(itemId, field, value)
+                "
+                @move-up="editor.moveItemUp"
+                @move-down="editor.moveItemDown"
+                @duplicate="openDuplicateItem"
+                @remove="openDeleteItem"
+                @exclude="openExcludeItem"
+              />
+
+              <ExcludedItemsPanel
+                v-if="
+                  editor.editingEnabled &&
+                  editor.draftDocument.value &&
+                  Object.keys(editor.draftDocument.value.excludedItems || {}).length >
+                    0
+                "
+                :excluded-items="editor.draftDocument.value.excludedItems"
+                :collected-item-ids="editor.collectedItemIds.value"
+                @restore="onRestoreExcludedItem"
+              />
+            </div>
+          </div>
+
+          <template v-else>
+            <ItemDescriptionTable
+              :screen="screen"
+              :selected-item-id="selectedItemId"
+              :editable="editor.editingEnabled"
+              :draft-items="editor.draftDocument.value?.items || null"
+              :item-order="editor.editingEnabled ? displayItemOrder : null"
+              :collected-item-ids="
+                editor.editingEnabled ? editor.collectedItemIds.value : null
+              "
+              @select="onSelectItem"
+              @change-state="onSelectState"
+              @update-item="
+                (itemId, field, value) => editor.updateItemField(itemId, field, value)
+              "
+              @move-up="editor.moveItemUp"
+              @move-down="editor.moveItemDown"
+              @duplicate="openDuplicateItem"
+              @remove="openDeleteItem"
+              @exclude="openExcludeItem"
+            />
+          </template>
         </section>
       </div>
     </div>

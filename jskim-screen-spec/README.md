@@ -32,7 +32,8 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 - **Phase 7F-1C-1 実装済み**: v1.3 canonical writer / lazy migration / `createDescriptionGroup` / `updateDescriptionGroup`（domain mutation API のみ。HTTP / Viewer UI 未接続）
 - **Phase 7F-1C-2A 実装済み**: `moveDescriptionNode` / `reorderDescriptionChildren`（node 移動・同一 parent 並べ替え。HTTP / Viewer UI 未接続）
 - **Phase 7F-1C-2B 実装済み**: `deleteDescriptionGroup` / `deleteDescriptionGroupSubtree`（Group 解除・subtree 削除・collected Item 保護。HTTP / Viewer UI 未接続）
-- **Phase 7F-1C-3B 実装済み**: Item Tree GET / Group create・update / move・reorder・delete HTTP API（`/_jskim/spec/description-tree/...`）。Viewer tree UI は未接続
+- **Phase 7F-1C-3B 実装済み**: Item Tree GET / Group create・update / move・reorder・delete HTTP API（`/_jskim/spec/description-tree/...`）
+- **Phase 7F-1D-1 実装済み**: Viewer Item Tree 参照・探索 UI（GET のみ接続）。Group 作成・編集・移動・削除 UI は未実装
 - **Item Group 編集 UI / HTTP API** — 未実装
 
 ### CLI 最小 workflow

@@ -624,6 +624,7 @@ POST  /_jskim/spec/description-tree/:screenId/groups/:groupId/delete-subtree
 - GET: persisted raw `revision` + `sourceSchemaVersion` + normalized `description`（`schemaVersion: "1.3"` 表現）。**read-only**（lazy migration なし）
 - POST/PATCH / action POST: `{ status, revision }` を返す。v1.0–v1.2 への初回 tree mutation 成功時のみ v1.3 へ lazy migration
 - Viewer tree UI / Item create-update / exclude-restore / Collector Group annotation は **未実装**
+- **Phase 7F-1D-1**: Viewer Item Tree 参照・探索 UI 実装済み（GET `/_jskim/spec/description-tree/:screenId` のみ）。Group 編集 UI は未実装
 - legacy flat Description PUT / Collector v1.3 mutation は **従来どおり fail-closed**
 
 **moveNode 例:**
