@@ -29,6 +29,10 @@ import type {
 import { applyDeleteGroupSubtree } from './delete-group-subtree.js';
 import type { ApplyUpdateGroupResult, UpdateGroupInput } from './update-group.js';
 import { applyUpdateGroup } from './update-group.js';
+import type { ApplyUpdateItemResult, UpdateItemInput } from './update-item.js';
+import { applyUpdateItem } from './update-item.js';
+import type { CreateItemInput } from './create-item.js';
+import { applyCreateItem } from './create-item.js';
 import { collectCollectedItemIdsForScreen } from '../collect-collected-item-ids.js';
 import { validateDescriptionStructure } from './validate-description-structure.js';
 import { validateDescriptionTreeSemantics } from './validate-description-tree-semantics.js';
@@ -400,6 +404,48 @@ export async function deleteDescriptionGroupSubtree(
         deleteInput,
         collectedItemIds,
       );
+      return result.normalized;
+    },
+  });
+}
+
+export async function createDescriptionItem(
+  ctx: DescriptionTreeMutationContext,
+  options: CreateItemInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...createInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'create-item',
+    adapters,
+    apply: (normalized) => applyCreateItem(normalized, createInput),
+  });
+}
+
+export async function updateDescriptionItem(
+  ctx: DescriptionTreeMutationContext,
+  options: UpdateItemInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...updateInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'update-item',
+    adapters,
+    apply: (normalized) => {
+      const result: ApplyUpdateItemResult = applyUpdateItem(normalized, updateInput);
+      if (result.status === 'unchanged') {
+        return 'unchanged';
+      }
       return result.normalized;
     },
   });

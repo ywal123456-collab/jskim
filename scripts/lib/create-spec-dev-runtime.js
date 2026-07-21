@@ -98,6 +98,8 @@ function createSpecDevRuntime(options = {}) {
     let reorderDescriptionChildren = options.reorderDescriptionChildren;
     let deleteDescriptionGroup = options.deleteDescriptionGroup;
     let deleteDescriptionGroupSubtree = options.deleteDescriptionGroupSubtree;
+    let createDescriptionItem = options.createDescriptionItem;
+    let updateDescriptionItem = options.updateDescriptionItem;
     let collectCollectedItemIdsForScreen = options.collectCollectedItemIdsForScreen;
     let formatDescriptionTreeForApi = options.formatDescriptionTreeForApi;
 
@@ -209,6 +211,10 @@ function createSpecDevRuntime(options = {}) {
         deleteDescriptionGroup || companion.deleteDescriptionGroup;
       deleteDescriptionGroupSubtree =
         deleteDescriptionGroupSubtree || companion.deleteDescriptionGroupSubtree;
+      createDescriptionItem =
+        createDescriptionItem || companion.createDescriptionItem;
+      updateDescriptionItem =
+        updateDescriptionItem || companion.updateDescriptionItem;
       collectCollectedItemIdsForScreen =
         collectCollectedItemIdsForScreen ||
         companion.collectCollectedItemIdsForScreen;
@@ -338,6 +344,8 @@ function createSpecDevRuntime(options = {}) {
       typeof reorderDescriptionChildren === 'function' &&
       typeof deleteDescriptionGroup === 'function' &&
       typeof deleteDescriptionGroupSubtree === 'function' &&
+      typeof createDescriptionItem === 'function' &&
+      typeof updateDescriptionItem === 'function' &&
       typeof collectCollectedItemIdsForScreen === 'function' &&
       typeof formatDescriptionTreeForApi === 'function'
         ? createDescriptionTreeApi({
@@ -355,6 +363,8 @@ function createSpecDevRuntime(options = {}) {
               reorderDescriptionChildren,
               deleteDescriptionGroup,
               deleteDescriptionGroupSubtree,
+              createDescriptionItem,
+              updateDescriptionItem,
               collectCollectedItemIdsForScreen,
               formatDescriptionTreeForApi,
             },

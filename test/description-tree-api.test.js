@@ -136,6 +136,8 @@ describe('description-tree API', () => {
         reorderDescriptionChildren: companion.reorderDescriptionChildren,
         deleteDescriptionGroup: companion.deleteDescriptionGroup,
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
+        createDescriptionItem: companion.createDescriptionItem,
+        updateDescriptionItem: companion.updateDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -447,6 +449,8 @@ describe('description-tree API', () => {
         reorderDescriptionChildren: companion.reorderDescriptionChildren,
         deleteDescriptionGroup: companion.deleteDescriptionGroup,
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
+        createDescriptionItem: companion.createDescriptionItem,
+        updateDescriptionItem: companion.updateDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -518,6 +522,7 @@ describe('description-tree API', () => {
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_INVALID'), 400);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_REVISION_REQUIRED'), 400);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID'), 400);
+    assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_ITEM_INSERT_INDEX_INVALID'), 400);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED'), 400);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_REVISION_CONFLICT'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS'), 409);
@@ -615,6 +620,8 @@ describe('description-tree API', () => {
         reorderDescriptionChildren: companion.reorderDescriptionChildren,
         deleteDescriptionGroup: companion.deleteDescriptionGroup,
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
+        createDescriptionItem: companion.createDescriptionItem,
+        updateDescriptionItem: companion.updateDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -747,5 +754,273 @@ describe('description-tree API', () => {
       fs.readFileSync(path.join(dataDir, 'demo-screen.json'), 'utf8'),
     );
     assert.equal(afterFollowUp.groups.length, 2);
+  });
+
+  it('POST createItem で 201 + PATCH updateItem で updated/unchanged を返す', async () => {
+    const { rootDir, dataDir, port } = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.2',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        itemOrder: ['item-a'],
+        items: { 'item-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    const revision = companion.readDescriptionRevision(rootDir, 'demo', 'demo-screen');
+    const headers = {
+      Host: `127.0.0.1:${port}`,
+      Origin: `http://127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+    };
+    const create = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: revision,
+        itemId: 'manual-note',
+        name: '備考',
+        type: 'text',
+        description: '',
+        note: '',
+        parentGroupId: null,
+        insertIndex: 0,
+      }),
+    });
+    assert.equal(create.status, 201);
+    const createJson = parseJson(create);
+    assert.equal(createJson.status, 'updated');
+    assert.match(createJson.revision, /^sha256:/);
+    const saved = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'demo-screen.json'), 'utf8'),
+    );
+    assert.equal(saved.schemaVersion, '1.3');
+    assert.deepEqual(saved.rootNodes[0], { type: 'item', id: 'manual-note' });
+
+    const update = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: createJson.revision,
+        name: '変更後の名称',
+        description: '変更後の説明',
+      }),
+    });
+    assert.equal(update.status, 200);
+    assert.equal(parseJson(update).status, 'updated');
+    const updateRevision = parseJson(update).revision;
+
+    const unchanged = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: updateRevision,
+        name: '変更後の名称',
+        description: '変更後の説明',
+      }),
+    });
+    assert.equal(unchanged.status, 200);
+    assert.equal(parseJson(unchanged).status, 'unchanged');
+    assert.equal(parseJson(unchanged).revision, updateRevision);
+  });
+
+  it('Item API は expectedRevision 欠落 / conflict / not found / empty PATCH / same-origin / body / Content-Type を処理する', async () => {
+    const { rootDir, port } = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [{ type: 'item', id: 'item-a' }],
+        groups: [],
+        items: { 'item-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    const revision = companion.readDescriptionRevision(rootDir, 'demo', 'demo-screen');
+    const headers = {
+      Host: `127.0.0.1:${port}`,
+      Origin: `http://127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+    };
+
+    const missingRevision = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers,
+      body: JSON.stringify({
+        itemId: 'manual-a',
+        name: 'A',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(missingRevision.status, 400);
+    assert.equal(parseJson(missingRevision).code, 'SPEC_DESCRIPTION_REVISION_REQUIRED');
+
+    const conflict = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: 'sha256:deadbeef',
+        itemId: 'manual-a',
+        name: 'A',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(conflict.status, 409);
+
+    const idConflict = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: revision,
+        itemId: 'item-a',
+        name: 'Dup',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(idConflict.status, 409);
+    assert.equal(parseJson(idConflict).code, 'SPEC_DESCRIPTION_NODE_ID_CONFLICT');
+
+    const missingItem = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/missing-item'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: revision,
+        name: 'X',
+      }),
+    });
+    assert.equal(missingItem.status, 404);
+    assert.equal(parseJson(missingItem).code, 'SPEC_DESCRIPTION_NODE_NOT_FOUND');
+
+    const emptyPatch = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(emptyPatch.status, 400);
+
+    const unknownField = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a'),
+      headers,
+      body: JSON.stringify({
+        expectedRevision: revision,
+        name: 'X',
+        itemId: 'other',
+      }),
+    });
+    assert.equal(unknownField.status, 400);
+
+    const forbiddenOrigin = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers: {
+        Host: `127.0.0.1:${port}`,
+        Origin: 'http://evil.example',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        expectedRevision: revision,
+        itemId: 'manual-a',
+        name: 'A',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(forbiddenOrigin.status, 403);
+
+    const tooLarge = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers,
+      body: 'x'.repeat(256 * 1024 + 1),
+    });
+    assert.equal(tooLarge.status, 413);
+
+    const badContentType = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/item-a'),
+      headers: {
+        Host: `127.0.0.1:${port}`,
+        Origin: `http://127.0.0.1:${port}`,
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({ expectedRevision: revision, name: 'X' }),
+    });
+    assert.equal(badContentType.status, 415);
+
+    const patchCollection = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items'),
+      headers: {
+        Host: `127.0.0.1:${port}`,
+        Origin: `http://127.0.0.1:${port}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expectedRevision: revision, name: 'X' }),
+    });
+    assert.equal(patchCollection.status, 405);
+    assert.equal(patchCollection.headers.allow, 'POST');
+  });
+
+  it('Item API 応答は security headers を付与する', async () => {
+    const { rootDir, port } = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [],
+        groups: [],
+        items: {},
+        excludedItems: {},
+      },
+    });
+    const revision = companion.readDescriptionRevision(rootDir, 'demo', 'demo-screen');
+    const res = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers: {
+        Host: `127.0.0.1:${port}`,
+        Origin: `http://127.0.0.1:${port}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        expectedRevision: revision,
+        itemId: 'manual-a',
+        name: 'A',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    assert.equal(res.headers['x-content-type-options'], 'nosniff');
+    assert.match(res.headers['content-type'], /application\/json/);
   });
 });

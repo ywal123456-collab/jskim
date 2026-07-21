@@ -54,11 +54,17 @@ export {
 } from './paths.js';
 export { readDescriptionRevision } from './description-revision.js';
 export { applyCreateGroup, type CreateGroupInput } from './create-group.js';
+export { applyCreateItem, type CreateItemInput } from './create-item.js';
 export {
   applyUpdateGroup,
   type UpdateGroupInput,
   type ApplyUpdateGroupResult,
 } from './update-group.js';
+export {
+  applyUpdateItem,
+  type UpdateItemInput,
+  type ApplyUpdateItemResult,
+} from './update-item.js';
 export { findNodeLocation, type NodeLocation } from './find-node-location.js';
 export { applyMoveNode, type MoveNodeInput, type ApplyMoveNodeResult } from './move-node.js';
 export {
@@ -81,6 +87,8 @@ export {
   reorderDescriptionChildren,
   deleteDescriptionGroup,
   deleteDescriptionGroupSubtree,
+  createDescriptionItem,
+  updateDescriptionItem,
   readDescriptionTreeState,
   type DescriptionTreeMutationContext,
   type DescriptionTreeMutationAdapters,

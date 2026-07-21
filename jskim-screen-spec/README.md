@@ -27,15 +27,15 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 ### 未実装
 
 - Viewer mutation UI、Excel Export、Remote Provider
-- **Item Group 編集 UI / mutation API**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）
+- **Item Group 編集 UI**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）— Group 作成 UI は Item 編集 API 接続後に公開
 - **Phase 7F-1B 実装済み**: Description v1.3 schema / read-only normalize / semantic validator / flat projection（`readDescriptionDocument` 等）
 - **Phase 7F-1C-1 実装済み**: v1.3 canonical writer / lazy migration / `createDescriptionGroup` / `updateDescriptionGroup`（domain mutation API のみ。HTTP / Viewer UI 未接続）
 - **Phase 7F-1C-2A 実装済み**: `moveDescriptionNode` / `reorderDescriptionChildren`（node 移動・同一 parent 並べ替え。HTTP / Viewer UI 未接続）
 - **Phase 7F-1C-2B 実装済み**: `deleteDescriptionGroup` / `deleteDescriptionGroupSubtree`（Group 解除・subtree 削除・collected Item 保護。HTTP / Viewer UI 未接続）
 - **Phase 7F-1C-3B 実装済み**: Item Tree GET / Group create・update / move・reorder・delete HTTP API（`/_jskim/spec/description-tree/...`）
 - **Phase 7F-1D-1 実装済み**: Viewer Item Tree 参照・探索 UI（GET のみ接続）。Group 作成・編集・移動・削除 UI は未実装
-- **Phase 7F-1C-4A 設計済み**: v1.3 Item 編集移行（[item-edit-v1.3-migration.md](../docs/screen-spec/item-edit-v1.3-migration.md)）。domain / HTTP / Viewer 接続は未実装
-- **Item Group 編集 UI** — Group 作成 UI は Item 編集 API 接続後に公開（設計書参照）
+- **Phase 7F-1C-4A 設計済み**: v1.3 Item 編集移行（[item-edit-v1.3-migration.md](../docs/screen-spec/item-edit-v1.3-migration.md)）
+- **Phase 7F-1C-4B 実装済み**: `updateDescriptionItem` / `createDescriptionItem` domain + HTTP（POST/PATCH items）。delete / exclude / restore / Viewer Item editor 接続は未実装
 
 ### CLI 最小 workflow
 

@@ -523,7 +523,9 @@ excludedItems にある → 設計対象外（tree 非表示）
 
 ---
 
-## 8. HTTP API 設計（未実装・Phase 7F-1C-4B/4C）
+## 8. HTTP API 設計
+
+**Phase 7F-1C-4B 実装済み:** `updateItem` / `createItem` domain + HTTP（下記 POST/PATCH items）。**未実装:** delete / exclude / restore routes（Phase 7F-1C-4C）。
 
 既存 Tree API prefix に揃えます。
 
@@ -656,7 +658,8 @@ lazy migration → v1.3
 次を **すべて満たすまで** Group 作成・編集 Viewer UI（7F-1D-3）を **公開しない**。
 
 ```text
-□ updateItem / createItem / deleteItem / excludeItem / restoreItem domain + HTTP 実装
+□ updateItem / createItem domain + HTTP 実装済み（Phase 7F-1C-4B）
+□ deleteItem / excludeItem / restoreItem domain + HTTP 実装
 □ Viewer Item editor の v1.3 Item API 接続（7F-1D-2）
 □ shared descriptionRevision + mutation / GET race 防御 + 409 conflict UI 検証
 □ v1.2 → v1.3 lazy migration（Item mutation 経由）の regression テスト
@@ -797,7 +800,7 @@ Item Tree GET race（Phase 7F-1D-1）とは **別問題**。
 
 | Phase | 内容 |
 |-------|------|
-| **7F-1C-4B** | `updateDescriptionItem` / `createDescriptionItem` domain + HTTP |
+| **7F-1C-4B** | `updateDescriptionItem` / `createDescriptionItem` domain + HTTP — **実装済み** |
 | **7F-1C-4C** | `deleteDescriptionItem` / `excludeDescriptionItem` / `restoreDescriptionItem` domain + HTTP |
 | **7F-1D-2** | Viewer Item editor → tree Item API 接続、revision 共有、409 UI |
 | **7F-1D-3** | Group 作成・編集 UI |

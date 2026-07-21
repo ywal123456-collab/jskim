@@ -190,6 +190,8 @@ describe('description-tree mutation API', () => {
         reorderDescriptionChildren: companion.reorderDescriptionChildren,
         deleteDescriptionGroup: companion.deleteDescriptionGroup,
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
+        createDescriptionItem: companion.createDescriptionItem,
+        updateDescriptionItem: companion.updateDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -1060,6 +1062,54 @@ describe('description-tree mutation API', () => {
     ]);
     assert.deepEqual([subtreeRes.status, moveRes2.status].sort(), [200, 409]);
     assertNoLockResidue(subtreeSession.rootDir);
+    assertNoLockResidue(rootDir);
+  });
+
+  it('POST createItem と POST createGroup は同一 revision / lock を共有する', async () => {
+    const session = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [],
+        groups: [],
+        items: {},
+        excludedItems: {},
+      },
+    });
+    const { rootDir, port } = session;
+    const before = await getTree(port);
+    const createItemRes = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items'),
+      headers: jsonHeaders(port),
+      body: JSON.stringify({
+        expectedRevision: before.revision,
+        itemId: 'manual-a',
+        name: 'Manual',
+        type: 'text',
+        description: '',
+        note: '',
+      }),
+    });
+    assert.equal(createItemRes.status, 201);
+    const itemJson = parseJson(createItemRes);
+    await assertRevisionAligned(rootDir, port, itemJson, before.revision);
+
+    const createGroupRes = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/groups'),
+      headers: jsonHeaders(port),
+      body: JSON.stringify({
+        expectedRevision: itemJson.revision,
+        groupId: 'section',
+        name: 'Section',
+        kind: 'SECTION',
+      }),
+    });
+    assert.equal(createGroupRes.status, 201);
+    await assertRevisionAligned(rootDir, port, parseJson(createGroupRes), itemJson.revision);
     assertNoLockResidue(rootDir);
   });
 });
