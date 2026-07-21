@@ -62,12 +62,21 @@ export {
   type ReorderChildrenInput,
   type ApplyReorderChildrenResult,
 } from './reorder-children.js';
+export { collectGroupSubtree, type GroupSubtreeCollection } from './collect-group-subtree.js';
+export { applyDeleteGroup, type DeleteGroupInput, type ApplyDeleteGroupResult } from './delete-group.js';
+export {
+  applyDeleteGroupSubtree,
+  type DeleteGroupSubtreeInput,
+  type ApplyDeleteGroupSubtreeResult,
+} from './delete-group-subtree.js';
 export {
   mutateDescriptionTree,
   createDescriptionGroup,
   updateDescriptionGroup,
   moveDescriptionNode,
   reorderDescriptionChildren,
+  deleteDescriptionGroup,
+  deleteDescriptionGroupSubtree,
   readDescriptionTreeState,
   type DescriptionTreeMutationContext,
   type DescriptionTreeMutationAdapters,

@@ -73,12 +73,18 @@ export {
   updateDescriptionGroup,
   moveDescriptionNode,
   reorderDescriptionChildren,
+  deleteDescriptionGroup,
+  deleteDescriptionGroupSubtree,
   mutateDescriptionTree,
   readDescriptionTreeState,
   findNodeLocation,
   applyMoveNode,
   applyReorderChildren,
+  applyDeleteGroup,
+  applyDeleteGroupSubtree,
+  collectGroupSubtree,
 } from './editing/description-document/index.js';
+export { collectCollectedItemIdsForScreen } from './editing/collect-collected-item-ids.js';
 export type {
   ReadDescriptionDocumentOptions,
   ReadDescriptionDocumentResult,
@@ -95,6 +101,9 @@ export type {
   UpdateGroupInput,
   MoveNodeInput,
   ReorderChildrenInput,
+  DeleteGroupInput,
+  DeleteGroupSubtreeInput,
+  GroupSubtreeCollection,
   NodeLocation,
   DescriptionTreeMutationContext,
   DescriptionTreeMutationResult,

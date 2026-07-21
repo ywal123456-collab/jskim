@@ -613,11 +613,10 @@ Feature API（`createFeature`, `moveScreen`, …）と同型の **revision + exp
 |-----------|------|
 | `createGroup` | 新 `groupId`、kind、初期 children（空可）、挿入位置 |
 | `updateGroup` | `name` / `description` / `kind` 変更（tree 構造は別 op） |
-| `deleteGroup` | §10 B（children 昇格） |
-| `deleteGroupSubtree` | §10 A |
+| `deleteGroup` | §10 B（children 昇格）。UI 上の「グループ解除」も **同一 operation**（独立 `ungroup` API なし） |
+| `deleteGroupSubtree` | §10 A（subtree 全体削除。collected Item 含有時は atomic 拒否） |
 | `moveNode` | SpecNodeRef を別 parent（または root）へ移動 |
 | `reorderChildren` | 同一 parent 内の順序変更 |
-| `ungroup` | `deleteGroup` の別名（昇格のみ） |
 
 Item 固有の `addItem` / `deleteItem` / `excludeItem` / `restoreItem` は **現行を維持**し、tree 更新と **同一 transaction** で行う。
 
@@ -859,3 +858,4 @@ Revision API 投影も Item と同様 **browser-safe 文字列** のみ。
 | 2026-07-21 | 7F-1C-1 | v1.3 canonical writer・lazy migration・createGroup/updateGroup mutation（domain API のみ）を実装 |
 | 2026-07-21 | 7F-1C-1A | Description mutation lock を `withDescriptionScreenLock` へ統合（project + screenId、filesystem lock、lock 後 revision 再検証） |
 | 2026-07-21 | 7F-1C-2A | moveNode / reorderChildren domain mutation（CAS + lazy migration + unchanged） |
+| 2026-07-21 | 7F-1C-2B | deleteGroup / deleteGroupSubtree domain mutation（children 昇格・subtree 削除・collected 保護） |

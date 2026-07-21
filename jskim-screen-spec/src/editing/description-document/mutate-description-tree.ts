@@ -20,8 +20,16 @@ import type { ApplyMoveNodeResult, MoveNodeInput } from './move-node.js';
 import { applyMoveNode } from './move-node.js';
 import type { ApplyReorderChildrenResult, ReorderChildrenInput } from './reorder-children.js';
 import { applyReorderChildren } from './reorder-children.js';
+import type { ApplyDeleteGroupResult, DeleteGroupInput } from './delete-group.js';
+import { applyDeleteGroup } from './delete-group.js';
+import type {
+  ApplyDeleteGroupSubtreeResult,
+  DeleteGroupSubtreeInput,
+} from './delete-group-subtree.js';
+import { applyDeleteGroupSubtree } from './delete-group-subtree.js';
 import type { ApplyUpdateGroupResult, UpdateGroupInput } from './update-group.js';
 import { applyUpdateGroup } from './update-group.js';
+import { collectCollectedItemIdsForScreen } from '../collect-collected-item-ids.js';
 import { validateDescriptionStructure } from './validate-description-structure.js';
 import { validateDescriptionTreeSemantics } from './validate-description-tree-semantics.js';
 import type { NormalizedDescription } from './types.js';
@@ -345,6 +353,53 @@ export async function reorderDescriptionChildren(
       if (result.status === 'unchanged') {
         return 'unchanged';
       }
+      return result.normalized;
+    },
+  });
+}
+
+export async function deleteDescriptionGroup(
+  ctx: DescriptionTreeMutationContext,
+  options: DeleteGroupInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...deleteInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'delete-group',
+    adapters,
+    apply: (normalized) => {
+      const result: ApplyDeleteGroupResult = applyDeleteGroup(normalized, deleteInput);
+      return result.normalized;
+    },
+  });
+}
+
+export async function deleteDescriptionGroupSubtree(
+  ctx: DescriptionTreeMutationContext,
+  options: DeleteGroupSubtreeInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...deleteInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'delete-group-subtree',
+    adapters,
+    apply: (normalized) => {
+      const collectedItemIds = collectCollectedItemIdsForScreen(ctx);
+      const result: ApplyDeleteGroupSubtreeResult = applyDeleteGroupSubtree(
+        normalized,
+        deleteInput,
+        collectedItemIds,
+      );
       return result.normalized;
     },
   });
