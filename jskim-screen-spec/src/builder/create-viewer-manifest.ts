@@ -10,6 +10,10 @@ import {
   computeEffectiveItemOrder,
   extractItemIdsInDomOrder,
 } from './item-order.js';
+import {
+  flattenItemTree,
+  normalizeDescriptionSpec,
+} from '../editing/description-document/index.js';
 import { sanitizeSnapshot } from './sanitize-snapshot.js';
 import {
   rewriteResourceTokens,
@@ -171,6 +175,26 @@ function itemsFromDescriptionSpec(
     };
   }
   return items;
+}
+
+function itemOrderFromDescription(
+  description: LoadedScreen['description'],
+  collectedOrder: string[] | null,
+): string[] {
+  if (!description) {
+    return [];
+  }
+  const items = itemsFromDescriptionSpec(description);
+  if (description.schemaVersion === '1.3') {
+    return flattenItemTree(
+      normalizeDescriptionSpec(description, { collectedOrder }),
+    );
+  }
+  return computeEffectiveItemOrder({
+    items,
+    itemOrder: description.itemOrder,
+    collectedOrder,
+  });
 }
 
 /**
@@ -407,11 +431,7 @@ export function createViewerManifest(options: {
 
     if (screen.status === 'design-only') {
       items = itemsFromDescriptionSpec(screen.description);
-      itemOrder = computeEffectiveItemOrder({
-        items,
-        itemOrder: screen.description?.itemOrder,
-        collectedOrder: null,
-      });
+      itemOrder = itemOrderFromDescription(screen.description, null);
       description = screen.description?.screen.description ?? '';
       // DESIGN_ONLY は Capture を manifest に載せない（Reference は載せる）
     } else {
@@ -437,11 +457,10 @@ export function createViewerManifest(options: {
         description = '';
       } else {
         items = itemsFromDescriptionSpec(screen.description);
-        itemOrder = computeEffectiveItemOrder({
-          items,
-          itemOrder: screen.description?.itemOrder,
-          collectedOrder: built.itemOrder,
-        });
+        itemOrder = itemOrderFromDescription(
+          screen.description,
+          built.itemOrder,
+        );
         description = screen.description?.screen.description ?? '';
       }
     }

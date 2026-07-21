@@ -1,5 +1,6 @@
 import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
 import { mergeItemOrder } from '../builder/item-order.js';
+import { assertDescriptionMutationSupported } from '../editing/description-document/index.js';
 
 export type MergeDescriptionResult = {
   description: DescriptionSpec;
@@ -35,6 +36,10 @@ export function mergeDescription(options: {
   foundItemIds: string[];
 }): MergeDescriptionResult {
   const { existing, screenId, foundItemIds } = options;
+
+  if (existing) {
+    assertDescriptionMutationSupported(existing.schemaVersion);
+  }
 
   if (!existing) {
     const items: DescriptionSpec['items'] = {};

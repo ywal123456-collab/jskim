@@ -19,6 +19,7 @@ import {
   validateEditableDescriptionDocument,
   type EditableDescriptionDocument,
 } from './validate-description-document.js';
+import { assertDescriptionMutationSupported } from './description-document/index.js';
 
 const DEFAULT_SCHEMA_URI = DESCRIPTION_SCHEMA_V1_2_URI;
 
@@ -267,6 +268,20 @@ export function createFileDescriptionStore(options: FileDescriptionStoreOptions)
           currentRevision,
         },
       );
+    }
+
+    if (raw.parsed) {
+      try {
+        assertDescriptionMutationSupported(raw.parsed.schemaVersion);
+      } catch (err) {
+        const docErr = err as { code?: string; message?: string };
+        throw storeError(
+          409,
+          docErr.code || 'SPEC_DESCRIPTION_UNSUPPORTED_SCHEMA',
+          docErr.message ||
+            '項目グループ（schemaVersion "1.3"）の画面設計書は、現バージョンでは変更できません。',
+        );
+      }
     }
 
     const validationError = validateEditableDescriptionDocument({

@@ -27,7 +27,8 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 ### 未実装
 
 - Viewer mutation UI、Excel Export、Remote Provider
-- **Item Group 階層**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）
+- **Item Group 編集 UI / mutation API**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）
+- **Phase 7F-1B 実装済み**: Description v1.3 schema / read-only normalize / semantic validator / flat projection（`readDescriptionDocument` 等）。Group 編集・v1.3 永続化は未実装
 
 ### CLI 最小 workflow
 

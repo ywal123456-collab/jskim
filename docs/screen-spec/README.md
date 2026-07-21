@@ -257,7 +257,9 @@ spec/{projectName}/src/data/{screenId}.json
 - `schemaVersion: "1.0"` は `docs/screen-spec/schema/description-spec.v1.schema.json`。`itemOrder` / `excludedItems` を持ちません
 - `schemaVersion: "1.1"` は `docs/screen-spec/schema/description-spec.v1.1.schema.json`。`itemOrder: string[]`（`items` のキー集合と完全一致・重複禁止・最大 500 件）が必須です
 - `schemaVersion: "1.2"` は `docs/screen-spec/schema/description-spec.v1.2.schema.json`。`itemOrder` に加え `excludedItems`（キーが除外 ID 集合。値は `items` と同形）が必須です
-- 読込は `1.0` / `1.1` / `1.2` に対応します。新規作成（POST）と Viewer での保存（PUT）は常に `1.2` を書き出します
+- `schemaVersion: "1.3"` は `docs/screen-spec/schema/description-spec.v1.3.schema.json`。`rootNodes` / `groups` / `items` / `excludedItems` を持ち、`itemOrder` は持ちません（Item Group 階層。設計: [item-group-hierarchy.md](./item-group-hierarchy.md)）
+- 読込は `1.0` / `1.1` / `1.2` / **`1.3`** に対応します（`1.3` は parse / validate / normalize / flatten のみ。**単純 read ではファイルを rewrite しません**）
+- 新規作成（POST）と Viewer での保存（PUT）は常に `1.2` を書き出します（`1.3` ファイルへの PUT / Collector merge は現バージョンでは拒否）
 - 既存の `1.0` / `1.1` ファイルは、保存操作（Viewer PUT または Collector による実際の Description 変更）が起きるまで自動で書き換えません（lazy migration）
 - Viewer（`jskim spec dev`）では collected / linked 項目に「設計対象から除外」、除外一覧に「設計対象に戻す」を提供します（確認ダイアログ付き。実装 element は削除しません）
 

@@ -1,6 +1,17 @@
 import type { DescriptionSpec } from '../builder/load-screen-spec-project.js';
 import { computeEffectiveItemOrder } from '../builder/item-order.js';
 import {
+  flattenItemTree,
+} from './description-document/flatten-item-tree.js';
+import {
+  normalizeDescriptionSpec,
+} from './description-document/normalize-description.js';
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_ITEM_ORDER_LENGTH,
+  MAX_NAME_LENGTH,
+} from './description-field-limits.js';
+import {
   SCREEN_ID_RE,
   MAX_SCREEN_ID_LENGTH,
   isValidScreenId,
@@ -16,9 +27,11 @@ export {
   isValidItemId,
 };
 
-export const MAX_NAME_LENGTH = 200;
-export const MAX_DESCRIPTION_LENGTH = 10000;
-export const MAX_ITEM_ORDER_LENGTH = 500;
+export {
+  MAX_NAME_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_ITEM_ORDER_LENGTH,
+} from './description-field-limits.js';
 
 export type EditableItemFields = {
   name: string;
@@ -365,11 +378,16 @@ export function toEditableDocument(
     name: '',
     description: '',
   };
-  const itemOrder = computeEffectiveItemOrder({
-    items,
-    itemOrder: description.itemOrder,
-    collectedOrder,
-  });
+  const itemOrder =
+    description.schemaVersion === '1.3'
+      ? flattenItemTree(
+          normalizeDescriptionSpec(description, { collectedOrder }),
+        )
+      : computeEffectiveItemOrder({
+          items,
+          itemOrder: description.itemOrder,
+          collectedOrder,
+        });
   return {
     schemaVersion: '1.2',
     screen: {

@@ -101,6 +101,20 @@ describe('スクリーン仕様 screen-spec 契約', () => {
     );
   });
 
+  it('description-spec.v1.3 schema JSON がパースでき、rootNodes / groups が必須で itemOrder を持たない', () => {
+    const descriptionSchemaV13 = loadJson(
+      path.join(SCHEMA_DIR, 'description-spec.v1.3.schema.json')
+    );
+    assert.equal(typeof descriptionSchemaV13, 'object');
+    assert.equal(descriptionSchemaV13.properties.schemaVersion.const, '1.3');
+    assert.ok(descriptionSchemaV13.required.includes('rootNodes'));
+    assert.ok(descriptionSchemaV13.required.includes('groups'));
+    assert.ok(descriptionSchemaV13.required.includes('excludedItems'));
+    assert.ok(descriptionSchemaV13.required.includes('items'));
+    assert.equal(descriptionSchemaV13.properties.itemOrder, undefined);
+    assert.equal(descriptionSchemaV13.additionalProperties, false);
+  });
+
   it('interactionCategory の enum がドキュメント一覧と一致する', () => {
     const sourceSchema = loadJson(path.join(SCHEMA_DIR, 'source-spec.v1.schema.json'));
     assert.deepEqual(sourceSchema.$defs.interactionCategory.enum, EXPECTED_INTERACTION_CATEGORIES);

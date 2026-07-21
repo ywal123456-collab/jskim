@@ -1,0 +1,3 @@
+export const MAX_NAME_LENGTH = 200;
+export const MAX_DESCRIPTION_LENGTH = 10000;
+export const MAX_ITEM_ORDER_LENGTH = 500;

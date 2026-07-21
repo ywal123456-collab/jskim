@@ -6,6 +6,7 @@ import {
   writeFileAtomic,
 } from '../util/write-file-atomic.js';
 import { mergeDescription } from './merge-description.js';
+import { assertDescriptionMutationSupported } from '../editing/description-document/index.js';
 import {
   DESCRIPTION_SCHEMA_V1_1_URI,
   DESCRIPTION_SCHEMA_V1_2_URI,
@@ -64,6 +65,9 @@ export function writeCollectedDescription(options: {
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     const current = readDescriptionForCollect(filePath, screenId, emptyRevision);
+    if (current.parsed) {
+      assertDescriptionMutationSupported(current.parsed.schemaVersion);
+    }
     if (!current.exists || current.parsed === null) {
       // ループ中に外部削除された場合も再作成しない
       return {

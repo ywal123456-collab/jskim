@@ -29,37 +29,52 @@ export type SourceSpec = {
   }>;
 };
 
+export type DescriptionSpecNodeRef = {
+  type: 'group' | 'item';
+  id: string;
+};
+
+export type DescriptionItemGroup = {
+  groupId: string;
+  name: string;
+  description?: string;
+  kind:
+    | 'SECTION'
+    | 'FIELDSET'
+    | 'CARD'
+    | 'REPEATABLE'
+    | 'ACTIONS'
+    | 'CONTENT'
+    | 'CUSTOM';
+  children: DescriptionSpecNodeRef[];
+};
+
+export type DescriptionItemFields = {
+  name: string;
+  type: string;
+  description?: string;
+  note?: string;
+};
+
 export type DescriptionSpec = {
-  schemaVersion: string; // '1.0' | '1.1' | '1.2'
+  schemaVersion: string; // '1.0' | '1.1' | '1.2' | '1.3'
   screen: {
     id: string;
     name: string;
     description?: string;
   };
-  /** schemaVersion "1.1" / "1.2" で必須。1.0 には存在しない */
+  /** schemaVersion "1.1" / "1.2" で必須。1.0 / 1.3 には存在しない */
   itemOrder?: string[];
+  /** schemaVersion "1.3" で必須 */
+  rootNodes?: DescriptionSpecNodeRef[];
+  /** schemaVersion "1.3" で必須 */
+  groups?: DescriptionItemGroup[];
   /**
-   * schemaVersion "1.2" で必須（空 object 可）。
+   * schemaVersion "1.2" / "1.3" で必須（空 object 可）。
    * 1.0 / 1.1 には存在しない。読込時は欠落を空とみなしてよい。
    */
-  excludedItems?: Record<
-    string,
-    {
-      name: string;
-      type: string;
-      description?: string;
-      note?: string;
-    }
-  >;
-  items: Record<
-    string,
-    {
-      name: string;
-      type: string;
-      description?: string;
-      note?: string;
-    }
-  >;
+  excludedItems?: Record<string, DescriptionItemFields>;
+  items: Record<string, DescriptionItemFields>;
 };
 
 export type LoadedSnapshot = {
@@ -240,10 +255,11 @@ function loadDescriptions(dataDir: string): Map<string, DescriptionEntry> {
     if (
       data.schemaVersion !== '1.0' &&
       data.schemaVersion !== '1.1' &&
-      data.schemaVersion !== '1.2'
+      data.schemaVersion !== '1.2' &&
+      data.schemaVersion !== '1.3'
     ) {
       throw new Error(
-        `Description JSON の schemaVersion は "1.0" / "1.1" / "1.2" のいずれかである必要があります: ${filePath}`,
+        `Description JSON の schemaVersion は "1.0" / "1.1" / "1.2" / "1.3" のいずれかである必要があります: ${filePath}`,
       );
     }
 

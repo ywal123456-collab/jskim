@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ywal123456-collab/jskim/raw/main/docs/screen-spec/schema/description-spec.v1.3.schema.json",
+  "title": "JSKim Screen Spec Description v1.3",
+  "description": "spec/{projectName}/src/data に置く説明用 JSON（人向け）。v1.2 に Item Group 階層（rootNodes / groups）を追加した version。itemOrder は持たない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "screen", "rootNodes", "groups", "items", "excludedItems"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.3"
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "rootNodes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/specNodeRef"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/itemGroup"
+      }
+    },
+    "items": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/itemDescription"
+      }
+    },
+    "excludedItems": {
+      "type": "object",
+      "description": "設計対象から除外した項目。key が itemId。",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/itemDescription"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "specNodeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["group", "item"]
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "itemGroupKind": {
+      "type": "string",
+      "enum": [
+        "SECTION",
+        "FIELDSET",
+        "CARD",
+        "REPEATABLE",
+        "ACTIONS",
+        "CONTENT",
+        "CUSTOM"
+      ]
+    },
+    "itemGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "name", "kind", "children"],
+      "properties": {
+        "groupId": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/itemGroupKind"
+        },
+        "children": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/specNodeRef"
+          }
+        }
+      }
+    },
+    "itemDescription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "description", "note"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "空文字を許可（draft / 再収集時の未記入）"
+        },
+        "type": {
+          "type": "string",
+          "description": "空文字を許可（draft / 再収集時の未記入）"
+        },
+        "description": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

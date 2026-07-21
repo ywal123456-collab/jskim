@@ -49,6 +49,36 @@ export {
 } from './editing/validate-description-document.js';
 export type { EditableDescriptionDocument } from './editing/validate-description-document.js';
 export {
+  parseDescriptionDocument,
+  readDescriptionDocument,
+  validateAndNormalizeDescriptionDocument,
+  normalizeDescriptionDocument,
+  normalizeDescriptionSpec,
+  flattenItemTree,
+  validateDescriptionStructure,
+  validateDescriptionTreeSemantics,
+  assertDescriptionMutationSupported,
+  isDescriptionMutationSupported,
+  createDescriptionDocumentError,
+  DescriptionDocumentError,
+  DESCRIPTION_SOURCE_SCHEMA_VERSIONS,
+  ITEM_GROUP_KINDS,
+  MAX_GROUP_DEPTH,
+} from './editing/description-document/index.js';
+export type {
+  ReadDescriptionDocumentOptions,
+  ReadDescriptionDocumentResult,
+  NormalizeDescriptionDocumentOptions,
+  DescriptionSourceSchemaVersion,
+  SpecNodeRef,
+  ItemGroupKind,
+  ItemDescriptionFields,
+  ItemGroup,
+  ParsedDescriptionDocument,
+  NormalizedDescription,
+  DescriptionDocumentValidationError,
+} from './editing/description-document/index.js';
+export {
   writeFileAtomic,
   writeFileAtomicOrThrow,
   createFileAtomic,
