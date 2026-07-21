@@ -71,8 +71,13 @@ export {
   readDescriptionRevision,
   createDescriptionGroup,
   updateDescriptionGroup,
+  moveDescriptionNode,
+  reorderDescriptionChildren,
   mutateDescriptionTree,
   readDescriptionTreeState,
+  findNodeLocation,
+  applyMoveNode,
+  applyReorderChildren,
 } from './editing/description-document/index.js';
 export type {
   ReadDescriptionDocumentOptions,
@@ -88,6 +93,9 @@ export type {
   DescriptionDocumentValidationError,
   CreateGroupInput,
   UpdateGroupInput,
+  MoveNodeInput,
+  ReorderChildrenInput,
+  NodeLocation,
   DescriptionTreeMutationContext,
   DescriptionTreeMutationResult,
   DescriptionTreeMutationAdapters,

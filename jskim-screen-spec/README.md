@@ -30,6 +30,7 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 - **Item Group 編集 UI / mutation API**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）
 - **Phase 7F-1B 実装済み**: Description v1.3 schema / read-only normalize / semantic validator / flat projection（`readDescriptionDocument` 等）
 - **Phase 7F-1C-1 実装済み**: v1.3 canonical writer / lazy migration / `createDescriptionGroup` / `updateDescriptionGroup`（domain mutation API のみ。HTTP / Viewer UI 未接続）
+- **Phase 7F-1C-2A 実装済み**: `moveDescriptionNode` / `reorderDescriptionChildren`（node 移動・同一 parent 並べ替え。HTTP / Viewer UI 未接続）
 - **Item Group 編集 UI / HTTP API** — 未実装
 
 ### CLI 最小 workflow

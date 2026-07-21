@@ -857,4 +857,5 @@ Revision API 投影も Item と同様 **browser-safe 文字列** のみ。
 | 2026-07-21 | 7F-1A | 初版（設計のみ） |
 | 2026-07-21 | 7F-1A-2 | 到達可能性・read/migration 分離・Collector 配置・exclude/restore・削除原子性・Screen 複製・canonical writer・depth 移動検証を補強 |
 | 2026-07-21 | 7F-1C-1 | v1.3 canonical writer・lazy migration・createGroup/updateGroup mutation（domain API のみ）を実装 |
-| 2026-07-21 | 7F-1C-1A | Description mutation lock を `withDescriptionScreenLock`（project + screenId、in-process queue + `spec/{project}/.jskim/description-mutation/{screenId}.lock`）へ統合。lock 取得後に revision 再検証。`writeFileAtomic` replace 失敗時は backup 復元 + TEMP 削除 |
+| 2026-07-21 | 7F-1C-1A | Description mutation lock を `withDescriptionScreenLock` へ統合（project + screenId、filesystem lock、lock 後 revision 再検証） |
+| 2026-07-21 | 7F-1C-2A | moveNode / reorderChildren domain mutation（CAS + lazy migration + unchanged） |

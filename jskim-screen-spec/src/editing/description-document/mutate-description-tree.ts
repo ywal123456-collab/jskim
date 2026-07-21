@@ -16,6 +16,10 @@ import { normalizeDescriptionDocument } from './normalize-description.js';
 import { parseDescriptionDocument } from './parse-description-document.js';
 import { descriptionDataFilePath, descriptionDataRelativePath } from './paths.js';
 import { readDescriptionDocument } from './read-description-document.js';
+import type { ApplyMoveNodeResult, MoveNodeInput } from './move-node.js';
+import { applyMoveNode } from './move-node.js';
+import type { ApplyReorderChildrenResult, ReorderChildrenInput } from './reorder-children.js';
+import { applyReorderChildren } from './reorder-children.js';
 import type { ApplyUpdateGroupResult, UpdateGroupInput } from './update-group.js';
 import { applyUpdateGroup } from './update-group.js';
 import { validateDescriptionStructure } from './validate-description-structure.js';
@@ -286,6 +290,57 @@ export async function updateDescriptionGroup(
       const result: ApplyUpdateGroupResult = applyUpdateGroup(
         normalized,
         updateInput,
+      );
+      if (result.status === 'unchanged') {
+        return 'unchanged';
+      }
+      return result.normalized;
+    },
+  });
+}
+
+export async function moveDescriptionNode(
+  ctx: DescriptionTreeMutationContext,
+  options: MoveNodeInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...moveInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'move-node',
+    adapters,
+    apply: (normalized) => {
+      const result: ApplyMoveNodeResult = applyMoveNode(normalized, moveInput);
+      if (result.status === 'unchanged') {
+        return 'unchanged';
+      }
+      return result.normalized;
+    },
+  });
+}
+
+export async function reorderDescriptionChildren(
+  ctx: DescriptionTreeMutationContext,
+  options: ReorderChildrenInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...reorderInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'reorder-children',
+    adapters,
+    apply: (normalized) => {
+      const result: ApplyReorderChildrenResult = applyReorderChildren(
+        normalized,
+        reorderInput,
       );
       if (result.status === 'unchanged') {
         return 'unchanged';

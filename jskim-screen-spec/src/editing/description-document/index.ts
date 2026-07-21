@@ -55,10 +55,19 @@ export {
   type UpdateGroupInput,
   type ApplyUpdateGroupResult,
 } from './update-group.js';
+export { findNodeLocation, type NodeLocation } from './find-node-location.js';
+export { applyMoveNode, type MoveNodeInput, type ApplyMoveNodeResult } from './move-node.js';
+export {
+  applyReorderChildren,
+  type ReorderChildrenInput,
+  type ApplyReorderChildrenResult,
+} from './reorder-children.js';
 export {
   mutateDescriptionTree,
   createDescriptionGroup,
   updateDescriptionGroup,
+  moveDescriptionNode,
+  reorderDescriptionChildren,
   readDescriptionTreeState,
   type DescriptionTreeMutationContext,
   type DescriptionTreeMutationAdapters,
