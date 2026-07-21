@@ -82,6 +82,9 @@ const SPEC_NODE_REF_KEYS = new Set(['type', 'id']);
  * PATCH /_jskim/spec/description-tree/:screenId/groups/:groupId
  * POST /_jskim/spec/description-tree/:screenId/items
  * PATCH /_jskim/spec/description-tree/:screenId/items/:itemId
+ * POST /_jskim/spec/description-tree/:screenId/items/:itemId/delete
+ * POST /_jskim/spec/description-tree/:screenId/items/:itemId/exclude
+ * POST /_jskim/spec/description-tree/:screenId/items/:itemId/restore
  * POST /_jskim/spec/description-tree/:screenId/nodes/move
  * POST /_jskim/spec/description-tree/:screenId/children/reorder
  * POST /_jskim/spec/description-tree/:screenId/groups/:groupId/delete
@@ -112,6 +115,9 @@ function createDescriptionTreeApi(options) {
     'deleteDescriptionGroupSubtree',
     'createDescriptionItem',
     'updateDescriptionItem',
+    'deleteDescriptionItem',
+    'excludeDescriptionItem',
+    'restoreDescriptionItem',
     'collectCollectedItemIdsForScreen',
     'formatDescriptionTreeForApi',
   ];
@@ -225,6 +231,27 @@ function createDescriptionTreeApi(options) {
     if (route.kind === 'group-delete-subtree') {
       if (method === 'POST') {
         return handleDeleteGroupSubtree(req, res, route.screenId, route.groupId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'item-delete') {
+      if (method === 'POST') {
+        return handleDeleteItem(req, res, route.screenId, route.itemId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'item-exclude') {
+      if (method === 'POST') {
+        return handleExcludeItem(req, res, route.screenId, route.itemId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'item-restore') {
+      if (method === 'POST') {
+        return handleRestoreItem(req, res, route.screenId, route.itemId);
       }
       return sendMethodNotAllowed(res, 'POST');
     }
@@ -495,6 +522,65 @@ function createDescriptionTreeApi(options) {
         status: result.status,
         revision: result.revision,
       });
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
+  async function handleRestoreItem(req, res, screenId, itemId) {
+    return handleItemLifecycleAction(
+      req,
+      res,
+      screenId,
+      itemId,
+      facade.restoreDescriptionItem,
+    );
+  }
+
+  async function handleDeleteItem(req, res, screenId, itemId) {
+    return handleItemLifecycleAction(
+      req,
+      res,
+      screenId,
+      itemId,
+      facade.deleteDescriptionItem,
+    );
+  }
+
+  async function handleExcludeItem(req, res, screenId, itemId) {
+    return handleItemLifecycleAction(
+      req,
+      res,
+      screenId,
+      itemId,
+      facade.excludeDescriptionItem,
+    );
+  }
+
+  async function handleItemLifecycleAction(req, res, screenId, itemId, mutateFn) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, REVISION_ONLY_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const result = await mutateFn(ctx(screenId), {
+        expectedRevision: body.expectedRevision,
+        itemId,
+        collectedOrder,
+      });
+      sendMutationResult(res, result);
     } catch (err) {
       sendDescriptionTreeError(res, err);
     }
@@ -816,6 +902,22 @@ function parseDescriptionTreePath(pathname) {
         return { kind: 'invalid' };
       }
       return { kind: 'item', screenId, itemId };
+    }
+    return { kind: 'not-found' };
+  }
+  if (parts.length === 4 && parts[1] === 'items') {
+    const itemId = decodePathSegment(parts[2]);
+    if (!itemId) {
+      return { kind: 'invalid' };
+    }
+    if (parts[3] === 'delete') {
+      return { kind: 'item-delete', screenId, itemId };
+    }
+    if (parts[3] === 'exclude') {
+      return { kind: 'item-exclude', screenId, itemId };
+    }
+    if (parts[3] === 'restore') {
+      return { kind: 'item-restore', screenId, itemId };
     }
     return { kind: 'not-found' };
   }
@@ -1182,6 +1284,8 @@ function mapDescriptionTreeStatus(code) {
     case 'SPEC_DESCRIPTION_REVISION_CONFLICT':
     case 'SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS':
     case 'SPEC_DESCRIPTION_NODE_ID_CONFLICT':
+    case 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED':
+    case 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED':
     case 'SPEC_DESCRIPTION_GROUP_CYCLE':
     case 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM':
     case 'SPEC_DESCRIPTION_MUTATION_IN_PROGRESS':

@@ -102,6 +102,12 @@ function treePath(screenId, suffix = '') {
   return `${DESCRIPTION_TREE_API_PREFIX}/${encodeURIComponent(screenId)}${suffix}`;
 }
 
+function writeSnapshot(rootDir, html) {
+  const dir = path.join(rootDir, 'spec', 'demo', 'src', 'snapshots', 'demo-screen');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'default.html'), html, 'utf8');
+}
+
 describe('description-tree API', () => {
   /** @type {import('../jskim-screen-spec/dist/index.js')} */
   let companion = null;
@@ -138,6 +144,9 @@ describe('description-tree API', () => {
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         createDescriptionItem: companion.createDescriptionItem,
         updateDescriptionItem: companion.updateDescriptionItem,
+        deleteDescriptionItem: companion.deleteDescriptionItem,
+        excludeDescriptionItem: companion.excludeDescriptionItem,
+        restoreDescriptionItem: companion.restoreDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -451,6 +460,9 @@ describe('description-tree API', () => {
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         createDescriptionItem: companion.createDescriptionItem,
         updateDescriptionItem: companion.updateDescriptionItem,
+        deleteDescriptionItem: companion.deleteDescriptionItem,
+        excludeDescriptionItem: companion.excludeDescriptionItem,
+        restoreDescriptionItem: companion.restoreDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -527,6 +539,14 @@ describe('description-tree API', () => {
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_REVISION_CONFLICT'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_NODE_ID_CONFLICT'), 409);
+    assert.equal(
+      mapDescriptionTreeStatus('SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED'),
+      409,
+    );
+    assert.equal(
+      mapDescriptionTreeStatus('SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED'),
+      409,
+    );
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_MUTATION_IN_PROGRESS'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_NODE_NOT_FOUND'), 404);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_REORDER_MISMATCH'), 400);
@@ -622,6 +642,9 @@ describe('description-tree API', () => {
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         createDescriptionItem: companion.createDescriptionItem,
         updateDescriptionItem: companion.updateDescriptionItem,
+        deleteDescriptionItem: companion.deleteDescriptionItem,
+        excludeDescriptionItem: companion.excludeDescriptionItem,
+        restoreDescriptionItem: companion.restoreDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -1022,5 +1045,161 @@ describe('description-tree API', () => {
     assert.equal(res.headers['cache-control'], 'no-store');
     assert.equal(res.headers['x-content-type-options'], 'nosniff');
     assert.match(res.headers['content-type'], /application\/json/);
+  });
+
+  it('POST delete/exclude/restore action route を処理する', async () => {
+    const { rootDir, dataDir, port } = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.2',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        itemOrder: ['manual-a', 'manual-b', 'collected-a'],
+        items: {
+          'manual-a': emptyItem(),
+          'manual-b': emptyItem(),
+          'collected-a': emptyItem(),
+        },
+        excludedItems: { 'excluded-a': emptyItem() },
+      },
+    });
+    writeSnapshot(rootDir, '<div data-jskim-spec-item="collected-a"></div>');
+    const headers = {
+      Host: `127.0.0.1:${port}`,
+      Origin: `http://127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+    };
+    let revision = companion.readDescriptionRevision(rootDir, 'demo', 'demo-screen');
+
+    const deleteManual = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/manual-a/delete'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(deleteManual.status, 200);
+    assert.equal(parseJson(deleteManual).status, 'updated');
+    revision = parseJson(deleteManual).revision;
+    let saved = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'demo-screen.json'), 'utf8'),
+    );
+    assert.equal(saved.schemaVersion, '1.3');
+    assert.equal(saved.items['manual-a'], undefined);
+
+    const deleteCollected = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/collected-a/delete'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(deleteCollected.status, 409);
+    assert.equal(
+      parseJson(deleteCollected).code,
+      'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED',
+    );
+
+    const excludeCollected = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/collected-a/exclude'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(excludeCollected.status, 200);
+    revision = parseJson(excludeCollected).revision;
+    saved = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'demo-screen.json'), 'utf8'),
+    );
+    assert.equal(saved.items['collected-a'], undefined);
+    assert.ok(saved.excludedItems['collected-a']);
+
+    const excludeManual = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/manual-b/exclude'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(excludeManual.status, 409);
+    assert.equal(
+      parseJson(excludeManual).code,
+      'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED',
+    );
+
+    const restore = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/excluded-a/restore'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(restore.status, 200);
+    revision = parseJson(restore).revision;
+    saved = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'demo-screen.json'), 'utf8'),
+    );
+    assert.ok(saved.items['excluded-a']);
+    assert.equal(saved.excludedItems['excluded-a'], undefined);
+    assert.deepEqual(saved.rootNodes.at(-1), { type: 'item', id: 'excluded-a' });
+
+    const tree = await httpRequest({
+      port,
+      path: treePath('demo-screen'),
+      headers: { Host: `127.0.0.1:${port}` },
+    });
+    assert.equal(tree.status, 200);
+    assert.equal(parseJson(tree).revision, revision);
+
+    const unknownAction = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/manual-a/unknown'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(unknownAction.status, 404);
+
+    const patchDelete = await httpRequest({
+      port,
+      method: 'PATCH',
+      path: treePath('demo-screen', '/items/manual-a/delete'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    assert.equal(patchDelete.status, 405);
+    assert.equal(patchDelete.headers.allow, 'POST');
+  });
+
+  it('delete/exclude は snapshot 無しで collected state unavailable 500', async () => {
+    const { rootDir, port } = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [{ type: 'item', id: 'manual-a' }],
+        groups: [],
+        items: { 'manual-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    const revision = companion.readDescriptionRevision(rootDir, 'demo', 'demo-screen');
+    const headers = {
+      Host: `127.0.0.1:${port}`,
+      Origin: `http://127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+    };
+    const res = await httpRequest({
+      port,
+      method: 'POST',
+      path: treePath('demo-screen', '/items/manual-a/delete'),
+      headers,
+      body: JSON.stringify({ expectedRevision: revision }),
+    });
+    const json = assertErrorHygiene(
+      res,
+      500,
+      'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE',
+    );
+    assert.equal(json.message.includes('snapshots'), false);
+    assert.equal(json.message.includes(rootDir), false);
   });
 });

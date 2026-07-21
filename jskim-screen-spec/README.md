@@ -35,7 +35,9 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 - **Phase 7F-1C-3B 実装済み**: Item Tree GET / Group create・update / move・reorder・delete HTTP API（`/_jskim/spec/description-tree/...`）
 - **Phase 7F-1D-1 実装済み**: Viewer Item Tree 参照・探索 UI（GET のみ接続）。Group 作成・編集・移動・削除 UI は未実装
 - **Phase 7F-1C-4A 設計済み**: v1.3 Item 編集移行（[item-edit-v1.3-migration.md](../docs/screen-spec/item-edit-v1.3-migration.md)）
-- **Phase 7F-1C-4B 実装済み**: `updateDescriptionItem` / `createDescriptionItem` domain + HTTP（POST/PATCH items）。delete / exclude / restore / Viewer Item editor 接続は未実装
+- **Phase 7F-1C-4B 実装済み**: `updateDescriptionItem` / `createDescriptionItem` domain + HTTP（POST/PATCH items）
+- **Phase 7F-1C-4C 実装済み**: `deleteDescriptionItem` / `excludeDescriptionItem` / `restoreDescriptionItem` domain + HTTP（POST …/delete|exclude|restore）。delete は manual-only、exclude は collected-only、restore は rootNodes tail。collected 判定不能時は delete/exclude が fail-closed（500）
+- Viewer Item editor 接続は未実装（7F-1D-2）
 
 ### CLI 最小 workflow
 

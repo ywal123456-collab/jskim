@@ -16,6 +16,7 @@ import {
   writeFileAtomic,
   type WriteFileAtomicFs,
 } from '../../src/util/write-file-atomic.js';
+import { isValidItemId } from '../../src/util/screen-id.js';
 
 const temps: string[] = [];
 
@@ -873,5 +874,129 @@ describe('Description item mutation', () => {
     }
     expect(flattenItemTree(state.normalized)).toEqual(['manual-head', 'item-a']);
     expect(computeContentRevision(JSON.stringify(saved))).toMatch(/^sha256:/);
+  });
+});
+
+describe('4B follow-up coverage', () => {
+  for (const schemaVersion of ['1.0', '1.1'] as const) {
+    it(`${schemaVersion} updateItem unchanged は bytes/mtime/revision/schema を維持する`, async () => {
+      const root = tempRoot();
+      const doc: Record<string, unknown> = {
+        schemaVersion,
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        items: { 'item-a': itemFields({ name: 'Same' }) },
+      };
+      if (schemaVersion === '1.1') {
+        doc.itemOrder = ['item-a'];
+      }
+      const original = writeDescriptionFile(root, doc);
+      const filePath = path.join(
+        root,
+        'spec',
+        'demo',
+        'src',
+        'data',
+        'demo-screen.json',
+      );
+      const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+      const mtime = fs.statSync(filePath).mtimeMs;
+      const result = await updateDescriptionItem(ctx(root), {
+        itemId: 'item-a',
+        name: 'Same',
+        expectedRevision: revision,
+      });
+      expect(result.status).toBe('unchanged');
+      expect(result.revision).toBe(revision);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+      expect(fs.statSync(filePath).mtimeMs).toBe(mtime);
+      expect(readSaved(root).schemaVersion).toBe(schemaVersion);
+    });
+  }
+
+  it('createItem root middle insertIndex を配置する', async () => {
+    const root = tempRoot();
+    writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [
+        { type: 'item', id: 'item-a' },
+        { type: 'item', id: 'item-c' },
+      ],
+      groups: [],
+      items: {
+        'item-a': emptyItem(),
+        'item-c': emptyItem(),
+      },
+      excludedItems: {},
+    });
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    await createDescriptionItem(ctx(root), {
+      itemId: 'item-b',
+      name: 'B',
+      type: 'text',
+      description: '',
+      note: '',
+      insertIndex: 1,
+      expectedRevision: revision,
+    });
+    expect(readSaved(root).rootNodes).toEqual([
+      { type: 'item', id: 'item-a' },
+      { type: 'item', id: 'item-b' },
+      { type: 'item', id: 'item-c' },
+    ]);
+  });
+
+  it('createItem empty Group tail / index 0 を配置する', async () => {
+    const root = tempRoot();
+    writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'group', id: 'section' }],
+      groups: [
+        {
+          groupId: 'section',
+          name: 'S',
+          kind: 'SECTION',
+          children: [],
+        },
+      ],
+      items: {},
+      excludedItems: {},
+    });
+    let revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    await createDescriptionItem(ctx(root), {
+      itemId: 'group-tail',
+      name: 'Tail',
+      type: 'text',
+      description: '',
+      note: '',
+      parentGroupId: 'section',
+      expectedRevision: revision,
+    });
+    let section = (
+      readSaved(root).groups as Array<{ children: unknown[] }>
+    )[0];
+    expect(section.children).toEqual([{ type: 'item', id: 'group-tail' }]);
+
+    revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    await createDescriptionItem(ctx(root), {
+      itemId: 'group-head',
+      name: 'Head',
+      type: 'text',
+      description: '',
+      note: '',
+      parentGroupId: 'section',
+      insertIndex: 0,
+      expectedRevision: revision,
+    });
+    section = (readSaved(root).groups as Array<{ children: unknown[] }>)[0];
+    expect(section.children).toEqual([
+      { type: 'item', id: 'group-head' },
+      { type: 'item', id: 'group-tail' },
+    ]);
+  });
+
+  it('kebab-case 以外の itemId は validator で拒否される', () => {
+    expect(isValidItemId('UPPER-case')).toBe(false);
   });
 });

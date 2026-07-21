@@ -525,7 +525,7 @@ excludedItems にある → 設計対象外（tree 非表示）
 
 ## 8. HTTP API 設計
 
-**Phase 7F-1C-4B 実装済み:** `updateItem` / `createItem` domain + HTTP（下記 POST/PATCH items）。**未実装:** delete / exclude / restore routes（Phase 7F-1C-4C）。
+**Phase 7F-1C-4B 実装済み:** `updateItem` / `createItem` domain + HTTP（下記 POST/PATCH items）。**Phase 7F-1C-4C 実装済み:** `deleteItem` / `excludeItem` / `restoreItem` domain + HTTP（下記 POST …/delete|exclude|restore）。**未実装:** Viewer Item editor の tree API 接続（7F-1D-2）。
 
 既存 Tree API prefix に揃えます。
 
@@ -659,7 +659,7 @@ lazy migration → v1.3
 
 ```text
 □ updateItem / createItem domain + HTTP 実装済み（Phase 7F-1C-4B）
-□ deleteItem / excludeItem / restoreItem domain + HTTP 実装
+□ deleteItem / excludeItem / restoreItem domain + HTTP 実装済み（Phase 7F-1C-4C）
 □ Viewer Item editor の v1.3 Item API 接続（7F-1D-2）
 □ shared descriptionRevision + mutation / GET race 防御 + 409 conflict UI 検証
 □ v1.2 → v1.3 lazy migration（Item mutation 経由）の regression テスト

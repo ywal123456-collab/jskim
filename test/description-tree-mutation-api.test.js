@@ -192,6 +192,9 @@ describe('description-tree mutation API', () => {
         deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         createDescriptionItem: companion.createDescriptionItem,
         updateDescriptionItem: companion.updateDescriptionItem,
+        deleteDescriptionItem: companion.deleteDescriptionItem,
+        excludeDescriptionItem: companion.excludeDescriptionItem,
+        restoreDescriptionItem: companion.restoreDescriptionItem,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -1111,5 +1114,87 @@ describe('description-tree mutation API', () => {
     assert.equal(createGroupRes.status, 201);
     await assertRevisionAligned(rootDir, port, parseJson(createGroupRes), itemJson.revision);
     assertNoLockResidue(rootDir);
+  });
+
+  it('HTTP CAS: createGroup vs updateItem は同一 revision で 1 成功 1 conflict', async () => {
+    const session = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [{ type: 'item', id: 'item-a' }],
+        groups: [],
+        items: { 'item-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    const { rootDir, port } = session;
+    const before = await getTree(port);
+    const headers = jsonHeaders(port);
+    const [groupRes, updateRes] = await Promise.all([
+      httpRequest({
+        port,
+        method: 'POST',
+        path: treePath('demo-screen', '/groups'),
+        headers,
+        body: JSON.stringify({
+          expectedRevision: before.revision,
+          groupId: 'section',
+          name: 'Section',
+          kind: 'SECTION',
+        }),
+      }),
+      httpRequest({
+        port,
+        method: 'PATCH',
+        path: treePath('demo-screen', '/items/item-a'),
+        headers,
+        body: JSON.stringify({
+          expectedRevision: before.revision,
+          name: 'Changed',
+        }),
+      }),
+    ]);
+    assert.deepEqual([groupRes.status, updateRes.status].sort(), [201, 409]);
+    assertNoLockResidue(rootDir);
+  });
+
+  it('HTTP CAS: deleteItem vs excludeItem は同一 revision で 1 成功 1 conflict', async () => {
+    const session = await openSession({
+      'demo-screen': {
+        schemaVersion: '1.3',
+        screen: { id: 'demo-screen', name: 'Demo', description: '' },
+        rootNodes: [
+          { type: 'item', id: 'manual-a' },
+          { type: 'item', id: 'collected-a' },
+        ],
+        groups: [],
+        items: { 'manual-a': emptyItem(), 'collected-a': emptyItem() },
+        excludedItems: {},
+      },
+    });
+    writeSnapshot(
+      session.rootDir,
+      '<div data-jskim-spec-item="collected-a"></div>',
+    );
+    const before = await getTree(session.port);
+    const headers = jsonHeaders(session.port);
+    const [deleteRes, excludeRes] = await Promise.all([
+      httpRequest({
+        port: session.port,
+        method: 'POST',
+        path: treePath('demo-screen', '/items/manual-a/delete'),
+        headers,
+        body: JSON.stringify({ expectedRevision: before.revision }),
+      }),
+      httpRequest({
+        port: session.port,
+        method: 'POST',
+        path: treePath('demo-screen', '/items/collected-a/exclude'),
+        headers,
+        body: JSON.stringify({ expectedRevision: before.revision }),
+      }),
+    ]);
+    assert.deepEqual([deleteRes.status, excludeRes.status].sort(), [200, 409]);
+    assertNoLockResidue(session.rootDir);
   });
 });

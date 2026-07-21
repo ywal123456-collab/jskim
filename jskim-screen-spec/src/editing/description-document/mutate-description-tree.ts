@@ -33,7 +33,16 @@ import type { ApplyUpdateItemResult, UpdateItemInput } from './update-item.js';
 import { applyUpdateItem } from './update-item.js';
 import type { CreateItemInput } from './create-item.js';
 import { applyCreateItem } from './create-item.js';
-import { collectCollectedItemIdsForScreen } from '../collect-collected-item-ids.js';
+import type { DeleteItemInput } from './delete-item.js';
+import { applyDeleteItem } from './delete-item.js';
+import type { ExcludeItemInput } from './exclude-item.js';
+import { applyExcludeItem } from './exclude-item.js';
+import type { RestoreItemInput } from './restore-item.js';
+import { applyRestoreItem } from './restore-item.js';
+import {
+  collectCollectedItemIdsForDestructiveMutation,
+  collectCollectedItemIdsForScreen,
+} from '../collect-collected-item-ids.js';
 import { validateDescriptionStructure } from './validate-description-structure.js';
 import { validateDescriptionTreeSemantics } from './validate-description-tree-semantics.js';
 import type { NormalizedDescription } from './types.js';
@@ -448,6 +457,66 @@ export async function updateDescriptionItem(
       }
       return result.normalized;
     },
+  });
+}
+
+export async function deleteDescriptionItem(
+  ctx: DescriptionTreeMutationContext,
+  options: DeleteItemInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...deleteInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'delete-item',
+    adapters,
+    apply: (normalized) => {
+      const collectedItemIds = collectCollectedItemIdsForDestructiveMutation(ctx);
+      return applyDeleteItem(normalized, deleteInput, collectedItemIds).normalized;
+    },
+  });
+}
+
+export async function excludeDescriptionItem(
+  ctx: DescriptionTreeMutationContext,
+  options: ExcludeItemInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...excludeInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'exclude-item',
+    adapters,
+    apply: (normalized) => {
+      const collectedItemIds = collectCollectedItemIdsForDestructiveMutation(ctx);
+      return applyExcludeItem(normalized, excludeInput, collectedItemIds).normalized;
+    },
+  });
+}
+
+export async function restoreDescriptionItem(
+  ctx: DescriptionTreeMutationContext,
+  options: RestoreItemInput & {
+    expectedRevision: string;
+    collectedOrder?: string[] | null;
+    adapters?: DescriptionTreeMutationAdapters;
+  },
+): Promise<DescriptionTreeMutationResult> {
+  const { expectedRevision, collectedOrder, adapters, ...restoreInput } = options;
+  return mutateDescriptionTree(ctx, {
+    expectedRevision,
+    collectedOrder,
+    operation: 'restore-item',
+    adapters,
+    apply: (normalized) => applyRestoreItem(normalized, restoreInput).normalized,
   });
 }
 

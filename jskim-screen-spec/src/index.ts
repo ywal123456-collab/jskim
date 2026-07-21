@@ -78,6 +78,9 @@ export {
   deleteDescriptionGroupSubtree,
   createDescriptionItem,
   updateDescriptionItem,
+  deleteDescriptionItem,
+  excludeDescriptionItem,
+  restoreDescriptionItem,
   mutateDescriptionTree,
   readDescriptionTreeState,
   findNodeLocation,
@@ -87,9 +90,15 @@ export {
   applyDeleteGroupSubtree,
   applyCreateItem,
   applyUpdateItem,
+  applyDeleteItem,
+  applyExcludeItem,
+  applyRestoreItem,
   collectGroupSubtree,
 } from './editing/description-document/index.js';
-export { collectCollectedItemIdsForScreen } from './editing/collect-collected-item-ids.js';
+export {
+  collectCollectedItemIdsForScreen,
+  collectCollectedItemIdsForDestructiveMutation,
+} from './editing/collect-collected-item-ids.js';
 export type {
   ReadDescriptionDocumentOptions,
   ReadDescriptionDocumentResult,

@@ -79,6 +79,9 @@ export {
   type DeleteGroupSubtreeInput,
   type ApplyDeleteGroupSubtreeResult,
 } from './delete-group-subtree.js';
+export { applyDeleteItem, type DeleteItemInput, type ApplyDeleteItemResult } from './delete-item.js';
+export { applyExcludeItem, type ExcludeItemInput, type ApplyExcludeItemResult } from './exclude-item.js';
+export { applyRestoreItem, type RestoreItemInput, type ApplyRestoreItemResult } from './restore-item.js';
 export {
   mutateDescriptionTree,
   createDescriptionGroup,
@@ -89,6 +92,9 @@ export {
   deleteDescriptionGroupSubtree,
   createDescriptionItem,
   updateDescriptionItem,
+  deleteDescriptionItem,
+  excludeDescriptionItem,
+  restoreDescriptionItem,
   readDescriptionTreeState,
   type DescriptionTreeMutationContext,
   type DescriptionTreeMutationAdapters,

@@ -100,6 +100,9 @@ function createSpecDevRuntime(options = {}) {
     let deleteDescriptionGroupSubtree = options.deleteDescriptionGroupSubtree;
     let createDescriptionItem = options.createDescriptionItem;
     let updateDescriptionItem = options.updateDescriptionItem;
+    let deleteDescriptionItem = options.deleteDescriptionItem;
+    let excludeDescriptionItem = options.excludeDescriptionItem;
+    let restoreDescriptionItem = options.restoreDescriptionItem;
     let collectCollectedItemIdsForScreen = options.collectCollectedItemIdsForScreen;
     let formatDescriptionTreeForApi = options.formatDescriptionTreeForApi;
 
@@ -215,6 +218,12 @@ function createSpecDevRuntime(options = {}) {
         createDescriptionItem || companion.createDescriptionItem;
       updateDescriptionItem =
         updateDescriptionItem || companion.updateDescriptionItem;
+      deleteDescriptionItem =
+        deleteDescriptionItem || companion.deleteDescriptionItem;
+      excludeDescriptionItem =
+        excludeDescriptionItem || companion.excludeDescriptionItem;
+      restoreDescriptionItem =
+        restoreDescriptionItem || companion.restoreDescriptionItem;
       collectCollectedItemIdsForScreen =
         collectCollectedItemIdsForScreen ||
         companion.collectCollectedItemIdsForScreen;
@@ -346,6 +355,9 @@ function createSpecDevRuntime(options = {}) {
       typeof deleteDescriptionGroupSubtree === 'function' &&
       typeof createDescriptionItem === 'function' &&
       typeof updateDescriptionItem === 'function' &&
+      typeof deleteDescriptionItem === 'function' &&
+      typeof excludeDescriptionItem === 'function' &&
+      typeof restoreDescriptionItem === 'function' &&
       typeof collectCollectedItemIdsForScreen === 'function' &&
       typeof formatDescriptionTreeForApi === 'function'
         ? createDescriptionTreeApi({
@@ -365,6 +377,9 @@ function createSpecDevRuntime(options = {}) {
               deleteDescriptionGroupSubtree,
               createDescriptionItem,
               updateDescriptionItem,
+              deleteDescriptionItem,
+              excludeDescriptionItem,
+              restoreDescriptionItem,
               collectCollectedItemIdsForScreen,
               formatDescriptionTreeForApi,
             },
