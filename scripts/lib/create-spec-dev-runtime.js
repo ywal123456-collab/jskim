@@ -94,6 +94,10 @@ function createSpecDevRuntime(options = {}) {
     let readDescriptionRevision = options.readDescriptionRevision;
     let createDescriptionGroup = options.createDescriptionGroup;
     let updateDescriptionGroup = options.updateDescriptionGroup;
+    let moveDescriptionNode = options.moveDescriptionNode;
+    let reorderDescriptionChildren = options.reorderDescriptionChildren;
+    let deleteDescriptionGroup = options.deleteDescriptionGroup;
+    let deleteDescriptionGroupSubtree = options.deleteDescriptionGroupSubtree;
     let collectCollectedItemIdsForScreen = options.collectCollectedItemIdsForScreen;
     let formatDescriptionTreeForApi = options.formatDescriptionTreeForApi;
 
@@ -197,6 +201,14 @@ function createSpecDevRuntime(options = {}) {
         createDescriptionGroup || companion.createDescriptionGroup;
       updateDescriptionGroup =
         updateDescriptionGroup || companion.updateDescriptionGroup;
+      moveDescriptionNode =
+        moveDescriptionNode || companion.moveDescriptionNode;
+      reorderDescriptionChildren =
+        reorderDescriptionChildren || companion.reorderDescriptionChildren;
+      deleteDescriptionGroup =
+        deleteDescriptionGroup || companion.deleteDescriptionGroup;
+      deleteDescriptionGroupSubtree =
+        deleteDescriptionGroupSubtree || companion.deleteDescriptionGroupSubtree;
       collectCollectedItemIdsForScreen =
         collectCollectedItemIdsForScreen ||
         companion.collectCollectedItemIdsForScreen;
@@ -322,6 +334,10 @@ function createSpecDevRuntime(options = {}) {
       typeof readDescriptionRevision === 'function' &&
       typeof createDescriptionGroup === 'function' &&
       typeof updateDescriptionGroup === 'function' &&
+      typeof moveDescriptionNode === 'function' &&
+      typeof reorderDescriptionChildren === 'function' &&
+      typeof deleteDescriptionGroup === 'function' &&
+      typeof deleteDescriptionGroupSubtree === 'function' &&
       typeof collectCollectedItemIdsForScreen === 'function' &&
       typeof formatDescriptionTreeForApi === 'function'
         ? createDescriptionTreeApi({
@@ -335,6 +351,10 @@ function createSpecDevRuntime(options = {}) {
               readDescriptionRevision,
               createDescriptionGroup,
               updateDescriptionGroup,
+              moveDescriptionNode,
+              reorderDescriptionChildren,
+              deleteDescriptionGroup,
+              deleteDescriptionGroupSubtree,
               collectCollectedItemIdsForScreen,
               formatDescriptionTreeForApi,
             },

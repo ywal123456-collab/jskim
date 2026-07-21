@@ -30,12 +30,33 @@ const UPDATE_GROUP_FORBIDDEN_KEYS = new Set([
   'position',
 ]);
 
+const MOVE_NODE_KEYS = new Set([
+  'expectedRevision',
+  'node',
+  'destinationParentGroupId',
+  'insertIndex',
+]);
+
+const REORDER_CHILDREN_KEYS = new Set([
+  'expectedRevision',
+  'parentGroupId',
+  'orderedNodes',
+]);
+
+const REVISION_ONLY_KEYS = new Set(['expectedRevision']);
+
+const SPEC_NODE_REF_KEYS = new Set(['type', 'id']);
+
 /**
  * Description Item Tree API（jskim spec dev 専用）。
  *
  * GET  /_jskim/spec/description-tree/:screenId
  * POST /_jskim/spec/description-tree/:screenId/groups
  * PATCH /_jskim/spec/description-tree/:screenId/groups/:groupId
+ * POST /_jskim/spec/description-tree/:screenId/nodes/move
+ * POST /_jskim/spec/description-tree/:screenId/children/reorder
+ * POST /_jskim/spec/description-tree/:screenId/groups/:groupId/delete
+ * POST /_jskim/spec/description-tree/:screenId/groups/:groupId/delete-subtree
  *
  * @param {object} options
  * @param {string} options.rootDir
@@ -56,6 +77,10 @@ function createDescriptionTreeApi(options) {
     'readDescriptionRevision',
     'createDescriptionGroup',
     'updateDescriptionGroup',
+    'moveDescriptionNode',
+    'reorderDescriptionChildren',
+    'deleteDescriptionGroup',
+    'deleteDescriptionGroupSubtree',
     'collectCollectedItemIdsForScreen',
     'formatDescriptionTreeForApi',
   ];
@@ -129,6 +154,34 @@ function createDescriptionTreeApi(options) {
         return handleUpdateGroup(req, res, route.screenId, route.groupId);
       }
       return sendMethodNotAllowed(res, 'PATCH');
+    }
+
+    if (route.kind === 'move-node') {
+      if (method === 'POST') {
+        return handleMoveNode(req, res, route.screenId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'reorder-children') {
+      if (method === 'POST') {
+        return handleReorderChildren(req, res, route.screenId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'group-delete') {
+      if (method === 'POST') {
+        return handleDeleteGroup(req, res, route.screenId, route.groupId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
+    }
+
+    if (route.kind === 'group-delete-subtree') {
+      if (method === 'POST') {
+        return handleDeleteGroupSubtree(req, res, route.screenId, route.groupId);
+      }
+      return sendMethodNotAllowed(res, 'POST');
     }
 
     sendJson(res, 404, {
@@ -308,6 +361,201 @@ function createDescriptionTreeApi(options) {
     return true;
   }
 
+  async function handleMoveNode(req, res, screenId) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, MOVE_NODE_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+    if (!assertRequiredField(res, body, 'node')) {
+      return true;
+    }
+    if (!assertRequiredField(res, body, 'destinationParentGroupId')) {
+      return true;
+    }
+
+    const node = parseSpecNodeRef(res, body.node, 'node');
+    if (!node) {
+      return true;
+    }
+    if (
+      body.destinationParentGroupId !== null &&
+      typeof body.destinationParentGroupId !== 'string'
+    ) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'destinationParentGroupId の形式が不正です。',
+      });
+      return true;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'insertIndex') &&
+      typeof body.insertIndex !== 'number'
+    ) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'insertIndex の形式が不正です。',
+      });
+      return true;
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const input = {
+        expectedRevision: body.expectedRevision,
+        node,
+        destinationParentGroupId: body.destinationParentGroupId,
+      };
+      if (Object.prototype.hasOwnProperty.call(body, 'insertIndex')) {
+        input.insertIndex = body.insertIndex;
+      }
+      const result = await facade.moveDescriptionNode(ctx(screenId), {
+        ...input,
+        collectedOrder,
+      });
+      sendMutationResult(res, result);
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
+  async function handleReorderChildren(req, res, screenId) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, REORDER_CHILDREN_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+    if (!assertRequiredField(res, body, 'parentGroupId')) {
+      return true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(body, 'orderedNodes')) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'orderedNodes は必須です。',
+      });
+      return true;
+    }
+    if (!Array.isArray(body.orderedNodes)) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'orderedNodes は配列である必要があります。',
+      });
+      return true;
+    }
+    if (
+      body.parentGroupId !== null &&
+      typeof body.parentGroupId !== 'string'
+    ) {
+      sendJson(res, 400, {
+        code: 'SPEC_DESCRIPTION_INVALID',
+        message: 'parentGroupId の形式が不正です。',
+      });
+      return true;
+    }
+
+    const orderedNodes = [];
+    for (let index = 0; index < body.orderedNodes.length; index += 1) {
+      const parsed = parseSpecNodeRef(
+        res,
+        body.orderedNodes[index],
+        `orderedNodes[${index}]`,
+      );
+      if (!parsed) {
+        return true;
+      }
+      orderedNodes.push(parsed);
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const result = await facade.reorderDescriptionChildren(ctx(screenId), {
+        expectedRevision: body.expectedRevision,
+        parentGroupId: body.parentGroupId,
+        orderedNodes,
+        collectedOrder,
+      });
+      sendMutationResult(res, result);
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
+  async function handleDeleteGroup(req, res, screenId, groupId) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, REVISION_ONLY_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const result = await facade.deleteDescriptionGroup(ctx(screenId), {
+        expectedRevision: body.expectedRevision,
+        groupId,
+        collectedOrder,
+      });
+      sendMutationResult(res, result);
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
+  async function handleDeleteGroupSubtree(req, res, screenId, groupId) {
+    const body = await readMutationBody(req, res, listenHost(), listenPort());
+    if (body === undefined) {
+      return true;
+    }
+
+    if (!assertAllowedKeys(res, body, REVISION_ONLY_KEYS)) {
+      return true;
+    }
+    if (!assertExpectedRevisionField(res, body)) {
+      return true;
+    }
+
+    try {
+      const collectedOrder = facade.collectCollectedItemIdsForScreen(
+        ctx(screenId),
+      );
+      const result = await facade.deleteDescriptionGroupSubtree(ctx(screenId), {
+        expectedRevision: body.expectedRevision,
+        groupId,
+        collectedOrder,
+      });
+      sendMutationResult(res, result);
+    } catch (err) {
+      sendDescriptionTreeError(res, err);
+    }
+    return true;
+  }
+
   return {
     handleRequest,
     pathPrefix: DESCRIPTION_TREE_API_PREFIX,
@@ -337,12 +585,34 @@ function parseDescriptionTreePath(pathname) {
   if (parts.length === 2 && parts[1] === 'groups') {
     return { kind: 'groups', screenId };
   }
-  if (parts.length === 3 && parts[1] === 'groups') {
+  if (parts.length === 3) {
+    if (parts[1] === 'nodes' && parts[2] === 'move') {
+      return { kind: 'move-node', screenId };
+    }
+    if (parts[1] === 'children' && parts[2] === 'reorder') {
+      return { kind: 'reorder-children', screenId };
+    }
+    if (parts[1] === 'groups') {
+      const groupId = decodePathSegment(parts[2]);
+      if (!groupId) {
+        return { kind: 'invalid' };
+      }
+      return { kind: 'group', screenId, groupId };
+    }
+    return { kind: 'not-found' };
+  }
+  if (parts.length === 4 && parts[1] === 'groups') {
     const groupId = decodePathSegment(parts[2]);
     if (!groupId) {
       return { kind: 'invalid' };
     }
-    return { kind: 'group', screenId, groupId };
+    if (parts[3] === 'delete') {
+      return { kind: 'group-delete', screenId, groupId };
+    }
+    if (parts[3] === 'delete-subtree') {
+      return { kind: 'group-delete-subtree', screenId, groupId };
+    }
+    return { kind: 'not-found' };
   }
   return { kind: 'not-found' };
 }
@@ -416,6 +686,57 @@ function assertExpectedRevisionField(res, body) {
     return false;
   }
   return true;
+}
+
+function assertRequiredField(res, body, fieldName) {
+  if (!Object.prototype.hasOwnProperty.call(body, fieldName)) {
+    sendJson(res, 400, {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${fieldName} は必須です。`,
+    });
+    return false;
+  }
+  return true;
+}
+
+function parseSpecNodeRef(res, value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    sendJson(res, 400, {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${fieldName} の形式が不正です。`,
+    });
+    return null;
+  }
+  const unknown = Object.keys(value).find((key) => !SPEC_NODE_REF_KEYS.has(key));
+  if (unknown) {
+    sendJson(res, 400, {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `許可されていないフィールドです: ${unknown}`,
+    });
+    return null;
+  }
+  if (value.type !== 'group' && value.type !== 'item') {
+    sendJson(res, 400, {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${fieldName} の type が不正です。`,
+    });
+    return null;
+  }
+  if (typeof value.id !== 'string' || value.id.length === 0) {
+    sendJson(res, 400, {
+      code: 'SPEC_DESCRIPTION_INVALID',
+      message: `${fieldName} の id が不正です。`,
+    });
+    return null;
+  }
+  return { type: value.type, id: value.id };
+}
+
+function sendMutationResult(res, result) {
+  sendJson(res, 200, {
+    status: result.status,
+    revision: result.revision,
+  });
 }
 
 async function readMutationBody(req, res, listenHostValue, listenPortValue) {
@@ -630,18 +951,24 @@ function mapDescriptionTreeStatus(code) {
     case 'SPEC_DESCRIPTION_INVALID':
     case 'SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID':
     case 'SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED':
+    case 'SPEC_DESCRIPTION_REORDER_MISMATCH':
     case 'SPEC_DESCRIPTION_MALFORMED_JSON':
       return 400;
     case 'SPEC_DESCRIPTION_SCREEN_NOT_FOUND':
     case 'SPEC_DESCRIPTION_NOT_FOUND':
+    case 'SPEC_DESCRIPTION_NODE_NOT_FOUND':
     case 'SPEC_DESCRIPTION_GROUP_NOT_FOUND':
     case 'SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND':
       return 404;
     case 'SPEC_DESCRIPTION_REVISION_CONFLICT':
     case 'SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS':
     case 'SPEC_DESCRIPTION_NODE_ID_CONFLICT':
+    case 'SPEC_DESCRIPTION_GROUP_CYCLE':
+    case 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM':
     case 'SPEC_DESCRIPTION_MUTATION_IN_PROGRESS':
       return 409;
+    case 'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE':
+      return 500;
     case 'SPEC_DESCRIPTION_TREE_METHOD_NOT_ALLOWED':
     case 'SPEC_DESCRIPTION_METHOD_NOT_ALLOWED':
       return 405;

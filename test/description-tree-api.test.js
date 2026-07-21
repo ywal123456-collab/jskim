@@ -132,6 +132,10 @@ describe('description-tree API', () => {
         readDescriptionRevision: companion.readDescriptionRevision,
         createDescriptionGroup: companion.createDescriptionGroup,
         updateDescriptionGroup: companion.updateDescriptionGroup,
+        moveDescriptionNode: companion.moveDescriptionNode,
+        reorderDescriptionChildren: companion.reorderDescriptionChildren,
+        deleteDescriptionGroup: companion.deleteDescriptionGroup,
+        deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -439,6 +443,10 @@ describe('description-tree API', () => {
         readDescriptionRevision: companion.readDescriptionRevision,
         createDescriptionGroup: companion.createDescriptionGroup,
         updateDescriptionGroup: companion.updateDescriptionGroup,
+        moveDescriptionNode: companion.moveDescriptionNode,
+        reorderDescriptionChildren: companion.reorderDescriptionChildren,
+        deleteDescriptionGroup: companion.deleteDescriptionGroup,
+        deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,
@@ -515,6 +523,17 @@ describe('description-tree API', () => {
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_NODE_ID_CONFLICT'), 409);
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_MUTATION_IN_PROGRESS'), 409);
+    assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_NODE_NOT_FOUND'), 404);
+    assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_REORDER_MISMATCH'), 400);
+    assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_CYCLE'), 409);
+    assert.equal(
+      mapDescriptionTreeStatus('SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM'),
+      409,
+    );
+    assert.equal(
+      mapDescriptionTreeStatus('SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE'),
+      500,
+    );
     assert.equal(mapDescriptionTreeStatus('SPEC_DESCRIPTION_INTERNAL'), 500);
     assert.equal(mapDescriptionTreeStatus('SPEC_UNEXPECTED'), 500);
   });
@@ -592,6 +611,10 @@ describe('description-tree API', () => {
         readDescriptionRevision: companion.readDescriptionRevision,
         createDescriptionGroup: companion.createDescriptionGroup,
         updateDescriptionGroup: companion.updateDescriptionGroup,
+        moveDescriptionNode: companion.moveDescriptionNode,
+        reorderDescriptionChildren: companion.reorderDescriptionChildren,
+        deleteDescriptionGroup: companion.deleteDescriptionGroup,
+        deleteDescriptionGroupSubtree: companion.deleteDescriptionGroupSubtree,
         collectCollectedItemIdsForScreen:
           companion.collectCollectedItemIdsForScreen,
         formatDescriptionTreeForApi: companion.formatDescriptionTreeForApi,

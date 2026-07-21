@@ -607,7 +607,7 @@ subtree 削除時も **`excludedItems` 側のエントリは触らない**（tre
 
 Feature API（`createFeature`, `moveScreen`, …）と同型の **revision + expectedRevision CAS** を前提とする。
 
-### 11.0 Item Tree HTTP API（7F-1C-3A 実装済み）
+### 11.0 Item Tree HTTP API（7F-1C-3B 実装済み）
 
 dev サーバー（`jskim spec dev`）の route 例:
 
@@ -615,21 +615,61 @@ dev サーバー（`jskim spec dev`）の route 例:
 GET   /_jskim/spec/description-tree/:screenId
 POST  /_jskim/spec/description-tree/:screenId/groups
 PATCH /_jskim/spec/description-tree/:screenId/groups/:groupId
+POST  /_jskim/spec/description-tree/:screenId/nodes/move
+POST  /_jskim/spec/description-tree/:screenId/children/reorder
+POST  /_jskim/spec/description-tree/:screenId/groups/:groupId/delete
+POST  /_jskim/spec/description-tree/:screenId/groups/:groupId/delete-subtree
 ```
 
 - GET: persisted raw `revision` + `sourceSchemaVersion` + normalized `description`（`schemaVersion: "1.3"` 表現）。**read-only**（lazy migration なし）
-- POST/PATCH: `{ status, revision }` を返す。v1.0–v1.2 への初回 Group mutation 成功時のみ v1.3 へ lazy migration
-- move / reorder / delete Group API は **未実装**
+- POST/PATCH / action POST: `{ status, revision }` を返す。v1.0–v1.2 への初回 tree mutation 成功時のみ v1.3 へ lazy migration
+- Viewer tree UI / Item create-update / exclude-restore / Collector Group annotation は **未実装**
 - legacy flat Description PUT / Collector v1.3 mutation は **従来どおり fail-closed**
+
+**moveNode 例:**
+
+```json
+POST /_jskim/spec/description-tree/demo-screen/nodes/move
+{
+  "expectedRevision": "sha256:…",
+  "node": { "type": "item", "id": "product-name" },
+  "destinationParentGroupId": "contract-card",
+  "insertIndex": 1
+}
+```
+
+**reorderChildren 例:**
+
+```json
+POST /_jskim/spec/description-tree/demo-screen/children/reorder
+{
+  "expectedRevision": "sha256:…",
+  "parentGroupId": null,
+  "orderedNodes": [
+    { "type": "group", "id": "contract-section" },
+    { "type": "item", "id": "page-title" }
+  ]
+}
+```
+
+**deleteGroup / deleteGroupSubtree 例:**
+
+```json
+POST /_jskim/spec/description-tree/demo-screen/groups/section/delete
+{ "expectedRevision": "sha256:…" }
+
+POST /_jskim/spec/description-tree/demo-screen/groups/section/delete-subtree
+{ "expectedRevision": "sha256:…" }
+```
 
 **HTTP エラー mapping（domain code → status）:**
 
 | code | HTTP |
 |------|-----:|
-| `SPEC_DESCRIPTION_NOT_FOUND` / `SPEC_DESCRIPTION_SCREEN_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND` | 404 |
-| `SPEC_DESCRIPTION_INVALID` / `SPEC_DESCRIPTION_REVISION_REQUIRED` / `SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID` / `SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED` | 400 |
-| `SPEC_DESCRIPTION_REVISION_CONFLICT` / `SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS` / `SPEC_DESCRIPTION_NODE_ID_CONFLICT` / `SPEC_DESCRIPTION_MUTATION_IN_PROGRESS` | 409 |
-| 想定外（`SPEC_DESCRIPTION_INTERNAL` 等） | 500（汎用 message、path/stack 非露出） |
+| `SPEC_DESCRIPTION_NOT_FOUND` / `SPEC_DESCRIPTION_SCREEN_NOT_FOUND` / `SPEC_DESCRIPTION_NODE_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_NOT_FOUND` / `SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND` | 404 |
+| `SPEC_DESCRIPTION_INVALID` / `SPEC_DESCRIPTION_REVISION_REQUIRED` / `SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID` / `SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED` / `SPEC_DESCRIPTION_REORDER_MISMATCH` | 400 |
+| `SPEC_DESCRIPTION_REVISION_CONFLICT` / `SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS` / `SPEC_DESCRIPTION_NODE_ID_CONFLICT` / `SPEC_DESCRIPTION_GROUP_CYCLE` / `SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM` / `SPEC_DESCRIPTION_MUTATION_IN_PROGRESS` | 409 |
+| `SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE` / 想定外（`SPEC_DESCRIPTION_INTERNAL` 等） | 500（汎用 message、path/stack 非露出） |
 
 message 文字列による status 判定は行わない。
 
