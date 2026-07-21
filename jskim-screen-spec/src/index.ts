@@ -32,6 +32,7 @@ export type {
 } from './editing/file-description-store.js';
 export {
   withDescriptionScreenLock,
+  bindDescriptionScreenLock,
   descriptionScreenLockSizeForTest,
   resetDescriptionScreenLocksForTest,
 } from './editing/description-screen-lock.js';
@@ -49,6 +50,14 @@ export {
 } from './editing/validate-description-document.js';
 export type { EditableDescriptionDocument } from './editing/validate-description-document.js';
 export {
+  assertLegacyDescriptionMutationSupported,
+  assertDescriptionMutationSupported,
+  isDescriptionMutationSupported,
+  createDescriptionDocumentError,
+  DescriptionDocumentError,
+  DESCRIPTION_SOURCE_SCHEMA_VERSIONS,
+  ITEM_GROUP_KINDS,
+  MAX_GROUP_DEPTH,
   parseDescriptionDocument,
   readDescriptionDocument,
   validateAndNormalizeDescriptionDocument,
@@ -57,13 +66,13 @@ export {
   flattenItemTree,
   validateDescriptionStructure,
   validateDescriptionTreeSemantics,
-  assertDescriptionMutationSupported,
-  isDescriptionMutationSupported,
-  createDescriptionDocumentError,
-  DescriptionDocumentError,
-  DESCRIPTION_SOURCE_SCHEMA_VERSIONS,
-  ITEM_GROUP_KINDS,
-  MAX_GROUP_DEPTH,
+  cloneNormalizedDescription,
+  formatDescriptionDocumentV13,
+  readDescriptionRevision,
+  createDescriptionGroup,
+  updateDescriptionGroup,
+  mutateDescriptionTree,
+  readDescriptionTreeState,
 } from './editing/description-document/index.js';
 export type {
   ReadDescriptionDocumentOptions,
@@ -77,6 +86,11 @@ export type {
   ParsedDescriptionDocument,
   NormalizedDescription,
   DescriptionDocumentValidationError,
+  CreateGroupInput,
+  UpdateGroupInput,
+  DescriptionTreeMutationContext,
+  DescriptionTreeMutationResult,
+  DescriptionTreeMutationAdapters,
 } from './editing/description-document/index.js';
 export {
   writeFileAtomic,

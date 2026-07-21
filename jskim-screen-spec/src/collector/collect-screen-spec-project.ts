@@ -312,7 +312,10 @@ export async function collectScreenSpecProject(
         // missing Description は writeCollectedDescription が skip（再作成しない）
         // PUT/DELETE と screenId 単位で直列化する
         // eslint-disable-next-line no-await-in-loop
-        await withDescriptionScreenLock(desc.screenId, () => {
+        await withDescriptionScreenLock(
+          { rootDir, projectName, screenId: desc.screenId },
+          'collector-write',
+          () => {
           if (fs.existsSync(desc.filePath)) {
             fs.mkdirSync(path.dirname(desc.filePath), { recursive: true });
           }

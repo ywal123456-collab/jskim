@@ -64,6 +64,7 @@ function createSpecDevRuntime(options = {}) {
     let createFileDescriptionStore = options.createFileDescriptionStore;
     let loadScreenSpecProject = options.loadScreenSpecProject;
     let withDescriptionScreenLock = options.withDescriptionScreenLock;
+    let bindDescriptionScreenLock = options.bindDescriptionScreenLock;
     let collectDeviceCapture = options.collectDeviceCapture;
     let getDeviceCapturePublicInfo = options.getDeviceCapturePublicInfo;
     let putReferenceImage = options.putReferenceImage;
@@ -133,6 +134,8 @@ function createSpecDevRuntime(options = {}) {
         loadScreenSpecProject || companion.loadScreenSpecProject;
       withDescriptionScreenLock =
         withDescriptionScreenLock || companion.withDescriptionScreenLock;
+      bindDescriptionScreenLock =
+        bindDescriptionScreenLock || companion.bindDescriptionScreenLock;
       collectDeviceCapture =
         collectDeviceCapture || companion.collectDeviceCapture;
       getDeviceCapturePublicInfo =
@@ -267,14 +270,23 @@ function createSpecDevRuntime(options = {}) {
     const port =
       options.port != null ? Number(options.port) : Number(project.serve.port);
 
+    const boundDescriptionScreenLock =
+      typeof bindDescriptionScreenLock === 'function'
+        ? bindDescriptionScreenLock(workspaceRoot, projectName)
+        : typeof withDescriptionScreenLock === 'function'
+          ? (screenId, fn) =>
+              withDescriptionScreenLock(
+                { rootDir: workspaceRoot, projectName, screenId },
+                'legacy-edit',
+                fn,
+              )
+          : undefined;
+
     const descriptionEditApi = createDescriptionEditApi({
       store: descriptionStore,
       host,
       port,
-      withScreenLock:
-        typeof withDescriptionScreenLock === 'function'
-          ? withDescriptionScreenLock
-          : undefined,
+      withScreenLock: boundDescriptionScreenLock,
     });
 
     const deviceCaptureApi = createDeviceCaptureApi({

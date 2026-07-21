@@ -8,8 +8,8 @@ import {
   writeFileAtomic,
 } from '../../src/util/write-file-atomic.js';
 import {
+  bindDescriptionScreenLock,
   resetDescriptionScreenLocksForTest,
-  withDescriptionScreenLock,
 } from '../../src/editing/description-screen-lock.js';
 import { writeCollectedDescription } from '../../src/collector/write-collected-description.js';
 
@@ -227,12 +227,14 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
         listScreenIds: () => ['demo'],
       });
 
+      const withLock = bindDescriptionScreenLock(root, 'x');
+
       let releasePut!: () => void;
       const putGate = new Promise<void>((resolve) => {
         releasePut = resolve;
       });
 
-      const putPromise = withDescriptionScreenLock('demo', async () => {
+      const putPromise = withLock('demo', async () => {
         await putGate;
         const before = store.read('demo');
         const next = structuredClone(before.document);
@@ -242,7 +244,7 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
 
       const deletePromise = (async () => {
         await Promise.resolve();
-        return withDescriptionScreenLock('demo', () => {
+        return withLock('demo', () => {
           try {
             store.delete('demo', r1);
             return { ok: true as const };
@@ -295,19 +297,21 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
         listScreenIds: () => ['demo'],
       });
 
+      const withLock = bindDescriptionScreenLock(root, 'x');
+
       let releaseDelete!: () => void;
       const deleteGate = new Promise<void>((resolve) => {
         releaseDelete = resolve;
       });
 
-      const deletePromise = withDescriptionScreenLock('demo', async () => {
+      const deletePromise = withLock('demo', async () => {
         await deleteGate;
         return store.delete('demo', r1);
       });
 
       const putPromise = (async () => {
         await Promise.resolve();
-        return withDescriptionScreenLock('demo', () => {
+        return withLock('demo', () => {
           try {
             const doc = {
               schemaVersion: '1.2' as const,
@@ -364,8 +368,10 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
         listScreenIds: () => ['demo'],
       });
 
+      const withLock = bindDescriptionScreenLock(root, 'x');
+
       const results = await Promise.all([
-        withDescriptionScreenLock('demo', () => {
+        withLock('demo', () => {
           try {
             return { ok: true as const, ...store.delete('demo', revision) };
           } catch (err) {
@@ -375,7 +381,7 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
             };
           }
         }),
-        withDescriptionScreenLock('demo', () => {
+        withLock('demo', () => {
           try {
             return { ok: true as const, ...store.delete('demo', revision) };
           } catch (err) {
@@ -419,12 +425,14 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
         listScreenIds: () => ['demo'],
       });
 
+      const withLock = bindDescriptionScreenLock(root, 'x');
+
       let releaseCollect!: () => void;
       const collectGate = new Promise<void>((resolve) => {
         releaseCollect = resolve;
       });
 
-      const collectPromise = withDescriptionScreenLock('demo', async () => {
+      const collectPromise = withLock('demo', async () => {
         await collectGate;
         return writeCollectedDescription({
           filePath: descPath,
@@ -435,7 +443,7 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
 
       const deletePromise = (async () => {
         await Promise.resolve();
-        return withDescriptionScreenLock('demo', () => {
+        return withLock('demo', () => {
           try {
             store.delete('demo', r1);
             return { ok: true as const };
@@ -484,19 +492,21 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
         listScreenIds: () => ['demo'],
       });
 
+      const withLock = bindDescriptionScreenLock(root, 'x');
+
       let releaseDelete!: () => void;
       const deleteGate = new Promise<void>((resolve) => {
         releaseDelete = resolve;
       });
 
-      const deletePromise = withDescriptionScreenLock('demo', async () => {
+      const deletePromise = withLock('demo', async () => {
         await deleteGate;
         return store.delete('demo', revision);
       });
 
       const collectPromise = (async () => {
         await Promise.resolve();
-        return withDescriptionScreenLock('demo', () =>
+        return withLock('demo', () =>
           writeCollectedDescription({
             filePath: descPath,
             screenId: 'demo',
@@ -516,27 +526,33 @@ describe('DELETE vs PUT / Collector（screen lock）', () => {
   });
 
   it('異なる screenId は並列できる', async () => {
-    const order: string[] = [];
-    let releaseA!: () => void;
-    const gateA = new Promise<void>((resolve) => {
-      releaseA = resolve;
-    });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jskim-lock-par-'));
+    try {
+      const order: string[] = [];
+      let releaseA!: () => void;
+      const gateA = new Promise<void>((resolve) => {
+        releaseA = resolve;
+      });
+      const withLock = bindDescriptionScreenLock(root, 'x');
 
-    const a = withDescriptionScreenLock('a', async () => {
-      order.push('a-start');
-      await gateA;
-      order.push('a-end');
-    });
-    const b = withDescriptionScreenLock('b', async () => {
-      order.push('b');
-    });
+      const a = withLock('a', async () => {
+        order.push('a-start');
+        await gateA;
+        order.push('a-end');
+      });
+      const b = withLock('b', async () => {
+        order.push('b');
+      });
 
-    await waitForOrder(order, ['a-start', 'b']);
-    releaseA();
-    await Promise.all([a, b]);
-    expect(order[order.length - 1]).toBe('a-end');
-    expect(order).toContain('a-start');
-    expect(order).toContain('b');
+      await waitForOrder(order, ['a-start', 'b']);
+      releaseA();
+      await Promise.all([a, b]);
+      expect(order[order.length - 1]).toBe('a-end');
+      expect(order).toContain('a-start');
+      expect(order).toContain('b');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

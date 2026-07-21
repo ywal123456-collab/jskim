@@ -9,11 +9,24 @@ export function createDescriptionDocumentError(
 
 export class DescriptionDocumentError extends Error {
   readonly code: string;
+  readonly expectedRevision?: string;
+  readonly currentRevision?: string | null;
 
-  constructor(error: DescriptionDocumentValidationError) {
+  constructor(
+    error: DescriptionDocumentValidationError & {
+      expectedRevision?: string;
+      currentRevision?: string | null;
+    },
+  ) {
     super(error.message);
     this.name = 'DescriptionDocumentError';
     this.code = error.code;
+    if (error.expectedRevision !== undefined) {
+      this.expectedRevision = error.expectedRevision;
+    }
+    if (error.currentRevision !== undefined) {
+      this.currentRevision = error.currentRevision;
+    }
   }
 }
 

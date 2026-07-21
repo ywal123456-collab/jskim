@@ -28,7 +28,9 @@ root CLI は `jskim spec version …`、`jskim spec dev` の read-only Revision 
 
 - Viewer mutation UI、Excel Export、Remote Provider
 - **Item Group 編集 UI / mutation API**（Phase 7F-1A 設計: [item-group-hierarchy.md](../docs/screen-spec/item-group-hierarchy.md)）
-- **Phase 7F-1B 実装済み**: Description v1.3 schema / read-only normalize / semantic validator / flat projection（`readDescriptionDocument` 等）。Group 編集・v1.3 永続化は未実装
+- **Phase 7F-1B 実装済み**: Description v1.3 schema / read-only normalize / semantic validator / flat projection（`readDescriptionDocument` 等）
+- **Phase 7F-1C-1 実装済み**: v1.3 canonical writer / lazy migration / `createDescriptionGroup` / `updateDescriptionGroup`（domain mutation API のみ。HTTP / Viewer UI 未接続）
+- **Item Group 編集 UI / HTTP API** — 未実装
 
 ### CLI 最小 workflow
 
@@ -182,7 +184,7 @@ Vue Viewer（「＋ 画面を作成」）
 - 画面設計書の削除 API（phase 7B-3B-2）: `DELETE /_jskim/spec/descriptions/:screenId`（`expectedRevision` 必須）
   - `FileDescriptionStore.delete` は Description JSON のみ unlink（source / snapshot / resources は触らない）
   - DESIGN_ONLY → 一覧から除去。LINKED → IMPLEMENTATION_ONLY（Collector は再作成しない）
-  - `withDescriptionScreenLock` で PUT / create / DELETE / Collector merge-write を screenId 単位直列化
+  - `withDescriptionScreenLock`（project + screenId、in-process queue + `spec/{project}/.jskim/description-mutation/{screenId}.lock`）で Group mutation / PUT / create / DELETE / Collector merge-write を直列化
   - API は build を呼ばない。unlink を watcher が検知して build-only + `reload(target=spec)`
   - 外部 editor との TOCTOU は保証外
 - Viewer 画面設計削除（phase 7B-3B-3）: 「画面設計を削除」→ 確認 Dialog → `DELETE` + `expectedRevision`

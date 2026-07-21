@@ -19,6 +19,7 @@ export {
   MAX_GROUP_DEPTH,
 } from './validate-description-tree-semantics.js';
 export {
+  assertLegacyDescriptionMutationSupported,
   assertDescriptionMutationSupported,
   isDescriptionMutationSupported,
 } from './mutation-support.js';
@@ -39,3 +40,28 @@ export {
   type NormalizedDescription,
   type DescriptionDocumentValidationError,
 } from './types.js';
+export { cloneNormalizedDescription } from './clone-normalized.js';
+export { formatDescriptionDocumentV13 } from './canonical-writer.js';
+export { sortDescriptionItemMapKeys } from './sort-item-map-keys.js';
+export {
+  descriptionDataFilePath,
+  descriptionDataRelativePath,
+  descriptionScreenMutationLockPath,
+} from './paths.js';
+export { readDescriptionRevision } from './description-revision.js';
+export { applyCreateGroup, type CreateGroupInput } from './create-group.js';
+export {
+  applyUpdateGroup,
+  type UpdateGroupInput,
+  type ApplyUpdateGroupResult,
+} from './update-group.js';
+export {
+  mutateDescriptionTree,
+  createDescriptionGroup,
+  updateDescriptionGroup,
+  readDescriptionTreeState,
+  type DescriptionTreeMutationContext,
+  type DescriptionTreeMutationAdapters,
+  type DescriptionTreeMutationResult,
+  type MutateDescriptionTreeOptions,
+} from './mutate-description-tree.js';

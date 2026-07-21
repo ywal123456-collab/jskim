@@ -514,6 +514,20 @@ itemOrder 削除・rootNodes 追加は migration commit として diff に現れ
 
 lazy migration（現行 v1.0→1.2 と同型）: **保存操作が起きるまで** on-disk schemaVersion は変えない。
 
+### 8.5 Description mutation lock（SoT）
+
+同一 `spec/{project}/src/data/{screenId}.json` を変更する **すべての mutation**（Group create/update、legacy PUT / create / DELETE、Collector merge-write、将来の exclude/restore）は **`withDescriptionScreenLock`** の単一境界を使う。
+
+```text
+key: project + screenId（in-process queue）
+filesystem: spec/{project}/.jskim/description-mutation/{screenId}.lock
+順序: queue 待機 → lock 取得 → revision 再読込 / CAS → mutation → atomic persist → lock 解放
+```
+
+- lock **取得前**の revision は信用しない。取得後に raw bytes SHA-256 を再検証する。
+- `writeFileAtomic` replace 失敗時: destination は backup から復元、TEMP / backup は helper 契約どおり削除（部分 JSON 非公開）。
+- 異なる screenId は並列可能。同一 screenId は process 内 + 他 process（lock file EEXIST）で直列化。
+
 ---
 
 ## 9. collected / manual / excluded 契約
@@ -842,3 +856,5 @@ Revision API 投影も Item と同様 **browser-safe 文字列** のみ。
 |------|-------|------|
 | 2026-07-21 | 7F-1A | 初版（設計のみ） |
 | 2026-07-21 | 7F-1A-2 | 到達可能性・read/migration 分離・Collector 配置・exclude/restore・削除原子性・Screen 複製・canonical writer・depth 移動検証を補強 |
+| 2026-07-21 | 7F-1C-1 | v1.3 canonical writer・lazy migration・createGroup/updateGroup mutation（domain API のみ）を実装 |
+| 2026-07-21 | 7F-1C-1A | Description mutation lock を `withDescriptionScreenLock`（project + screenId、in-process queue + `spec/{project}/.jskim/description-mutation/{screenId}.lock`）へ統合。lock 取得後に revision 再検証。`writeFileAtomic` replace 失敗時は backup 復元 + TEMP 削除 |

@@ -196,6 +196,7 @@ async function resolveScreenSpecModule(options = {}) {
     createFileDescriptionStore: mod.createFileDescriptionStore,
     loadScreenSpecProject: mod.loadScreenSpecProject,
     withDescriptionScreenLock: mod.withDescriptionScreenLock,
+    bindDescriptionScreenLock: mod.bindDescriptionScreenLock,
     collectDeviceCapture: mod.collectDeviceCapture,
     getDeviceCapturePublicInfo: mod.getDeviceCapturePublicInfo,
     getDeviceCaptureStatus: mod.getDeviceCaptureStatus,
