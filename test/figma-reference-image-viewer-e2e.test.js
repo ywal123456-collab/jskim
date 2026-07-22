@@ -16,8 +16,10 @@ const { getFreePort } = require('./helpers/get-free-port');
 const { waitFor } = require('./helpers/wait-for-output');
 const { buildPng } = require('./helpers/multipart');
 
-const requireFromHere = createRequire(__filename);
-const PLAYWRIGHT = requireFromHere('playwright');
+const companionRequire = createRequire(
+  path.resolve(__dirname, '..', 'jskim-screen-spec', 'package.json'),
+);
+const PLAYWRIGHT = companionRequire('playwright');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const COMPANION_ENTRY = path.join(

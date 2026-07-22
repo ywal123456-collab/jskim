@@ -28,8 +28,10 @@ const { createRequire } = require('node:module');
 const { createSpecDevRuntime } = require('../scripts/lib/create-spec-dev-runtime');
 const { getFreePort } = require('./helpers/get-free-port');
 
-const requireFromHere = createRequire(__filename);
-const PLAYWRIGHT = requireFromHere('playwright');
+const companionRequire = createRequire(
+  path.resolve(__dirname, '..', 'jskim-screen-spec', 'package.json'),
+);
+const PLAYWRIGHT = companionRequire('playwright');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const COMPANION_ENTRY = path.join(
