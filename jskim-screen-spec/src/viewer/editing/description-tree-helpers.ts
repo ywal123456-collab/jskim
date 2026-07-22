@@ -169,6 +169,158 @@ export function findActiveDescriptionGroup(
   return buildGroupMap(response).get(groupId) ?? null;
 }
 
+/** domain MAX_GROUP_DEPTH と同一（viewer は bundle 内定数を持つ）。 */
+export const VIEWER_MAX_GROUP_DEPTH = 8;
+
+/**
+ * active tree 上の Group depth（root 直下 = 1）。到達不能なら null。
+ * groups definition だけを見ず rootNodes から走査する。
+ */
+export function computeActiveGroupDepth(
+  response: DescriptionTreeGetResponse,
+  groupId: string,
+): number | null {
+  const groupMap = buildGroupMap(response);
+
+  function walkRefs(
+    refs: DescriptionTreeNodeRef[],
+    depth: number,
+  ): number | null {
+    for (const ref of refs) {
+      if (ref.type !== 'group') {
+        continue;
+      }
+      if (ref.id === groupId) {
+        return depth;
+      }
+      const group = groupMap.get(ref.id);
+      if (group) {
+        const found = walkRefs(group.children, depth + 1);
+        if (found != null) {
+          return found;
+        }
+      }
+    }
+    return null;
+  }
+
+  return walkRefs(response.description.rootNodes, 1);
+}
+
+/**
+ * active tree 上の親 Group ID。
+ * - null: rootNodes の直接 child
+ * - string: 親 Group
+ * - undefined: active tree に存在しない
+ */
+export function findActiveGroupParentId(
+  response: DescriptionTreeGetResponse,
+  groupId: string,
+): string | null | undefined {
+  const groupMap = buildGroupMap(response);
+
+  for (const ref of response.description.rootNodes) {
+    if (ref.type === 'group' && ref.id === groupId) {
+      return null;
+    }
+  }
+
+  function walk(
+    refs: DescriptionTreeNodeRef[],
+    parentId: string,
+  ): string | null | undefined {
+    for (const ref of refs) {
+      if (ref.type !== 'group') {
+        continue;
+      }
+      if (ref.id === groupId) {
+        return parentId;
+      }
+      const group = groupMap.get(ref.id);
+      if (group) {
+        const found = walk(group.children, ref.id);
+        if (found !== undefined) {
+          return found;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  for (const ref of response.description.rootNodes) {
+    if (ref.type !== 'group') {
+      continue;
+    }
+    const group = groupMap.get(ref.id);
+    if (!group) {
+      continue;
+    }
+    const found = walk(group.children, ref.id);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+/** root から groupId までの ancestor chain（groupId 自身を含む）。未到達なら []。 */
+export function collectActiveGroupAncestorChain(
+  response: DescriptionTreeGetResponse,
+  groupId: string,
+): string[] {
+  const groupMap = buildGroupMap(response);
+
+  function walk(
+    refs: DescriptionTreeNodeRef[],
+    chain: string[],
+  ): string[] | null {
+    for (const ref of refs) {
+      if (ref.type !== 'group') {
+        continue;
+      }
+      const nextChain = [...chain, ref.id];
+      if (ref.id === groupId) {
+        return nextChain;
+      }
+      const group = groupMap.get(ref.id);
+      if (group) {
+        const found = walk(group.children, nextChain);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  }
+
+  return walk(response.description.rootNodes, []) ?? [];
+}
+
+/**
+ * groups / items / excludedItems の ID 集合（orphan definition 含む）。
+ * Group create の client 側重複検査用。
+ */
+export function collectTakenDescriptionNodeIds(
+  response: DescriptionTreeGetResponse,
+): string[] {
+  const ids = new Set<string>();
+  for (const raw of response.description.groups) {
+    if (typeof raw.groupId === 'string' && raw.groupId) {
+      ids.add(raw.groupId);
+    }
+  }
+  for (const itemId of Object.keys(response.description.items)) {
+    ids.add(itemId);
+  }
+  const excluded = response.description.excludedItems;
+  if (excluded && typeof excluded === 'object') {
+    for (const itemId of Object.keys(excluded)) {
+      ids.add(itemId);
+    }
+  }
+  return [...ids];
+}
+
 /** active tree 上に node が存在するか（definition だけの orphan は false）。 */
 export function nodeExistsInTree(
   response: DescriptionTreeGetResponse,

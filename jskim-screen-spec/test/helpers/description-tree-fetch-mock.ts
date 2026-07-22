@@ -290,6 +290,98 @@ export function stubDescriptionTreeFetch(
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
+
+      if (suffix === '/groups' && method === 'POST') {
+        const groupId = String(body.groupId ?? '');
+        if (!groupId) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_INVALID',
+              message: 'groupId が必要です。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (!entry.doc.groups) {
+          entry.doc.groups = [];
+        }
+        if (!entry.doc.rootNodes) {
+          entry.doc.rootNodes = entry.doc.itemOrder.map((id) => ({
+            type: 'item' as const,
+            id,
+          }));
+        }
+        const existingGroupIds = new Set(
+          entry.doc.groups.map((group) => group.groupId),
+        );
+        if (existingGroupIds.has(groupId)) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS',
+              message: `groupId が既に存在します: ${groupId}`,
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(entry.doc.items, groupId) ||
+          Object.prototype.hasOwnProperty.call(
+            entry.doc.excludedItems ?? {},
+            groupId,
+          )
+        ) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_NODE_ID_CONFLICT',
+              message: `groupId と itemId が衝突しています: ${groupId}`,
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const parentGroupId =
+          body.parentGroupId == null || body.parentGroupId === ''
+            ? undefined
+            : String(body.parentGroupId);
+        const newGroup: MockTreeGroup = {
+          groupId,
+          name: String(body.name ?? ''),
+          kind: String(body.kind ?? 'SECTION'),
+          children: [],
+        };
+        if (
+          typeof body.description === 'string' &&
+          body.description.trim() !== ''
+        ) {
+          newGroup.description = body.description;
+        }
+        entry.doc.groups.push(newGroup);
+        const ref = { type: 'group' as const, id: groupId };
+        if (parentGroupId === undefined) {
+          entry.doc.rootNodes.push(ref);
+        } else {
+          const parent = entry.doc.groups.find(
+            (group) => group.groupId === parentGroupId,
+          );
+          if (!parent) {
+            entry.doc.groups = entry.doc.groups.filter(
+              (group) => group.groupId !== groupId,
+            );
+            return new Response(
+              JSON.stringify({
+                code: 'SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND',
+                message: `親 Group が見つかりません: ${parentGroupId}`,
+              }),
+              { status: 404, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          parent.children.push(ref);
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     return new Response('not found', { status: 404 });

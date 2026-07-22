@@ -403,13 +403,22 @@ body,
   margin-bottom: 0.5rem;
 }
 
+.item-tree-panel__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .item-tree-panel__title {
   margin: 0;
   font-size: 0.95rem;
 }
 
 .item-tree-panel__reload,
-.item-tree-panel__retry {
+.item-tree-panel__retry,
+.item-tree-panel__add-group {
   border: 1px solid var(--spec-border);
   border-radius: 0.25rem;
   background: #fff;
@@ -419,7 +428,8 @@ body,
   cursor: pointer;
 }
 
-.item-tree-panel__reload:disabled {
+.item-tree-panel__reload:disabled,
+.item-tree-panel__add-group:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

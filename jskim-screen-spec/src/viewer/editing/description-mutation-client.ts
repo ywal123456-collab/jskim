@@ -266,6 +266,38 @@ export async function reorderDescriptionChildren(
   );
 }
 
+export async function createDescriptionGroup(
+  screenId: string,
+  input: {
+    expectedRevision: string;
+    groupId: string;
+    name: string;
+    kind: string;
+    description?: string | null;
+    parentGroupId?: string | null;
+    insertIndex?: number;
+  },
+  fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
+) {
+  const body: Record<string, unknown> = {
+    expectedRevision: input.expectedRevision,
+    groupId: input.groupId,
+    name: input.name,
+    kind: input.kind,
+  };
+  if (Object.prototype.hasOwnProperty.call(input, 'description')) {
+    body.description = input.description ?? null;
+  }
+  if (input.parentGroupId != null && input.parentGroupId !== '') {
+    body.parentGroupId = input.parentGroupId;
+  }
+  if (typeof input.insertIndex === 'number') {
+    body.insertIndex = input.insertIndex;
+  }
+  return mutateJson(treeUrl(screenId, '/groups'), 'POST', body, fetchFn, signal);
+}
+
 export async function updateDescriptionGroup(
   screenId: string,
   groupId: string,
@@ -305,6 +337,18 @@ export function sanitizeMutationMessage(error: DescriptionMutationError): string
   }
   if (error.code === 'SPEC_DESCRIPTION_REVISION_CONFLICT') {
     return '他の操作によって画面設計書が更新されました。最新内容を再読み込みしてください。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_ALREADY_EXISTS') {
+    return 'このグループIDは既に使用されています。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_NODE_ID_CONFLICT') {
+    return 'このグループIDは既に項目IDとして使用されています。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_DEPTH_EXCEEDED') {
+    return '最大階層（8階層）に達しているため、子グループを追加できません。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND') {
+    return '追加先のグループが見つかりません。最新内容を確認してください。';
   }
   if (error.code === 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED') {
     return '実装画面と連携された項目は削除できません。設計対象に残すか、設計対象から除外してください。';

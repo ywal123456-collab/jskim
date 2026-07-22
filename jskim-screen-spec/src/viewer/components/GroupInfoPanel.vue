@@ -15,10 +15,14 @@ const props = defineProps<{
   editingEnabled?: boolean;
   mutationPending?: boolean;
   reloadRequired?: boolean;
+  unresolvedItemConflict?: boolean;
+  canAddChildGroup?: boolean;
+  depthLimitReached?: boolean;
 }>();
 
 const emit = defineEmits<{
   edit: [];
+  addChildGroup: [];
 }>();
 
 const groupMap = computed(() => buildGroupMap(props.response));
@@ -37,11 +41,18 @@ const descendantGroups = computed(() =>
   group.value ? countDescendantGroups(props.groupId, groupMap.value) : 0,
 );
 
-const canEdit = computed(
+const canMutate = computed(
   () =>
     Boolean(props.editingEnabled) &&
     !props.mutationPending &&
-    !props.reloadRequired,
+    !props.reloadRequired &&
+    !props.unresolvedItemConflict,
+);
+
+const canEdit = computed(() => canMutate.value);
+
+const canAddChild = computed(
+  () => canMutate.value && props.canAddChildGroup !== false && !props.depthLimitReached,
 );
 
 function onEditClick(): void {
@@ -49,6 +60,13 @@ function onEditClick(): void {
     return;
   }
   emit('edit');
+}
+
+function onAddChildClick(): void {
+  if (!canAddChild.value) {
+    return;
+  }
+  emit('addChildGroup');
 }
 </script>
 
@@ -61,17 +79,34 @@ function onEditClick(): void {
   >
     <div class="group-info-panel__header">
       <h3 class="group-info-panel__title">グループ情報</h3>
-      <button
-        v-if="editingEnabled"
-        type="button"
-        class="spec-page__btn spec-page__btn--secondary"
-        data-testid="group-edit-open"
-        :disabled="!canEdit"
-        @click="onEditClick"
-      >
-        グループを編集
-      </button>
+      <div v-if="editingEnabled" class="group-info-panel__actions">
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="group-edit-open"
+          :disabled="!canEdit"
+          @click="onEditClick"
+        >
+          グループを編集
+        </button>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="group-add-child-open"
+          :disabled="!canAddChild"
+          @click="onAddChildClick"
+        >
+          子グループを追加
+        </button>
+      </div>
     </div>
+    <p
+      v-if="editingEnabled && depthLimitReached"
+      class="group-info-panel__depth-note"
+      data-testid="group-depth-limit-note"
+    >
+      最大階層（8階層）に達しているため、子グループを追加できません。
+    </p>
     <dl class="group-info-panel__list">
       <div class="group-info-panel__row">
         <dt>名前</dt>
@@ -112,5 +147,18 @@ function onEditClick(): void {
 
 .group-info-panel__header .group-info-panel__title {
   margin: 0;
+}
+
+.group-info-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.group-info-panel__depth-note {
+  margin: 0 0 0.75rem;
+  color: var(--spec-muted, #57606a);
+  font-size: 0.85rem;
 }
 </style>

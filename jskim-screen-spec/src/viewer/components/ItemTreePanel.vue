@@ -14,6 +14,8 @@ const props = defineProps<{
   errorMessage: string;
   expandedGroupIds: Set<string>;
   selectedTreeNode: SelectedTreeNode | null;
+  editingEnabled?: boolean;
+  canAddRootGroup?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   toggleGroup: [groupId: string];
   selectGroup: [groupId: string];
   selectItem: [itemId: string];
+  addRootGroup: [];
 }>();
 
 const revisionPreview = computed(() =>
@@ -32,20 +35,39 @@ const sourceSchemaVersion = computed(
 );
 
 const rootNodes = computed(() => props.response?.description.rootNodes ?? []);
+
+function onAddRootGroup(): void {
+  if (!props.editingEnabled || props.canAddRootGroup === false) {
+    return;
+  }
+  emit('addRootGroup');
+}
 </script>
 
 <template>
   <section class="item-tree-panel" aria-label="項目ツリー">
     <div class="item-tree-panel__header">
       <h3 class="item-tree-panel__title">項目ツリー</h3>
-      <button
-        type="button"
-        class="item-tree-panel__reload"
-        :disabled="status === 'loading'"
-        @click="emit('reload')"
-      >
-        再読み込み
-      </button>
+      <div class="item-tree-panel__header-actions">
+        <button
+          v-if="editingEnabled"
+          type="button"
+          class="item-tree-panel__add-group"
+          data-testid="group-add-root-open"
+          :disabled="canAddRootGroup === false || status === 'loading'"
+          @click="onAddRootGroup"
+        >
+          グループを追加
+        </button>
+        <button
+          type="button"
+          class="item-tree-panel__reload"
+          :disabled="status === 'loading'"
+          @click="emit('reload')"
+        >
+          再読み込み
+        </button>
+      </div>
     </div>
 
     <div

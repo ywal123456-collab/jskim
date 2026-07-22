@@ -16,12 +16,14 @@ import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import ItemTreePanel from '../components/ItemTreePanel.vue';
 import GroupInfoPanel from '../components/GroupInfoPanel.vue';
 import GroupEditDialog from '../components/GroupEditDialog.vue';
+import GroupCreateDialog from '../components/GroupCreateDialog.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
 import {
   useDescriptionEditor,
   type DescriptionMutationOutcome,
+  type GroupCreateResult,
   type GroupUpdateResult,
   type LoadDescriptionReason,
 } from '../editing/useDescriptionEditor';
@@ -29,11 +31,17 @@ import { useDescriptionTreePanel } from '../editing/use-description-tree-panel';
 import {
   buildGroupMap,
   collectActiveDescriptionTreeNodeIds,
+  collectActiveGroupAncestorChain,
+  collectTakenDescriptionNodeIds,
+  computeActiveGroupDepth,
   createDefaultExpandedGroupIds,
+  findActiveDescriptionGroup,
   nodeExistsInTree,
   reconcileExpandedGroupIds,
+  VIEWER_MAX_GROUP_DEPTH,
 } from '../editing/description-tree-helpers';
 import type { GroupEditPayload } from '../editing/group-edit-validation';
+import type { GroupCreatePayload } from '../editing/group-create-validation';
 import { useVersionHistory } from '../version-history/use-version-history';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
 import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
@@ -125,6 +133,20 @@ const groupEditTarget = ref<{
   description: string;
   generation: number;
 } | null>(null);
+const groupCreateDialogOpen = ref(false);
+const groupCreateDialogPending = ref(false);
+const groupCreateErrorMessage = ref('');
+const groupCreateTarget = ref<{
+  screenId: string;
+  mode: 'root' | 'child';
+  parentGroupId: string | null;
+  parentGroupName: string | null;
+  expectedRevision: string;
+  parentDepth: number | null;
+  parentActive: boolean;
+  generation: number;
+  selectionGeneration: number;
+} | null>(null);
 
 type UncertainItemMutationPayload = {
   itemId: string;
@@ -197,6 +219,9 @@ let excludeOpSeq = 0;
 let createOpSeq = 0;
 let groupEditOpSeq = 0;
 let groupEditDialogGeneration = 0;
+let groupCreateOpSeq = 0;
+let groupCreateDialogGeneration = 0;
+let treeSelectionGeneration = 0;
 const activeDuplicateOp = ref<ItemDialogOperation | null>(null);
 const activeDeleteOp = ref<ItemDialogOperation | null>(null);
 const activeExcludeOp = ref<ItemDialogOperation | null>(null);
@@ -210,6 +235,17 @@ type GroupEditOperation = {
 
 const activeGroupEditOp = ref<GroupEditOperation | null>(null);
 
+type GroupCreateOperation = {
+  seq: number;
+  screenId: string;
+  groupId: string;
+  generation: number;
+  selectionGeneration: number;
+  parentGroupId: string | null;
+};
+
+const activeGroupCreateOp = ref<GroupCreateOperation | null>(null);
+
 function invalidateItemDialogOperations(): void {
   duplicateOpSeq += 1;
   deleteOpSeq += 1;
@@ -217,23 +253,30 @@ function invalidateItemDialogOperations(): void {
   createOpSeq += 1;
   groupEditOpSeq += 1;
   groupEditDialogGeneration += 1;
+  groupCreateOpSeq += 1;
+  groupCreateDialogGeneration += 1;
   activeDuplicateOp.value = null;
   activeDeleteOp.value = null;
   activeExcludeOp.value = null;
   activeCreateOp.value = null;
   activeGroupEditOp.value = null;
+  activeGroupCreateOp.value = null;
   duplicateDialogPending.value = false;
   deleteDialogPending.value = false;
   excludeDialogPending.value = false;
   createDialogPending.value = false;
   groupEditDialogPending.value = false;
   groupEditErrorMessage.value = '';
+  groupCreateDialogPending.value = false;
+  groupCreateErrorMessage.value = '';
   duplicateSourceItemId.value = null;
   deleteTargetItemId.value = null;
   excludeTargetItemId.value = null;
   createItemDialogOpen.value = false;
   groupEditDialogOpen.value = false;
   groupEditTarget.value = null;
+  groupCreateDialogOpen.value = false;
+  groupCreateTarget.value = null;
   uncertainItemMutation.value = null;
 }
 
@@ -1354,9 +1397,19 @@ const {
   selectedTreeNode: selectedTreeNodeRef,
   reloadTree: reloadReadOnlyTree,
   toggleGroupExpanded: toggleReadOnlyGroupExpanded,
-  selectTreeGroup,
-  selectTreeItem,
+  selectTreeGroup: selectTreeGroupRaw,
+  selectTreeItem: selectTreeItemRaw,
 } = descriptionTree;
+
+function selectTreeGroup(groupId: string): void {
+  treeSelectionGeneration += 1;
+  selectTreeGroupRaw(groupId);
+}
+
+function selectTreeItem(itemId: string): void {
+  treeSelectionGeneration += 1;
+  selectTreeItemRaw(itemId);
+}
 
 watch(
   () => readOnlyTreeResponse.value,
@@ -1630,6 +1683,282 @@ function onSaveGroupEdit(payload: GroupEditPayload): void {
         return;
       }
       finishGroupEditOperation(op, outcome, target.groupId);
+    });
+}
+
+const canOpenGroupCreate = computed(
+  () =>
+    Boolean(editor.editingEnabled) &&
+    !editor.mutationPending.value &&
+    !editor.reloadRequired.value &&
+    !editor.unresolvedItemConflict.value &&
+    !groupCreateDialogPending.value &&
+    !groupEditDialogPending.value &&
+    Boolean(editor.revision.value) &&
+    Boolean(treeResponse.value),
+);
+
+const selectedGroupDepth = computed(() => {
+  const selected = selectedTreeNodeRef.value;
+  const response = treeResponse.value;
+  if (!selected || selected.type !== 'group' || !response) {
+    return null;
+  }
+  return computeActiveGroupDepth(response, selected.id);
+});
+
+const selectedGroupDepthLimitReached = computed(() => {
+  const depth = selectedGroupDepth.value;
+  return depth != null && depth >= VIEWER_MAX_GROUP_DEPTH;
+});
+
+const groupCreateExistingNodeIds = computed(() => {
+  const response = treeResponse.value;
+  if (!response) {
+    return [];
+  }
+  return collectTakenDescriptionNodeIds(response);
+});
+
+function openRootGroupCreate(): void {
+  if (!canOpenGroupCreate.value || editor.unresolvedItemConflict.value) {
+    return;
+  }
+  if (!editor.revision.value || !treeResponse.value) {
+    return;
+  }
+  groupCreateDialogGeneration += 1;
+  groupCreateErrorMessage.value = '';
+  groupCreateTarget.value = {
+    screenId: props.screenId,
+    mode: 'root',
+    parentGroupId: null,
+    parentGroupName: null,
+    expectedRevision: editor.revision.value,
+    parentDepth: null,
+    parentActive: true,
+    generation: groupCreateDialogGeneration,
+    selectionGeneration: treeSelectionGeneration,
+  };
+  groupCreateDialogOpen.value = true;
+}
+
+function openChildGroupCreate(): void {
+  if (!canOpenGroupCreate.value || editor.unresolvedItemConflict.value) {
+    return;
+  }
+  const selected = selectedTreeNodeRef.value;
+  if (!selected || selected.type !== 'group' || !treeResponse.value) {
+    return;
+  }
+  if (!editor.revision.value) {
+    return;
+  }
+  const parent = findActiveDescriptionGroup(treeResponse.value, selected.id);
+  const parentDepth = computeActiveGroupDepth(treeResponse.value, selected.id);
+  if (!parent || parentDepth == null) {
+    return;
+  }
+  if (parentDepth >= VIEWER_MAX_GROUP_DEPTH) {
+    return;
+  }
+  groupCreateDialogGeneration += 1;
+  groupCreateErrorMessage.value = '';
+  groupCreateTarget.value = {
+    screenId: props.screenId,
+    mode: 'child',
+    parentGroupId: parent.groupId,
+    parentGroupName: parent.name,
+    expectedRevision: editor.revision.value,
+    parentDepth,
+    parentActive: true,
+    generation: groupCreateDialogGeneration,
+    selectionGeneration: treeSelectionGeneration,
+  };
+  groupCreateDialogOpen.value = true;
+}
+
+function closeGroupCreateForced(): void {
+  groupCreateDialogOpen.value = false;
+  groupCreateTarget.value = null;
+  groupCreateErrorMessage.value = '';
+  groupCreateDialogPending.value = false;
+  activeGroupCreateOp.value = null;
+}
+
+function closeGroupCreate(): void {
+  if (groupCreateDialogPending.value) {
+    return;
+  }
+  closeGroupCreateForced();
+}
+
+function beginGroupCreateOperation(groupId: string): GroupCreateOperation | null {
+  if (groupCreateDialogPending.value || editor.reloadRequired.value) {
+    return null;
+  }
+  if (editor.unresolvedItemConflict.value) {
+    return null;
+  }
+  const target = groupCreateTarget.value;
+  if (!target) {
+    return null;
+  }
+  const op: GroupCreateOperation = {
+    seq: ++groupCreateOpSeq,
+    screenId: props.screenId,
+    groupId,
+    generation: target.generation,
+    selectionGeneration: target.selectionGeneration,
+    parentGroupId: target.parentGroupId,
+  };
+  activeGroupCreateOp.value = op;
+  groupCreateDialogPending.value = true;
+  groupCreateErrorMessage.value = '';
+  return op;
+}
+
+function isActiveGroupCreateOperation(
+  op: GroupCreateOperation,
+  groupId: string,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!groupCreateDialogOpen.value || !groupCreateTarget.value) {
+    return false;
+  }
+  if (!activeGroupCreateOp.value || activeGroupCreateOp.value.seq !== op.seq) {
+    return false;
+  }
+  if (activeGroupCreateOp.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (activeGroupCreateOp.value.groupId !== op.groupId) {
+    return false;
+  }
+  if (activeGroupCreateOp.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupCreateTarget.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupCreateTarget.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (groupId !== op.groupId) {
+    return false;
+  }
+  return true;
+}
+
+function expandAncestorsForCreatedGroup(parentGroupId: string | null): void {
+  const response = treeResponse.value;
+  if (!response || parentGroupId == null) {
+    return;
+  }
+  const chain = collectActiveGroupAncestorChain(response, parentGroupId);
+  if (chain.length === 0) {
+    return;
+  }
+  const next = new Set(editingExpandedGroupIds.value);
+  for (const id of chain) {
+    next.add(id);
+  }
+  editingExpandedGroupIds.value = next;
+}
+
+function finishGroupCreateOperation(
+  op: GroupCreateOperation,
+  outcome: GroupCreateResult,
+  groupId: string,
+): void {
+  if (!isActiveGroupCreateOperation(op, groupId)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  groupCreateDialogPending.value = false;
+  activeGroupCreateOp.value = null;
+
+  if (outcome.status === 'committed-refreshed') {
+    const selectionUnchanged =
+      treeSelectionGeneration === op.selectionGeneration;
+    closeGroupCreateForced();
+    expandAncestorsForCreatedGroup(outcome.parentGroupId);
+    if (selectionUnchanged) {
+      void nextTick(() => {
+        if (treeSelectionGeneration === op.selectionGeneration) {
+          selectTreeGroup(outcome.groupId);
+        }
+      });
+    }
+    return;
+  }
+
+  if (outcome.status === 'target-absent') {
+    closeGroupCreateForced();
+    return;
+  }
+
+  if (outcome.status === 'authoritative-mismatch') {
+    closeGroupCreateForced();
+    return;
+  }
+
+  if (outcome.status === 'mutation-rejected') {
+    groupCreateErrorMessage.value = editor.statusMessage.value;
+    return;
+  }
+
+  if (outcome.status === 'committed-refresh-failed') {
+    groupCreateErrorMessage.value = editor.statusMessage.value;
+    closeGroupCreateForced();
+  }
+}
+
+function onCreateGroup(payload: GroupCreatePayload): void {
+  const target = groupCreateTarget.value;
+  if (
+    !target ||
+    groupCreateDialogPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value ||
+    target.screenId !== props.screenId
+  ) {
+    return;
+  }
+  if (target.mode === 'child') {
+    const response = treeResponse.value;
+    if (!response || target.parentGroupId == null) {
+      return;
+    }
+    const parent = findActiveDescriptionGroup(response, target.parentGroupId);
+    const parentDepth = computeActiveGroupDepth(response, target.parentGroupId);
+    if (!parent || parentDepth == null || parentDepth >= VIEWER_MAX_GROUP_DEPTH) {
+      return;
+    }
+  }
+  const op = beginGroupCreateOperation(payload.groupId);
+  if (!op) {
+    return;
+  }
+  const capturedRevision = target.expectedRevision;
+  void editor
+    .createGroup({
+      groupId: payload.groupId,
+      expectedRevision: capturedRevision,
+      name: payload.name,
+      kind: payload.kind,
+      description: payload.description,
+      parentGroupId: target.parentGroupId,
+    })
+    .then((outcome) => {
+      if (!isActiveGroupCreateOperation(op, payload.groupId)) {
+        return;
+      }
+      finishGroupCreateOperation(op, outcome, payload.groupId);
     });
 }
 
@@ -2363,10 +2692,13 @@ onBeforeUnmount(() => {
               :error-message="treeError"
               :expanded-group-ids="expandedGroupIds"
               :selected-tree-node="selectedTreeNodeRef"
+              :editing-enabled="editor.editingEnabled"
+              :can-add-root-group="canOpenGroupCreate"
               @reload="reloadTree()"
               @toggle-group="toggleGroupExpanded"
               @select-group="selectTreeGroup"
               @select-item="selectTreeItem"
+              @add-root-group="openRootGroupCreate"
             />
 
             <div class="spec-page__items-detail">
@@ -2380,7 +2712,11 @@ onBeforeUnmount(() => {
                 :editing-enabled="editor.editingEnabled"
                 :mutation-pending="editor.mutationPending.value"
                 :reload-required="editor.reloadRequired.value"
+                :unresolved-item-conflict="editor.unresolvedItemConflict.value"
+                :can-add-child-group="canOpenGroupCreate"
+                :depth-limit-reached="selectedGroupDepthLimitReached"
                 @edit="openGroupEdit"
+                @add-child-group="openChildGroupCreate"
               />
               <ItemDescriptionTable
                 :screen="screen"
@@ -2464,6 +2800,22 @@ onBeforeUnmount(() => {
       :error-message="groupEditErrorMessage"
       @close="closeGroupEdit"
       @save="onSaveGroupEdit"
+    />
+
+    <GroupCreateDialog
+      v-if="groupCreateDialogOpen && groupCreateTarget"
+      :mode="groupCreateTarget.mode"
+      :generation="groupCreateTarget.generation"
+      :parent-group-id="groupCreateTarget.parentGroupId"
+      :parent-group-name="groupCreateTarget.parentGroupName"
+      :existing-node-ids="groupCreateExistingNodeIds"
+      :parent-depth="groupCreateTarget.parentDepth"
+      :parent-active="groupCreateTarget.parentActive"
+      :pending="groupCreateDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
+      :error-message="groupCreateErrorMessage"
+      @close="closeGroupCreate"
+      @create="onCreateGroup"
     />
 
     <DuplicateItemDialog

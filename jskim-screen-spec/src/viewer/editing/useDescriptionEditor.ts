@@ -14,8 +14,11 @@ import {
 } from './description-editor-helpers.js';
 import * as mutationClient from './description-mutation-client.js';
 import {
+  computeActiveGroupDepth,
   findActiveDescriptionGroup,
+  findActiveGroupParentId,
   nodeExistsInTree,
+  VIEWER_MAX_GROUP_DEPTH,
 } from './description-tree-helpers.js';
 import type { DescriptionTreeGetResponse } from './description-tree-types.js';
 import type { GroupEditKind, GroupEditPayload } from './group-edit-validation.js';
@@ -101,6 +104,36 @@ export type GroupUpdateResult =
       status: 'target-absent';
       commitState: 'committed' | 'unknown' | 'rejected-not-found';
       revision: string;
+    }
+  | { status: 'committed-refresh-failed' }
+  | { status: 'mutation-rejected' }
+  | { status: 'stale-or-aborted' };
+
+/** Item Group create 専用結果（active parent / metadata 検証を含む）。 */
+export type GroupCreateResult =
+  | {
+      status: 'committed-refreshed';
+      groupId: string;
+      parentGroupId: string | null;
+    }
+  | {
+      status: 'authoritative-mismatch';
+      commitState: 'committed' | 'unknown' | 'rejected-not-found';
+      revision: string;
+      reason: 'metadata' | 'parent';
+      groupId: string;
+      parentGroupId: string | null;
+      baseline?: {
+        name: string;
+        kind: string;
+        description: string | null;
+      };
+    }
+  | {
+      status: 'target-absent';
+      commitState: 'committed' | 'unknown' | 'rejected-not-found';
+      revision: string;
+      groupId: string;
     }
   | { status: 'committed-refresh-failed' }
   | { status: 'mutation-rejected' }
@@ -1177,6 +1210,257 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     }
   }
 
+  type GroupCreateSubmitted = GroupEditPayload & {
+    groupId: string;
+    parentGroupId: string | null;
+  };
+
+  type GroupCreateAuthoritativeClass =
+    | { kind: 'match'; baseline: GroupAuthoritativeBaseline }
+    | {
+        kind: 'mismatch';
+        reason: 'metadata' | 'parent';
+        baseline?: GroupAuthoritativeBaseline;
+      }
+    | { kind: 'absent' };
+
+  function classifyGroupCreateAuthoritative(
+    submitted: GroupCreateSubmitted,
+  ): GroupCreateAuthoritativeClass {
+    const current = snapshot.value;
+    if (!current) {
+      return { kind: 'absent' };
+    }
+    const group = findActiveDescriptionGroup(current, submitted.groupId);
+    if (!group) {
+      return { kind: 'absent' };
+    }
+    const actualParent = findActiveGroupParentId(current, submitted.groupId);
+    if (actualParent === undefined || actualParent !== submitted.parentGroupId) {
+      return { kind: 'mismatch', reason: 'parent' };
+    }
+    const baseline: GroupAuthoritativeBaseline = {
+      name: group.name,
+      kind: group.kind,
+      description: normalizeGroupDescription(group.description),
+    };
+    const matches =
+      baseline.name.trim() === submitted.name &&
+      baseline.kind === submitted.kind &&
+      baseline.description === submitted.description;
+    return matches
+      ? { kind: 'match', baseline }
+      : { kind: 'mismatch', reason: 'metadata', baseline };
+  }
+
+  function applyGroupCreateAuthoritativeClass(
+    classification: GroupCreateAuthoritativeClass,
+    submitted: GroupCreateSubmitted,
+    commitState: 'committed' | 'unknown' | 'rejected-not-found',
+  ): GroupCreateResult {
+    const currentRevision = snapshot.value?.revision ?? '';
+    if (classification.kind === 'absent') {
+      if (commitState === 'committed' || commitState === 'unknown') {
+        reloadFailed.value = true;
+        reloadRequired.value = true;
+        status.value = 'reload-failed';
+        statusMessage.value =
+          '追加結果を確認できませんでした。最新内容を再読み込みしてください。';
+      } else {
+        reloadFailed.value = false;
+        reloadRequired.value = false;
+        status.value = 'error';
+        statusMessage.value =
+          '追加先のグループが見つかりません。最新内容を確認してください。';
+      }
+      return {
+        status: 'target-absent',
+        commitState,
+        revision: currentRevision,
+        groupId: submitted.groupId,
+      };
+    }
+    if (classification.kind === 'match') {
+      reloadFailed.value = false;
+      reloadRequired.value = false;
+      statusMessage.value = 'グループを追加しました。';
+      status.value = dirty.value ? 'dirty' : 'saved';
+      return {
+        status: 'committed-refreshed',
+        groupId: submitted.groupId,
+        parentGroupId: submitted.parentGroupId,
+      };
+    }
+    reloadFailed.value = false;
+    reloadRequired.value = false;
+    status.value = 'error';
+    statusMessage.value =
+      classification.reason === 'parent'
+        ? '追加したグループの配置が想定と異なります。最新内容を確認してください。'
+        : '追加後に別の変更が反映されました。最新内容を確認してください。';
+    return {
+      status: 'authoritative-mismatch',
+      commitState,
+      revision: currentRevision,
+      reason: classification.reason,
+      groupId: submitted.groupId,
+      parentGroupId: submitted.parentGroupId,
+      baseline: classification.baseline,
+    };
+  }
+
+  async function fetchAndClassifyGroupCreate(
+    screenId: string,
+    identity: MutationIdentity,
+    submitted: GroupCreateSubmitted,
+    commitState: 'committed' | 'unknown' | 'rejected-not-found',
+    reloadFailedStatus: 'committed-refresh-failed' | 'mutation-rejected',
+  ): Promise<GroupCreateResult> {
+    mutationRefreshAbort?.abort();
+    mutationRefreshAbort = new AbortController();
+    const refreshSignal = mutationRefreshAbort.signal;
+    const refreshGeneration = lifecycleGeneration;
+    const refreshLoadSeq = loadSeq;
+
+    const result = await fetchDescriptionTree(screenId, refreshSignal, fetch);
+
+    if (!isActiveMutationIdentity(identity)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!isEditorLifecycleActive(refreshGeneration)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (refreshLoadSeq !== loadSeq) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (result.aborted) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!result.ok) {
+      reloadFailed.value = true;
+      reloadRequired.value = true;
+      status.value = 'reload-failed';
+      if (reloadFailedStatus === 'committed-refresh-failed') {
+        statusMessage.value =
+          '追加されましたが、最新内容を再読み込みできませんでした。';
+        return { status: 'committed-refresh-failed' };
+      }
+      statusMessage.value =
+        '追加結果を確認できませんでした。最新内容を再読み込みしてください。';
+      return { status: 'mutation-rejected' };
+    }
+
+    applySnapshot(result.data, { draftScope: 'none' });
+    return applyGroupCreateAuthoritativeClass(
+      classifyGroupCreateAuthoritative(submitted),
+      submitted,
+      commitState,
+    );
+  }
+
+  async function createGroup(input: {
+    groupId: string;
+    expectedRevision: string;
+    name: string;
+    kind: GroupEditKind;
+    description: string | null;
+    parentGroupId?: string | null;
+  }): Promise<GroupCreateResult> {
+    if (!guardUnresolvedItemConflict()) {
+      return { status: 'mutation-rejected' };
+    }
+
+    const parentGroupId =
+      input.parentGroupId == null || input.parentGroupId === ''
+        ? null
+        : input.parentGroupId;
+
+    if (parentGroupId != null) {
+      const current = snapshot.value;
+      if (!current) {
+        status.value = 'error';
+        statusMessage.value =
+          '追加先のグループが見つかりません。最新内容を確認してください。';
+        return { status: 'mutation-rejected' };
+      }
+      const parent = findActiveDescriptionGroup(current, parentGroupId);
+      const parentDepth = computeActiveGroupDepth(current, parentGroupId);
+      if (!parent || parentDepth == null) {
+        status.value = 'error';
+        statusMessage.value =
+          '追加先のグループが見つかりません。最新内容を確認してください。';
+        return { status: 'mutation-rejected' };
+      }
+      if (parentDepth >= VIEWER_MAX_GROUP_DEPTH) {
+        status.value = 'error';
+        statusMessage.value =
+          '最大階層（8階層）に達しているため、子グループを追加できません。';
+        return { status: 'mutation-rejected' };
+      }
+    }
+
+    const screenId = screenIdRef();
+    const identity = tryBeginMutation(screenId);
+    if (!identity) {
+      return { status: 'mutation-rejected' };
+    }
+
+    const submitted: GroupCreateSubmitted = {
+      groupId: input.groupId,
+      name: input.name,
+      kind: input.kind,
+      description: input.description,
+      parentGroupId,
+    };
+
+    try {
+      const result = await mutationClient.createDescriptionGroup(
+        screenId,
+        {
+          expectedRevision: input.expectedRevision,
+          groupId: submitted.groupId,
+          name: submitted.name,
+          kind: submitted.kind,
+          description: submitted.description,
+          parentGroupId: parentGroupId ?? undefined,
+        },
+        fetch,
+        mutationAbort!.signal,
+      );
+
+      if (!isActiveMutationIdentity(identity)) {
+        return { status: 'stale-or-aborted' };
+      }
+      if (!result.ok) {
+        if (result.aborted) {
+          return { status: 'stale-or-aborted' };
+        }
+        if (mutationClient.isDefiniteMutationRejection(result.error)) {
+          const rejected = handleMutationError(result.error, identity);
+          return rejected.status === 'stale-or-aborted'
+            ? rejected
+            : { status: 'mutation-rejected' };
+        }
+        return await fetchAndClassifyGroupCreate(
+          screenId,
+          identity,
+          submitted,
+          'unknown',
+          'mutation-rejected',
+        );
+      }
+      return await fetchAndClassifyGroupCreate(
+        screenId,
+        identity,
+        submitted,
+        'committed',
+        'committed-refresh-failed',
+      );
+    } finally {
+      finishMutation(identity);
+    }
+  }
+
   async function duplicateItem(
     sourceItemId: string,
     item: {
@@ -1416,6 +1700,7 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     beginItemEdit,
     addItem,
     createItem,
+    createGroup,
     updateGroupMetadata,
     duplicateItem,
     deleteItem,
