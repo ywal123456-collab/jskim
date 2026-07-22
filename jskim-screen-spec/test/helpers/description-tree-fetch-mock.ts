@@ -1,5 +1,13 @@
 import { vi } from 'vitest';
 
+/** test mock 用の canonical Description revision（sha256: + 64 hex） */
+export function mockDescriptionRevision(n: number): string {
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error('mockDescriptionRevision requires a non-negative integer');
+  }
+  return `sha256:${n.toString(16).padStart(64, '0')}`;
+}
+
 export type MockItemFields = {
   name: string;
   type: string;
@@ -79,7 +87,7 @@ export function stubDescriptionTreeFetch(
   const state = new Map<string, TreeEntry>();
   for (const [screenId, doc] of Object.entries(initial)) {
     state.set(screenId, {
-      revision: 'sha256:r1',
+      revision: mockDescriptionRevision(1),
       doc: {
         ...doc,
         excludedItems: doc.excludedItems ?? {},
@@ -90,7 +98,7 @@ export function stubDescriptionTreeFetch(
 
   function bumpRevision(entry: TreeEntry): string {
     revCounter += 1;
-    entry.revision = `sha256:r${revCounter}`;
+    entry.revision = mockDescriptionRevision(revCounter);
     return entry.revision;
   }
 
@@ -380,6 +388,69 @@ export function stubDescriptionTreeFetch(
         return new Response(
           JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
           { status: 201, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const groupDelete = suffix.match(/^\/groups\/([^/]+)\/delete$/);
+      if (groupDelete && method === 'POST') {
+        const groupId = decodeURIComponent(groupDelete[1]);
+        if (!entry.doc.groups || !entry.doc.rootNodes) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+              message: 'Group が見つかりません。',
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        const target = entry.doc.groups.find((group) => group.groupId === groupId);
+        if (!target) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+              message: `Group が見つかりません: ${groupId}`,
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const promoteInto = (
+          container: MockTreeNodeRef[],
+        ): boolean => {
+          const index = container.findIndex(
+            (ref) => ref.type === 'group' && ref.id === groupId,
+          );
+          if (index < 0) {
+            return false;
+          }
+          container.splice(index, 1, ...target.children.map((child) => ({ ...child })));
+          return true;
+        };
+
+        let found = promoteInto(entry.doc.rootNodes);
+        if (!found) {
+          for (const group of entry.doc.groups) {
+            if (promoteInto(group.children)) {
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_NODE_NOT_FOUND',
+              message: `Group がツリー上に存在しません: ${groupId}`,
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        entry.doc.groups = entry.doc.groups.filter(
+          (group) => group.groupId !== groupId,
+        );
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
     }

@@ -316,7 +316,7 @@ describe('Uncertain create/duplicate mutation recovery', () => {
             !url.includes('/exclude')
           ) {
             mutationDone = true;
-            return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+            return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
           }
           return null;
         },

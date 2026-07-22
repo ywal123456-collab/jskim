@@ -247,7 +247,7 @@ describe('ScreenSpecPage', () => {
       {},
       {
         screenId: 'design-screen',
-        revision: 'sha256:r1',
+        revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         exists: true,
         document: {
           schemaVersion: '1.1',
@@ -344,7 +344,7 @@ describe('ScreenSpecPage', () => {
       },
       {
         screenId: 'linked-screen',
-        revision: 'sha256:r1',
+        revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         exists: true,
         document: {
           schemaVersion: '1.2',
@@ -428,7 +428,7 @@ describe('ScreenSpecPage', () => {
       {},
       {
         screenId: 'design-screen',
-        revision: 'sha256:r1',
+        revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         exists: true,
         document: {
           schemaVersion: '1.2',
@@ -482,7 +482,7 @@ describe('ScreenSpecPage', () => {
       { 'impl-screen/default.html': '<div>x</div>' },
       {
         screenId: 'impl-screen',
-        revision: 'sha256:missing',
+        revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000d1',
         exists: false,
         document: {
           schemaVersion: '1.2',
@@ -545,7 +545,7 @@ describe('ScreenSpecPage', () => {
       { 'linked-del/default.html': '<div data-jskim-spec-item="title">t</div>' },
       {
         screenId: 'linked-del',
-        revision: 'sha256:linked',
+        revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000d2',
         exists: true,
         document: {
           schemaVersion: '1.2',

@@ -6,9 +6,20 @@ import { useDescriptionEditor } from '../../src/viewer/editing/useDescriptionEdi
 import ItemDescriptionTable from '../../src/viewer/components/ItemDescriptionTable.vue';
 import type { ScreenData } from '../../src/viewer/types';
 import {
+  mockDescriptionRevision,
   stubDescriptionTreeFetch,
   type MockTreeDoc,
 } from '../helpers/description-tree-fetch-mock';
+
+/** mock 初期 revision（stubDescriptionTreeFetch と同一） */
+const REVISION_1 = mockDescriptionRevision(1);
+const REVISION_2 = mockDescriptionRevision(2);
+const REVISION_A2 = mockDescriptionRevision(0xa2);
+const REVISION_B2 = mockDescriptionRevision(0xb2);
+/** conflict / authoritative server 側 revision（初期とは異なる） */
+const REVISION_SERVER = mockDescriptionRevision(0xf0);
+const REVISION_ORPHAN = mockDescriptionRevision(0xec);
+const REVISION_GONE = mockDescriptionRevision(0xe0);
 
 function createBaseTreeDoc(overrides?: Partial<MockTreeDoc>): MockTreeDoc {
   return {
@@ -575,7 +586,7 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.itemDirty.value).toBe(false);
     expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen draft');
     expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item saved');
-    expect(wrapper.vm.editor.revision.value).not.toBe('sha256:r1');
+    expect(wrapper.vm.editor.revision.value).not.toBe(REVISION_1);
     expect(state.get('demo')?.doc.screen.name).toBe('Demo');
 
     const fetchMock = getFetchMock();
@@ -629,7 +640,7 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.draftDocument.value?.screen.name).toBe('Screen saved');
     expect(wrapper.vm.editor.draftDocument.value?.items.title.name).toBe('Item draft');
     expect(state.get('demo')?.doc.screen.name).toBe('Screen saved');
-    expect(wrapper.vm.editor.revision.value).not.toBe('sha256:r1');
+    expect(wrapper.vm.editor.revision.value).not.toBe(REVISION_1);
 
     const fetchMock = getFetchMock();
     expect(
@@ -695,8 +706,8 @@ describe('Description Viewer editing', () => {
 
     const screenBody = JSON.parse(String(screenPatches[0][1]?.body));
     const itemBody = JSON.parse(String(itemPatches[0][1]?.body));
-    expect(screenBody.expectedRevision).toBe('sha256:r1');
-    expect(itemBody.expectedRevision).not.toBe('sha256:r1');
+    expect(screenBody.expectedRevision).toBe(REVISION_1);
+    expect(itemBody.expectedRevision).not.toBe(REVISION_1);
   });
 
   it('mutation 成功後の Tree GET 失敗でも dirty draft を保持する', async () => {
@@ -817,7 +828,7 @@ describe('Description Viewer editing', () => {
               resolveScreenAPatch = () => {
                 resolve(
                   new Response(
-                    JSON.stringify({ status: 'updated', revision: 'sha256:r2' }),
+                    JSON.stringify({ status: 'updated', revision: REVISION_2 }),
                     {
                       status: 200,
                       headers: { 'Content-Type': 'application/json' },
@@ -922,7 +933,7 @@ describe('Description Viewer editing', () => {
               resolveScreenAPatch = () => {
                 resolve(
                   new Response(
-                    JSON.stringify({ status: 'updated', revision: 'sha256:a2' }),
+                    JSON.stringify({ status: 'updated', revision: REVISION_A2 }),
                     {
                       status: 200,
                       headers: { 'Content-Type': 'application/json' },
@@ -941,7 +952,7 @@ describe('Description Viewer editing', () => {
               resolveScreenBPatch = () => {
                 resolve(
                   new Response(
-                    JSON.stringify({ status: 'updated', revision: 'sha256:b2' }),
+                    JSON.stringify({ status: 'updated', revision: REVISION_B2 }),
                     {
                       status: 200,
                       headers: { 'Content-Type': 'application/json' },
@@ -1215,7 +1226,7 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.itemDirty.value).toBe(true);
 
     const entry = state.get('demo')!;
-    entry.revision = 'sha256:r-orphan-item';
+    entry.revision = REVISION_ORPHAN;
     entry.doc.groups = [
       {
         groupId: 'parent',
@@ -1424,7 +1435,7 @@ describe('Description Viewer editing', () => {
 
     const entry = state.get('demo')!;
     entry.doc.items.title.name = 'サーバ側更新';
-    entry.revision = 'sha256:r-server';
+    entry.revision = REVISION_SERVER;
 
     const outcome = await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
@@ -1442,7 +1453,7 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.itemDraftItemId.value).toBe('title');
     expect(wrapper.vm.editor.itemDraft.value?.name).toBe('サーバ側更新');
     expect(wrapper.vm.editor.itemDirty.value).toBe(false);
-    expect(wrapper.vm.editor.revision.value).toBe('sha256:r-server');
+    expect(wrapper.vm.editor.revision.value).toBe(REVISION_SERVER);
   });
 
   it('B: conflict recovery GET 失敗では stale draft と conflict UI を維持する', async () => {
@@ -1486,7 +1497,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
     expect(wrapper.vm.editor.status.value).toBe('conflict');
@@ -1542,7 +1553,7 @@ describe('Description Viewer editing', () => {
     await flushPromises();
 
     const entry = state.get('demo')!;
-    entry.revision = 'sha256:r-gone';
+    entry.revision = REVISION_GONE;
     entry.doc.rootNodes = [];
     entry.doc.itemOrder = [];
     delete entry.doc.items.title;
@@ -1635,7 +1646,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
     expect(wrapper.vm.editor.status.value).toBe('conflict');
@@ -1649,7 +1660,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.screenId = 'other';
     await wrapper.vm.editor.loadDescription('other', { reason: 'screen-change' });
     await flushPromises();
-    expect(wrapper.vm.editor.revision.value).toBe('sha256:r1');
+    expect(wrapper.vm.editor.revision.value).toBe(REVISION_1);
     expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
 
     releaseRecoveryGet();
@@ -1657,7 +1668,7 @@ describe('Description Viewer editing', () => {
     await flushPromises();
 
     expect(wrapper.vm.screenId).toBe('other');
-    expect(wrapper.vm.editor.revision.value).toBe('sha256:r1');
+    expect(wrapper.vm.editor.revision.value).toBe(REVISION_1);
     expect(wrapper.vm.editor.status.value).not.toBe('conflict');
     expect(wrapper.vm.editor.itemDraft.value?.name).not.toBe('サーバ側更新');
   });
@@ -1707,7 +1718,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
 
@@ -1762,7 +1773,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
     expect(wrapper.vm.editor.status.value).toBe('conflict');
@@ -1774,7 +1785,7 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.status.value).toBe('conflict');
     expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
     expect(wrapper.vm.editor.itemDirty.value).toBe(true);
-    expect(wrapper.vm.editor.revision.value).toBe('sha256:r-server');
+    expect(wrapper.vm.editor.revision.value).toBe(REVISION_SERVER);
     expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
 
     const blocked = await wrapper.vm.editor.saveItemMetadata('title');
@@ -1818,7 +1829,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
 
@@ -1896,7 +1907,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
     const conflictMessage = wrapper.vm.editor.statusMessage.value;
@@ -1950,7 +1961,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
 
@@ -1997,7 +2008,7 @@ describe('Description Viewer editing', () => {
     wrapper.vm.editor.beginItemEdit('title');
     wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
     state.get('demo')!.doc.items.title.name = 'サーバ側更新';
-    state.get('demo')!.revision = 'sha256:r-server';
+    state.get('demo')!.revision = REVISION_SERVER;
     await wrapper.vm.editor.saveItemMetadata('title');
     await flushPromises();
     expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);

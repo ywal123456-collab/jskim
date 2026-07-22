@@ -1,3 +1,4 @@
+import { isValidDescriptionRevision } from './description-revision.js';
 import {
   getDescriptionTreeApiBase,
   type DescriptionTreeApiError,
@@ -30,7 +31,10 @@ function isDescriptionTreeResponse(body: unknown): body is DescriptionTreeGetRes
     return false;
   }
   const row = body as Record<string, unknown>;
-  if (typeof row.revision !== 'string' || typeof row.sourceSchemaVersion !== 'string') {
+  if (
+    !isValidDescriptionRevision(row.revision) ||
+    typeof row.sourceSchemaVersion !== 'string'
+  ) {
     return false;
   }
   if (

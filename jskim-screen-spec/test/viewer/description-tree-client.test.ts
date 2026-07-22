@@ -96,6 +96,47 @@ describe('fetchDescriptionTree', () => {
     }
   });
 
+  it('invalid / missing revision は Tree 成功として拒否する', async () => {
+    const cases: Array<{ label: string; body: Record<string, unknown> }> = [
+      {
+        label: 'same-invalid',
+        body: { ...sampleTree, revision: 'same-invalid-revision' },
+      },
+      {
+        label: 'missing',
+        body: (() => {
+          const { revision: _ignored, ...rest } = sampleTree;
+          return rest;
+        })(),
+      },
+      {
+        label: 'number',
+        body: { ...sampleTree, revision: 1 },
+      },
+      {
+        label: 'short',
+        body: { ...sampleTree, revision: 'sha256:abcd' },
+      },
+      {
+        label: 'uppercase',
+        body: {
+          ...sampleTree,
+          revision:
+            'sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        },
+      },
+    ];
+
+    for (const entry of cases) {
+      const result = await fetchDescriptionTree(
+        'demo-screen',
+        undefined,
+        vi.fn(async () => jsonResponse(entry.body)),
+      );
+      expect(result.ok, entry.label).toBe(false);
+    }
+  });
+
   it('screenId を 1 回だけ encode する', async () => {
     const fetchFn = vi.fn(async () => jsonResponse(sampleTree));
     await fetchDescriptionTree('screen/with%20space', undefined, fetchFn);

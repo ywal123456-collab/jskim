@@ -17,13 +17,13 @@ describe('updateDescriptionGroup client', () => {
     let capturedBody: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+      return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
     });
     const result = await updateDescriptionGroup(
       'demo/screen',
       'group/id',
       {
-        expectedRevision: 'sha256:r1',
+        expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         name: '新名称',
         kind: 'CARD',
         description: '説明',
@@ -37,7 +37,7 @@ describe('updateDescriptionGroup client', () => {
       expect.objectContaining({ method: 'PATCH' }),
     );
     expect(capturedBody).toEqual({
-      expectedRevision: 'sha256:r1',
+      expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
       name: '新名称',
       kind: 'CARD',
       description: '説明',
@@ -54,13 +54,13 @@ describe('updateDescriptionGroup client', () => {
     let capturedBody: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+      return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
     });
     await updateDescriptionGroup(
       'demo',
       'section',
       {
-        expectedRevision: 'sha256:r1',
+        expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         name: '名前',
         kind: 'SECTION',
         description: null,
@@ -72,12 +72,12 @@ describe('updateDescriptionGroup client', () => {
 
   it('200 unchanged を成功として扱う', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse({ status: 'unchanged', revision: 'sha256:r1' }),
+      jsonResponse({ status: 'unchanged', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001' }),
     );
     const result = await updateDescriptionGroup(
       'demo',
       'section',
-      { expectedRevision: 'sha256:r1', name: '同名' },
+      { expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001', name: '同名' },
       fetchMock,
     );
     expect(result.ok).toBe(true);
@@ -121,8 +121,8 @@ describe('updateDescriptionGroup client', () => {
             {
               code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
               message: '衝突',
-              expectedRevision: 'sha256:r1',
-              currentRevision: 'sha256:r9',
+              expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
+              currentRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000009',
             },
             409,
           ),
@@ -159,7 +159,7 @@ describe('updateDescriptionGroup client', () => {
       const result = await updateDescriptionGroup(
         'demo',
         'section',
-        { expectedRevision: 'sha256:r1', name: 'x' },
+        { expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001', name: 'x' },
         fetchMock,
       );
       expect(result.ok, entry.label).toBe(false);
@@ -185,12 +185,12 @@ describe('updateDescriptionGroup client', () => {
       if (method === 'PUT') {
         throw new Error(`unexpected PUT: ${url}`);
       }
-      return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+      return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
     });
     await updateDescriptionGroup(
       'demo',
       'section',
-      { expectedRevision: 'sha256:r1', name: 'x', kind: 'SECTION' },
+      { expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001', name: 'x', kind: 'SECTION' },
       fetchMock,
     );
     const putCalls = fetchMock.mock.calls.filter(

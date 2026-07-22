@@ -227,7 +227,7 @@ describe('Description mutation outcome', () => {
         onFetch: (url, method) => {
           if (url.includes(mutationSuffix) && method === 'POST') {
             mutationDone = true;
-            return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+            return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
           }
           return null;
         },
@@ -334,7 +334,7 @@ describe('Description mutation outcome', () => {
             !url.includes('/exclude')
           ) {
             mutationDone = true;
-            return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+            return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
           }
           return null;
         },

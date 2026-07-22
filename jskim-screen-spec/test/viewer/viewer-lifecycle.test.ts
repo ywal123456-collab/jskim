@@ -204,7 +204,7 @@ describe('Viewer lifecycle', () => {
         onFetch: (url, method) => {
           if (url.includes('/items/manual/delete') && method === 'POST') {
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:a2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000a2' }),
             );
           }
           return null;
@@ -244,7 +244,7 @@ describe('Viewer lifecycle', () => {
             !url.includes('/delete')
           ) {
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:a2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000a2' }),
             );
           }
           return null;
@@ -284,7 +284,7 @@ describe('Viewer lifecycle', () => {
         onFetch: (url, method) => {
           if (url.includes('/items/same-item/exclude') && method === 'POST') {
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:a2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000a2' }),
             );
           }
           return null;
@@ -325,7 +325,7 @@ describe('Viewer lifecycle', () => {
               return new Promise<Response>((resolve) => {
                 resolvePatch = () => {
                   resolve(
-                    jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+                    jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
                   );
                 };
               });
@@ -382,7 +382,7 @@ describe('Viewer lifecycle', () => {
               return new Promise<Response>((resolve) => {
                 resolvePatch = () => {
                   resolve(
-                    jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+                    jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
                   );
                 };
               });
@@ -416,7 +416,7 @@ describe('Viewer lifecycle', () => {
       const wrapper2 = mount(Harness);
       await wrapper2.vm.editor.loadDescription('demo');
       await flushPromises();
-      expect(wrapper2.vm.editor.revision.value).toBe('sha256:r1');
+      expect(wrapper2.vm.editor.revision.value).toBe('sha256:0000000000000000000000000000000000000000000000000000000000000001');
       expect(wrapper2.vm.editor.revision.value).not.toBe(revisionBefore + '-stale');
       wrapper2.unmount();
     });
@@ -434,7 +434,7 @@ describe('Viewer lifecycle', () => {
                 resolvePatch = () => {
                   patchCompleted = true;
                   resolve(
-                    jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+                    jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
                   );
                 };
               });
@@ -464,7 +464,7 @@ describe('Viewer lifecycle', () => {
               resolveTreeGet = () => {
                 resolve(
                   jsonResponse({
-                    revision: 'sha256:r-stale',
+                    revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e4',
                     sourceSchemaVersion: '1.2',
                     collectedItemIds: [],
                     description: {

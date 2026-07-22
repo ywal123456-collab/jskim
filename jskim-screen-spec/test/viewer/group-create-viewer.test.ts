@@ -731,7 +731,7 @@ describe('Item Group 作成 Viewer', () => {
     const bTextBefore = wrapper.text();
 
     releasePost(
-      jsonResponse({ status: 'updated', revision: 'sha256:late' }, 201),
+      jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e2' }, 201),
     );
     await flushPromises();
     await nextTick();
@@ -752,7 +752,7 @@ describe('Item Group 作成 Viewer', () => {
         if (url.endsWith('/groups') && method === 'POST') {
           postSeen = true;
           holdReload = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r-late' }, 201);
+          return jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e1' }, 201);
         }
         return null;
       },
@@ -837,8 +837,8 @@ describe('Item Group 作成 Viewer', () => {
             {
               code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
               message: '衝突',
-              expectedRevision: 'sha256:r1',
-              currentRevision: 'sha256:r9',
+              expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
+              currentRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000009',
             },
             409,
           );

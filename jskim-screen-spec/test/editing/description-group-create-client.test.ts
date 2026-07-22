@@ -17,12 +17,12 @@ describe('createDescriptionGroup client', () => {
     let capturedBody: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return jsonResponse({ status: 'updated', revision: 'sha256:r2' }, 201);
+      return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }, 201);
     });
     const result = await createDescriptionGroup(
       'demo/screen',
       {
-        expectedRevision: 'sha256:r1',
+        expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         groupId: 'new-root',
         name: '新規',
         kind: 'SECTION',
@@ -36,7 +36,7 @@ describe('createDescriptionGroup client', () => {
       expect.objectContaining({ method: 'POST' }),
     );
     expect(capturedBody).toEqual({
-      expectedRevision: 'sha256:r1',
+      expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
       groupId: 'new-root',
       name: '新規',
       kind: 'SECTION',
@@ -50,12 +50,12 @@ describe('createDescriptionGroup client', () => {
     let capturedBody: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return jsonResponse({ status: 'updated', revision: 'sha256:r2' }, 201);
+      return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }, 201);
     });
     await createDescriptionGroup(
       'demo',
       {
-        expectedRevision: 'sha256:r1',
+        expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         groupId: 'child-g',
         name: '子',
         kind: 'CARD',
@@ -83,7 +83,7 @@ describe('createDescriptionGroup client', () => {
     const result = await createDescriptionGroup(
       'demo',
       {
-        expectedRevision: 'sha256:r1',
+        expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
         groupId: 'x',
         name: 'x',
         kind: 'SECTION',

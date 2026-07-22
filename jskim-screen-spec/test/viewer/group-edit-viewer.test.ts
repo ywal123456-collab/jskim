@@ -439,8 +439,8 @@ describe('Item Group metadata 編集', () => {
             {
               code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
               message: '衝突',
-              expectedRevision: 'sha256:r1',
-              currentRevision: 'sha256:r9',
+              expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
+              currentRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000009',
             },
             409,
           );
@@ -503,7 +503,7 @@ describe('Item Group metadata 編集', () => {
 
     const outcome = await editor.updateGroupMetadata({
       groupId: 'child-card',
-      expectedRevision: 'sha256:r1',
+      expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
       name: '衝突名',
       kind: 'CARD',
       description: '子の説明',
@@ -525,7 +525,7 @@ describe('Item Group metadata 編集', () => {
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           mutationDone = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
         }
         return null;
       },
@@ -578,7 +578,7 @@ describe('Item Group metadata 編集', () => {
               group.name = '一致名';
               group.kind = 'ACTIONS';
               group.description = '一致説明';
-              entry.revision = 'sha256:r-committed';
+              entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000c0';
             }
           }
           return Promise.reject(new Error('network reset'));
@@ -648,7 +648,7 @@ describe('Item Group metadata 編集', () => {
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchSeen = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
         }
         return null;
       },
@@ -749,7 +749,7 @@ describe('Item Group metadata 編集', () => {
     stubGroupedPageFetch({
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
-          return jsonResponse({ status: 'unchanged', revision: 'sha256:r1' });
+          return jsonResponse({ status: 'unchanged', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001' });
         }
         return null;
       },
@@ -760,7 +760,7 @@ describe('Item Group metadata 編集', () => {
     await flushPromises();
     const outcome = await editor.updateGroupMetadata({
       groupId: 'child-card',
-      expectedRevision: 'sha256:r1',
+      expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
       name: '子カード',
       kind: 'CARD',
       description: '子の説明',
@@ -781,7 +781,7 @@ describe('Item Group metadata 編集', () => {
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchSeen = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
         }
         return null;
       },
@@ -830,7 +830,7 @@ describe('Item Group metadata 編集', () => {
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchSeen = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r2' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' });
         }
         return null;
       },
@@ -899,11 +899,11 @@ describe('Group update authoritative reconciliation P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           const entry = state.get('grouped');
           if (entry) {
-            entry.revision = 'sha256:r-mismatch';
+            entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000ee';
           }
           return jsonResponse({
             status: 'updated',
-            revision: 'sha256:r-mismatch',
+            revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000ee',
           });
         }
         return null;
@@ -942,7 +942,7 @@ describe('Group update authoritative reconciliation P1', () => {
         JSON.parse(String((init as RequestInit).body)) as { expectedRevision: string },
       );
     expect(patchBodies.length).toBeGreaterThanOrEqual(2);
-    expect(patchBodies[1]?.expectedRevision).toBe('sha256:r-mismatch');
+    expect(patchBodies[1]?.expectedRevision).toBe('sha256:00000000000000000000000000000000000000000000000000000000000000ee');
   });
 
   function stripChildCardFromTreeResponse(data: {
@@ -969,7 +969,7 @@ describe('Group update authoritative reconciliation P1', () => {
       onFetch: (url, method) => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchDone = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r-gone' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e0' });
         }
         return null;
       },
@@ -995,7 +995,7 @@ describe('Group update authoritative reconciliation P1', () => {
               excludedItems: Record<string, unknown>;
             };
           };
-          stripChildCardFromTreeResponse(data, 'sha256:r-gone');
+          stripChildCardFromTreeResponse(data, 'sha256:00000000000000000000000000000000000000000000000000000000000000e0');
           return jsonResponse(data);
         }
         return baseFetch(input, init);
@@ -1049,7 +1049,7 @@ describe('Group update authoritative reconciliation P1', () => {
               excludedItems: Record<string, unknown>;
             };
           };
-          stripChildCardFromTreeResponse(data, 'sha256:r-absent');
+          stripChildCardFromTreeResponse(data, 'sha256:00000000000000000000000000000000000000000000000000000000000000e5');
           return jsonResponse(data);
         }
         return baseFetch(input, init);
@@ -1106,7 +1106,7 @@ describe('Group update authoritative reconciliation P1', () => {
               excludedItems: Record<string, unknown>;
             };
           };
-          data.revision = 'sha256:r-404-absent';
+          data.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000e6';
           data.description.groups = data.description.groups.filter(
             (group) => group.groupId !== 'child-card',
           );
@@ -1162,7 +1162,7 @@ describe('Group update authoritative reconciliation P1', () => {
             sourceSchemaVersion: string;
             collectedItemIds: string[];
           };
-          data.revision = 'sha256:r-404-exists';
+          data.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000e7';
           return jsonResponse(data);
         }
         return baseFetch(input, init);
@@ -1193,7 +1193,7 @@ describe('Group update authoritative reconciliation P1', () => {
       .map(([, init]) =>
         JSON.parse(String((init as RequestInit).body)) as { expectedRevision: string },
       );
-    expect(patchBodies.at(-1)?.expectedRevision).toBe('sha256:r-404-exists');
+    expect(patchBodies.at(-1)?.expectedRevision).toBe('sha256:00000000000000000000000000000000000000000000000000000000000000e7');
   });
 
   it('F: dialog 捕獲 revision R1 を使い外部 reload R2 で置換しない', async () => {
@@ -1202,7 +1202,7 @@ describe('Group update authoritative reconciliation P1', () => {
     await openChildGroupDialog(wrapper);
     const entry = state.get('grouped');
     expect(entry).toBeTruthy();
-    entry!.revision = 'sha256:r2-external';
+    entry!.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000e8';
     await wrapper.find('.item-tree-panel__reload').trigger('click');
     await flushPromises();
 
@@ -1221,7 +1221,7 @@ describe('Group update authoritative reconciliation P1', () => {
         JSON.parse(String((init as RequestInit).body)) as { expectedRevision: string },
       );
     expect(patchBodies).toHaveLength(1);
-    expect(patchBodies[0]?.expectedRevision).toBe('sha256:r1');
+    expect(patchBodies[0]?.expectedRevision).toBe('sha256:0000000000000000000000000000000000000000000000000000000000000001');
   });
 
   it('H: authoritative snapshot から Group が消えたら selectedTreeNode を prune', async () => {
@@ -1244,7 +1244,7 @@ describe('Group update authoritative reconciliation P1', () => {
         children: [{ type: 'item', id: 'leaf-item' }],
       },
     ];
-    entry!.revision = 'sha256:r-pruned';
+    entry!.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000e9';
     await wrapper.find('.item-tree-panel__reload').trigger('click');
     await flushPromises();
 
@@ -1264,7 +1264,7 @@ describe('Group update authoritative reconciliation P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchSeen = true;
           holdNextGroupedGet = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r-late' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e1' });
         }
         return null;
       },
@@ -1373,11 +1373,11 @@ describe('Group update baseline・active tree P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           const entry = state.get('grouped');
           if (entry) {
-            applyAuthoritativeChildMetadata(entry, 'sha256:r-base-b');
+            applyAuthoritativeChildMetadata(entry, 'sha256:00000000000000000000000000000000000000000000000000000000000000b0');
           }
           return jsonResponse({
             status: 'updated',
-            revision: 'sha256:r-base-b',
+            revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000b0',
           });
         }
         return null;
@@ -1412,7 +1412,7 @@ describe('Group update baseline・active tree P1', () => {
         },
       );
     expect(patchBodies.length).toBeGreaterThanOrEqual(2);
-    expect(patchBodies[1]?.expectedRevision).toBe('sha256:r-base-b');
+    expect(patchBodies[1]?.expectedRevision).toBe('sha256:00000000000000000000000000000000000000000000000000000000000000b0');
     expect(patchBodies[1]?.name).toBe('子カード');
   });
 
@@ -1422,11 +1422,11 @@ describe('Group update baseline・active tree P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           const entry = state.get('grouped');
           if (entry) {
-            applyAuthoritativeChildMetadata(entry, 'sha256:r-draft-c');
+            applyAuthoritativeChildMetadata(entry, 'sha256:00000000000000000000000000000000000000000000000000000000000000c1');
           }
           return jsonResponse({
             status: 'updated',
-            revision: 'sha256:r-draft-c',
+            revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000c1',
           });
         }
         return null;
@@ -1472,7 +1472,7 @@ describe('Group update baseline・active tree P1', () => {
         },
       );
     expect(patchBodies.at(-1)).toMatchObject({
-      expectedRevision: 'sha256:r-draft-c',
+      expectedRevision: 'sha256:00000000000000000000000000000000000000000000000000000000000000c1',
       name: 'DraftC',
       kind: 'ACTIONS',
       description: 'C desc',
@@ -1485,11 +1485,11 @@ describe('Group update baseline・active tree P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           const entry = state.get('grouped');
           if (entry) {
-            applyAuthoritativeChildMetadata(entry, 'sha256:r-nochange');
+            applyAuthoritativeChildMetadata(entry, 'sha256:00000000000000000000000000000000000000000000000000000000000000c2');
           }
           return jsonResponse({
             status: 'updated',
-            revision: 'sha256:r-nochange',
+            revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000c2',
           });
         }
         return null;
@@ -1533,7 +1533,7 @@ describe('Group update baseline・active tree P1', () => {
           patchDone = true;
           const entry = state.get('grouped');
           if (entry) {
-            applyAuthoritativeChildMetadata(entry, 'sha256:r-404-base');
+            applyAuthoritativeChildMetadata(entry, 'sha256:00000000000000000000000000000000000000000000000000000000000000ea');
           }
           return jsonResponse(
             {
@@ -1580,7 +1580,7 @@ describe('Group update baseline・active tree P1', () => {
           expectedRevision: string;
         },
       );
-    expect(patchBodies.at(-1)?.expectedRevision).toBe('sha256:r-404-base');
+    expect(patchBodies.at(-1)?.expectedRevision).toBe('sha256:00000000000000000000000000000000000000000000000000000000000000ea');
   });
 
   it('E: orphan Group definition → target-absent（mismatch/success ではない）', async () => {
@@ -1589,11 +1589,11 @@ describe('Group update baseline・active tree P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           const entry = state.get('grouped');
           if (entry) {
-            orphanChildCardKeepingDefinition(entry, 'sha256:r-orphan');
+            orphanChildCardKeepingDefinition(entry, 'sha256:00000000000000000000000000000000000000000000000000000000000000c3');
           }
           return jsonResponse({
             status: 'updated',
-            revision: 'sha256:r-orphan',
+            revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000c3',
           });
         }
         return null;
@@ -1626,7 +1626,7 @@ describe('Group update baseline・active tree P1', () => {
     expect(wrapper.findComponent(GroupInfoPanel).exists()).toBe(true);
 
     const entry = state.get('grouped');
-    orphanChildCardKeepingDefinition(entry!, 'sha256:r-orphan-sel');
+    orphanChildCardKeepingDefinition(entry!, 'sha256:00000000000000000000000000000000000000000000000000000000000000eb');
     await wrapper.find('.item-tree-panel__reload').trigger('click');
     await flushPromises();
 
@@ -1658,7 +1658,7 @@ describe('Group update baseline・active tree P1', () => {
     expect(wrapper.find('.item-tree__row.is-selected').exists()).toBe(true);
 
     const entry = state.get('grouped')!;
-    entry.revision = 'sha256:r-orphan-item';
+    entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000ec';
     const child = entry.doc.groups?.find((group) => group.groupId === 'child-card');
     child!.children = [];
     // leaf-item definition は items に残す
@@ -1675,7 +1675,7 @@ describe('Group update baseline・active tree P1', () => {
     await expandChildCardAndSelectLeafItem(wrapper);
 
     const entry = state.get('grouped')!;
-    entry.revision = 'sha256:r-excluded';
+    entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000ed';
     const child = entry.doc.groups?.find((group) => group.groupId === 'child-card');
     child!.children = [];
     const item = entry.doc.items['leaf-item'];
@@ -1727,7 +1727,7 @@ describe('Group update baseline・active tree P1', () => {
         if (url.includes('/groups/child-card') && method === 'PATCH') {
           patchSeen = true;
           holdGroupedGet = true;
-          return jsonResponse({ status: 'updated', revision: 'sha256:r-late-orphan' });
+          return jsonResponse({ status: 'updated', revision: 'sha256:00000000000000000000000000000000000000000000000000000000000000e3' });
         }
         return null;
       },
@@ -1758,7 +1758,7 @@ describe('Group update baseline・active tree P1', () => {
             sourceSchemaVersion: string;
             collectedItemIds: string[];
           };
-          data.revision = 'sha256:r-late-orphan';
+          data.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000e3';
           const parent = data.description.groups.find(
             (group) => group.groupId === 'parent-section',
           );
@@ -1830,7 +1830,7 @@ describe('Item draft・expanded initialization P1', () => {
     expect(wrapper.text()).toMatch(/未保存/);
 
     const entry = state.get('grouped')!;
-    entry.revision = 'sha256:r-orphan-draft';
+    entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000ef';
     const child = entry.doc.groups?.find((group) => group.groupId === 'child-card');
     child!.children = [];
     expect(entry.doc.items['leaf-item']).toBeTruthy();
@@ -1875,7 +1875,7 @@ describe('Item draft・expanded initialization P1', () => {
 
     const outcome = await editor.updateGroupMetadata({
       groupId: 'child-card',
-      expectedRevision: 'sha256:r1',
+      expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
       name: '更新後カード',
       kind: 'CARD',
       description: '子の説明',

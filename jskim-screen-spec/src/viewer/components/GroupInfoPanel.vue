@@ -23,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [];
   addChildGroup: [];
+  ungroup: [];
 }>();
 
 const groupMap = computed(() => buildGroupMap(props.response));
@@ -55,6 +56,8 @@ const canAddChild = computed(
   () => canMutate.value && props.canAddChildGroup !== false && !props.depthLimitReached,
 );
 
+const canUngroup = computed(() => canMutate.value);
+
 function onEditClick(): void {
   if (!canEdit.value) {
     return;
@@ -67,6 +70,13 @@ function onAddChildClick(): void {
     return;
   }
   emit('addChildGroup');
+}
+
+function onUngroupClick(): void {
+  if (!canUngroup.value) {
+    return;
+  }
+  emit('ungroup');
 }
 </script>
 
@@ -97,6 +107,15 @@ function onAddChildClick(): void {
           @click="onAddChildClick"
         >
           子グループを追加
+        </button>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--secondary"
+          data-testid="group-ungroup-open"
+          :disabled="!canUngroup"
+          @click="onUngroupClick"
+        >
+          グループを解除
         </button>
       </div>
     </div>

@@ -213,7 +213,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
           if (url.includes('/items/manual/delete') && method === 'POST') {
             const gate = createDeferredGate();
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
             );
           }
           return null;
@@ -244,7 +244,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
           if (url.includes('/items') && method === 'POST' && !url.includes('/delete')) {
             const gate = createDeferredGate();
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
             );
           }
           return null;
@@ -283,7 +283,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
           if (url.includes('/items/title/exclude') && method === 'POST') {
             const gate = createDeferredGate();
             return gate.wait.then(() =>
-              jsonResponse({ status: 'updated', revision: 'sha256:r2' }),
+              jsonResponse({ status: 'updated', revision: 'sha256:0000000000000000000000000000000000000000000000000000000000000002' }),
             );
           }
           return null;
@@ -378,7 +378,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
       await flushPromises();
       const entry = state.get('linked-dialog')!;
       entry.doc.items.title.name = 'サーバ側更新';
-      entry.revision = 'sha256:r-server';
+      entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000f0';
       const saveItemBtn = wrapper.find('[data-action="save-item"]');
       await saveItemBtn.trigger('click');
       await flushPromises();
@@ -445,8 +445,8 @@ describe('ScreenSpecPage item dialog mutations', () => {
               JSON.stringify({
                 code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
                 message: '他の操作によって画面設計書が更新されました。',
-                expectedRevision: 'sha256:r1',
-                currentRevision: 'sha256:r-server',
+                expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
+                currentRevision: 'sha256:00000000000000000000000000000000000000000000000000000000000000f0',
               }),
               { status: 409, headers: { 'Content-Type': 'application/json' } },
             );
@@ -483,8 +483,8 @@ describe('ScreenSpecPage item dialog mutations', () => {
               JSON.stringify({
                 code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
                 message: '他の操作によって画面設計書が更新されました。',
-                expectedRevision: 'sha256:r1',
-                currentRevision: 'sha256:r-server',
+                expectedRevision: 'sha256:0000000000000000000000000000000000000000000000000000000000000001',
+                currentRevision: 'sha256:00000000000000000000000000000000000000000000000000000000000000f0',
               }),
               { status: 409, headers: { 'Content-Type': 'application/json' } },
             );
@@ -506,7 +506,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
       entry.doc.items.title.name = 'サーバ側更新';
       entry.doc.items.title.description = 'サーバ説明';
       entry.doc.items.title.note = 'サーバ備考';
-      entry.revision = 'sha256:r-server';
+      entry.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000f0';
 
       const saveItemBtn = wrapper
         .findAll('button.spec-page__btn')
@@ -585,7 +585,7 @@ describe('ScreenSpecPage item dialog mutations', () => {
       await wrapper.find('#item-row-title td input').setValue('草案名称');
       await flushPromises();
       baseStub.state.get('linked-dialog')!.doc.items.title.name = 'サーバ側更新';
-      baseStub.state.get('linked-dialog')!.revision = 'sha256:r-server';
+      baseStub.state.get('linked-dialog')!.revision = 'sha256:00000000000000000000000000000000000000000000000000000000000000f0';
 
       const saveItemBtn = wrapper
         .findAll('button.spec-page__btn')

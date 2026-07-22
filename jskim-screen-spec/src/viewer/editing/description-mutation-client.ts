@@ -1,3 +1,4 @@
+import { isValidDescriptionRevision } from './description-revision.js';
 import { DESCRIPTION_TREE_API_PREFIX } from './description-tree-types.js';
 
 export type DescriptionMutationError = {
@@ -54,8 +55,7 @@ function isMutationEnvelope(body: unknown): body is DescriptionMutationResult {
   const row = body as Record<string, unknown>;
   return (
     (row.status === 'updated' || row.status === 'unchanged') &&
-    typeof row.revision === 'string' &&
-    row.revision.length > 0
+    isValidDescriptionRevision(row.revision)
   );
 }
 
@@ -298,6 +298,22 @@ export async function createDescriptionGroup(
   return mutateJson(treeUrl(screenId, '/groups'), 'POST', body, fetchFn, signal);
 }
 
+export async function deleteDescriptionGroup(
+  screenId: string,
+  groupId: string,
+  expectedRevision: string,
+  fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
+) {
+  return mutateJson(
+    treeUrl(screenId, `/groups/${encodeURIComponent(groupId)}/delete`),
+    'POST',
+    { expectedRevision },
+    fetchFn,
+    signal,
+  );
+}
+
 export async function updateDescriptionGroup(
   screenId: string,
   groupId: string,
@@ -349,6 +365,12 @@ export function sanitizeMutationMessage(error: DescriptionMutationError): string
   }
   if (error.code === 'SPEC_DESCRIPTION_GROUP_PARENT_NOT_FOUND') {
     return '追加先のグループが見つかりません。最新内容を確認してください。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_NOT_FOUND') {
+    return '対象のグループが見つかりません。最新内容を確認してください。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_NODE_NOT_FOUND') {
+    return '対象のグループがツリー上に存在しません。最新内容を確認してください。';
   }
   if (error.code === 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED') {
     return '実装画面と連携された項目は削除できません。設計対象に残すか、設計対象から除外してください。';

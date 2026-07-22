@@ -17,6 +17,7 @@ import ItemTreePanel from '../components/ItemTreePanel.vue';
 import GroupInfoPanel from '../components/GroupInfoPanel.vue';
 import GroupEditDialog from '../components/GroupEditDialog.vue';
 import GroupCreateDialog from '../components/GroupCreateDialog.vue';
+import GroupUngroupDialog from '../components/GroupUngroupDialog.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
@@ -24,6 +25,7 @@ import {
   useDescriptionEditor,
   type DescriptionMutationOutcome,
   type GroupCreateResult,
+  type GroupUngroupResult,
   type GroupUpdateResult,
   type LoadDescriptionReason,
 } from '../editing/useDescriptionEditor';
@@ -40,6 +42,11 @@ import {
   reconcileExpandedGroupIds,
   VIEWER_MAX_GROUP_DEPTH,
 } from '../editing/description-tree-helpers';
+import {
+  captureActiveGroupUngroupContext,
+  matchesUngroupCapture,
+  type UngroupCaptureSnapshot,
+} from '../editing/group-ungroup-helpers';
 import type { GroupEditPayload } from '../editing/group-edit-validation';
 import type { GroupCreatePayload } from '../editing/group-create-validation';
 import { useVersionHistory } from '../version-history/use-version-history';
@@ -147,6 +154,16 @@ const groupCreateTarget = ref<{
   generation: number;
   selectionGeneration: number;
 } | null>(null);
+const groupUngroupDialogOpen = ref(false);
+const groupUngroupDialogPending = ref(false);
+const groupUngroupErrorMessage = ref('');
+const groupUngroupTarget = ref<{
+  screenId: string;
+  capture: UngroupCaptureSnapshot;
+  expectedRevision: string;
+  generation: number;
+  selectionGeneration: number;
+} | null>(null);
 
 type UncertainItemMutationPayload = {
   itemId: string;
@@ -221,6 +238,8 @@ let groupEditOpSeq = 0;
 let groupEditDialogGeneration = 0;
 let groupCreateOpSeq = 0;
 let groupCreateDialogGeneration = 0;
+let groupUngroupOpSeq = 0;
+let groupUngroupDialogGeneration = 0;
 let treeSelectionGeneration = 0;
 const activeDuplicateOp = ref<ItemDialogOperation | null>(null);
 const activeDeleteOp = ref<ItemDialogOperation | null>(null);
@@ -246,6 +265,16 @@ type GroupCreateOperation = {
 
 const activeGroupCreateOp = ref<GroupCreateOperation | null>(null);
 
+type GroupUngroupOperation = {
+  seq: number;
+  screenId: string;
+  groupId: string;
+  generation: number;
+  selectionGeneration: number;
+};
+
+const activeGroupUngroupOp = ref<GroupUngroupOperation | null>(null);
+
 function invalidateItemDialogOperations(): void {
   duplicateOpSeq += 1;
   deleteOpSeq += 1;
@@ -255,12 +284,15 @@ function invalidateItemDialogOperations(): void {
   groupEditDialogGeneration += 1;
   groupCreateOpSeq += 1;
   groupCreateDialogGeneration += 1;
+  groupUngroupOpSeq += 1;
+  groupUngroupDialogGeneration += 1;
   activeDuplicateOp.value = null;
   activeDeleteOp.value = null;
   activeExcludeOp.value = null;
   activeCreateOp.value = null;
   activeGroupEditOp.value = null;
   activeGroupCreateOp.value = null;
+  activeGroupUngroupOp.value = null;
   duplicateDialogPending.value = false;
   deleteDialogPending.value = false;
   excludeDialogPending.value = false;
@@ -269,6 +301,8 @@ function invalidateItemDialogOperations(): void {
   groupEditErrorMessage.value = '';
   groupCreateDialogPending.value = false;
   groupCreateErrorMessage.value = '';
+  groupUngroupDialogPending.value = false;
+  groupUngroupErrorMessage.value = '';
   duplicateSourceItemId.value = null;
   deleteTargetItemId.value = null;
   excludeTargetItemId.value = null;
@@ -277,6 +311,8 @@ function invalidateItemDialogOperations(): void {
   groupEditTarget.value = null;
   groupCreateDialogOpen.value = false;
   groupCreateTarget.value = null;
+  groupUngroupDialogOpen.value = false;
+  groupUngroupTarget.value = null;
   uncertainItemMutation.value = null;
 }
 
@@ -1962,6 +1998,278 @@ function onCreateGroup(payload: GroupCreatePayload): void {
     });
 }
 
+const canOpenGroupUngroup = computed(
+  () =>
+    Boolean(editor.editingEnabled) &&
+    !editor.mutationPending.value &&
+    !editor.reloadRequired.value &&
+    !editor.unresolvedItemConflict.value &&
+    !groupUngroupDialogPending.value &&
+    !groupEditDialogPending.value &&
+    !groupCreateDialogPending.value &&
+    Boolean(editor.revision.value) &&
+    Boolean(treeResponse.value),
+);
+
+function openGroupUngroup(): void {
+  if (!canOpenGroupUngroup.value || editor.unresolvedItemConflict.value) {
+    return;
+  }
+  const selected = selectedTreeNodeRef.value;
+  if (!selected || selected.type !== 'group' || !treeResponse.value) {
+    return;
+  }
+  if (!editor.revision.value) {
+    return;
+  }
+  const capture = captureActiveGroupUngroupContext(
+    treeResponse.value,
+    selected.id,
+  );
+  if (!capture) {
+    return;
+  }
+  groupUngroupDialogGeneration += 1;
+  groupUngroupErrorMessage.value = '';
+  groupUngroupTarget.value = {
+    screenId: props.screenId,
+    capture,
+    expectedRevision: editor.revision.value,
+    generation: groupUngroupDialogGeneration,
+    selectionGeneration: treeSelectionGeneration,
+  };
+  groupUngroupDialogOpen.value = true;
+}
+
+function closeGroupUngroupForced(): void {
+  groupUngroupDialogOpen.value = false;
+  groupUngroupTarget.value = null;
+  groupUngroupErrorMessage.value = '';
+  groupUngroupDialogPending.value = false;
+  activeGroupUngroupOp.value = null;
+}
+
+function closeGroupUngroup(): void {
+  if (groupUngroupDialogPending.value) {
+    return;
+  }
+  closeGroupUngroupForced();
+}
+
+function beginGroupUngroupOperation(groupId: string): GroupUngroupOperation | null {
+  if (
+    groupUngroupDialogPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value
+  ) {
+    return null;
+  }
+  const target = groupUngroupTarget.value;
+  if (!target || target.capture.groupId !== groupId) {
+    return null;
+  }
+  const op: GroupUngroupOperation = {
+    seq: ++groupUngroupOpSeq,
+    screenId: props.screenId,
+    groupId,
+    generation: target.generation,
+    selectionGeneration: target.selectionGeneration,
+  };
+  activeGroupUngroupOp.value = op;
+  groupUngroupDialogPending.value = true;
+  groupUngroupErrorMessage.value = '';
+  return op;
+}
+
+function isActiveGroupUngroupOperation(
+  op: GroupUngroupOperation,
+  groupId: string,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!groupUngroupDialogOpen.value || !groupUngroupTarget.value) {
+    return false;
+  }
+  if (!activeGroupUngroupOp.value || activeGroupUngroupOp.value.seq !== op.seq) {
+    return false;
+  }
+  if (activeGroupUngroupOp.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (activeGroupUngroupOp.value.groupId !== op.groupId) {
+    return false;
+  }
+  if (activeGroupUngroupOp.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupUngroupTarget.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupUngroupTarget.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (groupId !== op.groupId) {
+    return false;
+  }
+  return true;
+}
+
+function applyUngroupSelection(
+  outcome: Extract<GroupUngroupResult, { status: 'committed-refreshed' }>,
+): void {
+  if (outcome.parentGroupId != null) {
+    const response = treeResponse.value;
+    if (
+      response &&
+      findActiveDescriptionGroup(response, outcome.parentGroupId)
+    ) {
+      selectTreeGroup(outcome.parentGroupId);
+      return;
+    }
+  }
+  const first = outcome.promotedChildren[0];
+  if (!first) {
+    selectedTreeNodeRef.value = null;
+    selectedItemId.value = null;
+    return;
+  }
+  if (first.type === 'group') {
+    selectTreeGroup(first.id);
+    return;
+  }
+  selectTreeItem(first.id);
+}
+
+function pruneExpandedAfterUngroup(removedGroupId: string): void {
+  if (!editingExpandedGroupIds.value.has(removedGroupId)) {
+    return;
+  }
+  const next = new Set(editingExpandedGroupIds.value);
+  next.delete(removedGroupId);
+  editingExpandedGroupIds.value = next;
+}
+
+function expandAncestorsForSelection(nodeId: string, type: 'group' | 'item'): void {
+  const response = treeResponse.value;
+  if (!response) {
+    return;
+  }
+  if (type === 'group') {
+    const chain = collectActiveGroupAncestorChain(response, nodeId);
+    if (chain.length <= 1) {
+      return;
+    }
+    const next = new Set(editingExpandedGroupIds.value);
+    for (const id of chain.slice(0, -1)) {
+      next.add(id);
+    }
+    editingExpandedGroupIds.value = next;
+    return;
+  }
+  // item: expand parent group chain
+  for (const group of buildGroupMap(response).values()) {
+    if (group.children.some((child) => child.type === 'item' && child.id === nodeId)) {
+      const chain = collectActiveGroupAncestorChain(response, group.groupId);
+      const next = new Set(editingExpandedGroupIds.value);
+      for (const id of chain) {
+        next.add(id);
+      }
+      editingExpandedGroupIds.value = next;
+      return;
+    }
+  }
+}
+
+function finishGroupUngroupOperation(
+  op: GroupUngroupOperation,
+  outcome: GroupUngroupResult,
+  groupId: string,
+): void {
+  if (!isActiveGroupUngroupOperation(op, groupId)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  groupUngroupDialogPending.value = false;
+  activeGroupUngroupOp.value = null;
+
+  if (outcome.status === 'committed-refreshed') {
+    const selectionUnchanged =
+      treeSelectionGeneration === op.selectionGeneration;
+    closeGroupUngroupForced();
+    pruneExpandedAfterUngroup(outcome.groupId);
+    if (selectionUnchanged) {
+      void nextTick(() => {
+        if (treeSelectionGeneration !== op.selectionGeneration) {
+          return;
+        }
+        applyUngroupSelection(outcome);
+        const selected = selectedTreeNodeRef.value;
+        if (selected) {
+          expandAncestorsForSelection(selected.id, selected.type);
+        }
+      });
+    } else if (
+      selectedTreeNodeRef.value?.type === 'group' &&
+      selectedTreeNodeRef.value.id === groupId
+    ) {
+      selectedTreeNodeRef.value = null;
+    }
+    return;
+  }
+
+  if (
+    outcome.status === 'authoritative-mismatch' ||
+    outcome.status === 'target-still-present' ||
+    outcome.status === 'revision-diverged' ||
+    outcome.status === 'committed-refresh-failed'
+  ) {
+    closeGroupUngroupForced();
+    return;
+  }
+
+  if (outcome.status === 'mutation-rejected') {
+    groupUngroupErrorMessage.value = editor.statusMessage.value;
+  }
+}
+
+function onConfirmGroupUngroup(): void {
+  const target = groupUngroupTarget.value;
+  if (
+    !target ||
+    groupUngroupDialogPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value ||
+    target.screenId !== props.screenId
+  ) {
+    return;
+  }
+  const response = treeResponse.value;
+  if (!response || !matchesUngroupCapture(response, target.capture)) {
+    groupUngroupErrorMessage.value =
+      'グループの配置が変わったため解除できません。キャンセルして最新内容を確認してください。';
+    return;
+  }
+  const op = beginGroupUngroupOperation(target.capture.groupId);
+  if (!op) {
+    return;
+  }
+  const capturedRevision = target.expectedRevision;
+  void editor
+    .ungroupGroup({
+      expectedRevision: capturedRevision,
+      capture: target.capture,
+    })
+    .then((outcome) => {
+      if (!isActiveGroupUngroupOperation(op, target.capture.groupId)) {
+        return;
+      }
+      finishGroupUngroupOperation(op, outcome, target.capture.groupId);
+    });
+}
+
 function closeCreateItemForced(): void {
   createItemDialogOpen.value = false;
   uncertainItemMutation.value = null;
@@ -2717,6 +3025,7 @@ onBeforeUnmount(() => {
                 :depth-limit-reached="selectedGroupDepthLimitReached"
                 @edit="openGroupEdit"
                 @add-child-group="openChildGroupCreate"
+                @ungroup="openGroupUngroup"
               />
               <ItemDescriptionTable
                 :screen="screen"
@@ -2816,6 +3125,20 @@ onBeforeUnmount(() => {
       :error-message="groupCreateErrorMessage"
       @close="closeGroupCreate"
       @create="onCreateGroup"
+    />
+
+    <GroupUngroupDialog
+      v-if="groupUngroupDialogOpen && groupUngroupTarget"
+      :group-id="groupUngroupTarget.capture.groupId"
+      :group-name="groupUngroupTarget.capture.name"
+      :parent-group-id="groupUngroupTarget.capture.parentGroupId"
+      :parent-group-name="groupUngroupTarget.capture.parentName"
+      :direct-children="groupUngroupTarget.capture.directChildren"
+      :pending="groupUngroupDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
+      :error-message="groupUngroupErrorMessage"
+      @close="closeGroupUngroup"
+      @confirm="onConfirmGroupUngroup"
     />
 
     <DuplicateItemDialog
