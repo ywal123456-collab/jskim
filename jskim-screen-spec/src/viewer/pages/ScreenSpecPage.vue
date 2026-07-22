@@ -15,12 +15,25 @@ import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import ItemTreePanel from '../components/ItemTreePanel.vue';
 import GroupInfoPanel from '../components/GroupInfoPanel.vue';
+import GroupEditDialog from '../components/GroupEditDialog.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
-import { useDescriptionEditor, type DescriptionMutationOutcome, type LoadDescriptionReason } from '../editing/useDescriptionEditor';
+import {
+  useDescriptionEditor,
+  type DescriptionMutationOutcome,
+  type GroupUpdateResult,
+  type LoadDescriptionReason,
+} from '../editing/useDescriptionEditor';
 import { useDescriptionTreePanel } from '../editing/use-description-tree-panel';
-import { createDefaultExpandedGroupIds } from '../editing/description-tree-helpers';
+import {
+  buildGroupMap,
+  collectActiveDescriptionTreeNodeIds,
+  createDefaultExpandedGroupIds,
+  nodeExistsInTree,
+  reconcileExpandedGroupIds,
+} from '../editing/description-tree-helpers';
+import type { GroupEditPayload } from '../editing/group-edit-validation';
 import { useVersionHistory } from '../version-history/use-version-history';
 import { useDeviceCapturePanel } from '../preview/useDeviceCapturePanel';
 import { useReferenceImagePanel } from '../preview/useReferenceImagePanel';
@@ -100,6 +113,18 @@ const duplicateDialogPending = ref(false);
 const deleteDialogPending = ref(false);
 const excludeDialogPending = ref(false);
 const createDialogPending = ref(false);
+const groupEditDialogOpen = ref(false);
+const groupEditDialogPending = ref(false);
+const groupEditErrorMessage = ref('');
+const groupEditTarget = ref<{
+  screenId: string;
+  groupId: string;
+  expectedRevision: string;
+  name: string;
+  kind: string;
+  description: string;
+  generation: number;
+} | null>(null);
 
 type UncertainItemMutationPayload = {
   itemId: string;
@@ -170,28 +195,45 @@ let duplicateOpSeq = 0;
 let deleteOpSeq = 0;
 let excludeOpSeq = 0;
 let createOpSeq = 0;
+let groupEditOpSeq = 0;
+let groupEditDialogGeneration = 0;
 const activeDuplicateOp = ref<ItemDialogOperation | null>(null);
 const activeDeleteOp = ref<ItemDialogOperation | null>(null);
 const activeExcludeOp = ref<ItemDialogOperation | null>(null);
 const activeCreateOp = ref<ItemDialogOperation | null>(null);
+type GroupEditOperation = {
+  seq: number;
+  screenId: string;
+  groupId: string;
+  generation: number;
+};
+
+const activeGroupEditOp = ref<GroupEditOperation | null>(null);
 
 function invalidateItemDialogOperations(): void {
   duplicateOpSeq += 1;
   deleteOpSeq += 1;
   excludeOpSeq += 1;
   createOpSeq += 1;
+  groupEditOpSeq += 1;
+  groupEditDialogGeneration += 1;
   activeDuplicateOp.value = null;
   activeDeleteOp.value = null;
   activeExcludeOp.value = null;
   activeCreateOp.value = null;
+  activeGroupEditOp.value = null;
   duplicateDialogPending.value = false;
   deleteDialogPending.value = false;
   excludeDialogPending.value = false;
   createDialogPending.value = false;
+  groupEditDialogPending.value = false;
+  groupEditErrorMessage.value = '';
   duplicateSourceItemId.value = null;
   deleteTargetItemId.value = null;
   excludeTargetItemId.value = null;
   createItemDialogOpen.value = false;
+  groupEditDialogOpen.value = false;
+  groupEditTarget.value = null;
   uncertainItemMutation.value = null;
 }
 
@@ -973,16 +1015,73 @@ const displayItemOrder = computed(() => {
 });
 
 const editingExpandedGroupIds = ref<Set<string>>(new Set());
+const editingExpandedInit = ref<{
+  screenId: string;
+  lifecycleGeneration: number;
+  initialized: boolean;
+} | null>(null);
+let editingExpandedLifecycleGeneration = 0;
+
+function reconcileSelectedTreeNodeWithResponse(): void {
+  const response = treeResponse.value;
+  const selected = selectedTreeNodeRef.value;
+  if (!response || !selected) {
+    return;
+  }
+  if (nodeExistsInTree(response, selected)) {
+    return;
+  }
+  selectedTreeNodeRef.value = null;
+  if (selected.type === 'item') {
+    selectedItemId.value = null;
+    if (editor.itemDraftItemId.value === selected.id) {
+      editor.clearItemEditDraft();
+    }
+  }
+}
+
+watch(
+  () => props.screenId,
+  (screenId) => {
+    editingExpandedLifecycleGeneration += 1;
+    editingExpandedGroupIds.value = new Set();
+    editingExpandedInit.value = {
+      screenId,
+      lifecycleGeneration: editingExpandedLifecycleGeneration,
+      initialized: false,
+    };
+  },
+  { immediate: true },
+);
 
 watch(
   () => editor.treeResponse.value,
   (response) => {
     if (!editor.editingEnabled || !response) {
+      // transient null / loading では expanded・initialized を触らない
       return;
     }
-    editingExpandedGroupIds.value = createDefaultExpandedGroupIds(
+    const active = collectActiveDescriptionTreeNodeIds(response);
+    const defaults = createDefaultExpandedGroupIds(
       response.description.rootNodes,
     );
+    const init = editingExpandedInit.value;
+    const initialized =
+      init?.screenId === props.screenId &&
+      init.lifecycleGeneration === editingExpandedLifecycleGeneration &&
+      init.initialized;
+    editingExpandedGroupIds.value = reconcileExpandedGroupIds({
+      activeGroupIds: active.groups,
+      previousExpandedGroupIds: editingExpandedGroupIds.value,
+      defaultExpandedGroupIds: defaults,
+      initialized,
+    });
+    editingExpandedInit.value = {
+      screenId: props.screenId,
+      lifecycleGeneration: editingExpandedLifecycleGeneration,
+      initialized: true,
+    };
+    reconcileSelectedTreeNodeWithResponse();
   },
 );
 
@@ -1016,6 +1115,32 @@ const statusLabel = computed(() => {
       return '';
   }
 });
+
+/** Item conflict recovery 用。statusMessage が空でも案内を欠かさない。 */
+const ITEM_CONFLICT_RECOVERY_FALLBACK_MESSAGE =
+  '他の操作によって画面設計書が更新されました。最新内容を再読み込みしてください。';
+
+const visibleStatusMessage = computed(() => {
+  if (editor.statusMessage.value) {
+    return editor.statusMessage.value;
+  }
+  if (editor.unresolvedItemConflict.value) {
+    return ITEM_CONFLICT_RECOVERY_FALLBACK_MESSAGE;
+  }
+  return '';
+});
+
+const shouldShowStatusBanner = computed(
+  () =>
+    Boolean(visibleStatusMessage.value) ||
+    editor.unresolvedItemConflict.value ||
+    editor.status.value === 'reload-failed' ||
+    editor.reloadRequired.value,
+);
+
+const statusBannerDataStatus = computed(() =>
+  editor.unresolvedItemConflict.value ? 'conflict' : editor.status.value,
+);
 
 async function loadScreen(
   screenId: string,
@@ -1214,6 +1339,10 @@ const descriptionTree = useDescriptionTreePanel({
   onSelectItem,
   onClearItemSelection: () => {
     selectedItemId.value = null;
+    if (editor.editingEnabled && editor.itemDraftItemId.value) {
+      // Group 選択は draft のみ整理。reload-failed 等の global recovery は維持する
+      editor.clearItemEditDraft();
+    }
   },
 });
 
@@ -1228,6 +1357,16 @@ const {
   selectTreeGroup,
   selectTreeItem,
 } = descriptionTree;
+
+watch(
+  () => readOnlyTreeResponse.value,
+  () => {
+    if (editor.editingEnabled) {
+      return;
+    }
+    reconcileSelectedTreeNodeWithResponse();
+  },
+);
 
 const treeStatus = computed(() =>
   editor.editingEnabled ? editor.treeStatus.value : readOnlyTreeStatus.value,
@@ -1246,7 +1385,8 @@ const expandedGroupIds = computed(() =>
 
 function reloadTree(): void {
   if (editor.editingEnabled) {
-    void editor.reloadTree();
+    // editing Tree reload は常に generic-preserve（conflict recovery と混同しない）
+    void editor.reloadLatest();
     return;
   }
   void reloadReadOnlyTree();
@@ -1299,6 +1439,198 @@ function onCancelEdits(): void {
 
 function openCreateItem(): void {
   createItemDialogOpen.value = true;
+}
+
+function openGroupEdit(): void {
+  if (
+    !editor.editingEnabled ||
+    editor.mutationPending.value ||
+    editor.reloadRequired.value ||
+    groupEditDialogPending.value
+  ) {
+    return;
+  }
+  const selected = selectedTreeNodeRef.value;
+  if (!selected || selected.type !== 'group' || !treeResponse.value) {
+    return;
+  }
+  const group = buildGroupMap(treeResponse.value).get(selected.id);
+  if (!group || !editor.revision.value) {
+    return;
+  }
+  groupEditDialogGeneration += 1;
+  groupEditErrorMessage.value = '';
+  groupEditTarget.value = {
+    screenId: props.screenId,
+    groupId: group.groupId,
+    expectedRevision: editor.revision.value,
+    name: group.name,
+    kind: group.kind,
+    description: group.description ?? '',
+    generation: groupEditDialogGeneration,
+  };
+  groupEditDialogOpen.value = true;
+}
+
+function closeGroupEditForced(): void {
+  groupEditDialogOpen.value = false;
+  groupEditTarget.value = null;
+  groupEditErrorMessage.value = '';
+  groupEditDialogPending.value = false;
+  activeGroupEditOp.value = null;
+  void nextTick(() => {
+    const button = document.querySelector(
+      '[data-testid="group-edit-open"]',
+    ) as HTMLButtonElement | null;
+    button?.focus();
+  });
+}
+
+function closeGroupEdit(): void {
+  if (groupEditDialogPending.value) {
+    return;
+  }
+  closeGroupEditForced();
+}
+
+function beginGroupEditOperation(groupId: string): GroupEditOperation | null {
+  if (groupEditDialogPending.value || editor.reloadRequired.value) {
+    return null;
+  }
+  const target = groupEditTarget.value;
+  if (!target || target.groupId !== groupId) {
+    return null;
+  }
+  const op: GroupEditOperation = {
+    seq: ++groupEditOpSeq,
+    screenId: props.screenId,
+    groupId,
+    generation: target.generation,
+  };
+  activeGroupEditOp.value = op;
+  groupEditDialogPending.value = true;
+  groupEditErrorMessage.value = '';
+  return op;
+}
+
+function isActiveGroupEditOperation(
+  op: GroupEditOperation,
+  groupId: string,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!groupEditDialogOpen.value || !groupEditTarget.value) {
+    return false;
+  }
+  if (!activeGroupEditOp.value || activeGroupEditOp.value.seq !== op.seq) {
+    return false;
+  }
+  if (activeGroupEditOp.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (activeGroupEditOp.value.groupId !== op.groupId) {
+    return false;
+  }
+  if (activeGroupEditOp.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupEditTarget.value.groupId !== groupId || groupId !== op.groupId) {
+    return false;
+  }
+  if (groupEditTarget.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupEditTarget.value.screenId !== props.screenId) {
+    return false;
+  }
+  return true;
+}
+
+function finishGroupEditOperation(
+  op: GroupEditOperation,
+  outcome: GroupUpdateResult,
+  groupId: string,
+): void {
+  if (!isActiveGroupEditOperation(op, groupId)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  groupEditDialogPending.value = false;
+  activeGroupEditOp.value = null;
+
+  if (outcome.status === 'committed-refreshed') {
+    closeGroupEditForced();
+    return;
+  }
+
+  if (outcome.status === 'target-absent') {
+    if (
+      selectedTreeNodeRef.value?.type === 'group' &&
+      selectedTreeNodeRef.value.id === groupId
+    ) {
+      selectedTreeNodeRef.value = null;
+    }
+    groupEditErrorMessage.value = '';
+    closeGroupEditForced();
+    return;
+  }
+
+  if (outcome.status === 'authoritative-mismatch') {
+    if (groupEditTarget.value) {
+      groupEditTarget.value = {
+        ...groupEditTarget.value,
+        expectedRevision: outcome.revision,
+        name: outcome.baseline.name,
+        kind: outcome.baseline.kind,
+        description: outcome.baseline.description ?? '',
+      };
+    }
+    groupEditErrorMessage.value = editor.statusMessage.value;
+    return;
+  }
+
+  if (outcome.status === 'mutation-rejected') {
+    groupEditErrorMessage.value = editor.statusMessage.value;
+    return;
+  }
+
+  if (outcome.status === 'committed-refresh-failed') {
+    groupEditErrorMessage.value = editor.statusMessage.value;
+  }
+}
+
+function onSaveGroupEdit(payload: GroupEditPayload): void {
+  const target = groupEditTarget.value;
+  if (
+    !target ||
+    groupEditDialogPending.value ||
+    editor.reloadRequired.value ||
+    target.screenId !== props.screenId
+  ) {
+    return;
+  }
+  const op = beginGroupEditOperation(target.groupId);
+  if (!op) {
+    return;
+  }
+  const capturedRevision = target.expectedRevision;
+  void editor
+    .updateGroupMetadata({
+      groupId: target.groupId,
+      expectedRevision: capturedRevision,
+      name: payload.name,
+      kind: payload.kind,
+      description: payload.description,
+    })
+    .then((outcome) => {
+      if (!isActiveGroupEditOperation(op, target.groupId)) {
+        return;
+      }
+      finishGroupEditOperation(op, outcome, target.groupId);
+    });
 }
 
 function closeCreateItemForced(): void {
@@ -1362,9 +1694,30 @@ function reconcileUncertainItemMutations(): void {
   }
 }
 
-async function reloadDescriptionLatest(): Promise<void> {
-  await editor.reloadLatest();
+async function reloadDescriptionAfterFailure(): Promise<void> {
+  await editor.reloadAfterFailure();
   reconcileUncertainItemMutations();
+}
+
+async function reloadConflictedItemDescription(): Promise<void> {
+  const target = editor.captureConflictItemRecoveryTarget();
+  if (!target) {
+    return;
+  }
+  await editor.reloadConflictedItemLatest(target);
+  reconcileUncertainItemMutations();
+}
+
+async function onSaveItemMetadata(): Promise<void> {
+  if (
+    !selectedItemId.value ||
+    editor.unresolvedItemConflict.value ||
+    editor.mutationPending.value ||
+    deleteScreenDialogOpen.value
+  ) {
+    return;
+  }
+  await editor.saveItemMetadata(selectedItemId.value);
 }
 
 function onCreateItem(payload: UncertainItemMutationPayload): void {
@@ -1605,7 +1958,9 @@ async function onDeleteScreenCompleted(payload: {
 
 function onDeleteReloadLatest(): void {
   deleteScreenDialogOpen.value = false;
-  void reloadDescriptionLatest();
+  void editor.reloadLatest().then(() => {
+    reconcileUncertainItemMutations();
+  });
 }
 
 /** 複製元は保存済み（loaded）内容。dirty draft は使わない */
@@ -1753,6 +2108,7 @@ onBeforeUnmount(() => {
           :disabled="
             !editor.screenDirty.value ||
             editor.mutationPending.value ||
+            editor.unresolvedItemConflict.value ||
             deleteScreenDialogOpen
           "
           @click="editor.saveScreenMetadata()"
@@ -1763,12 +2119,14 @@ onBeforeUnmount(() => {
           v-if="selectedItemId"
           type="button"
           class="spec-page__btn"
+          data-action="save-item"
           :disabled="
             !editor.itemDirty.value ||
             editor.mutationPending.value ||
+            editor.unresolvedItemConflict.value ||
             deleteScreenDialogOpen
           "
-          @click="selectedItemId && editor.saveItemMetadata(selectedItemId)"
+          @click="onSaveItemMetadata()"
         >
           項目を保存
         </button>
@@ -1797,13 +2155,22 @@ onBeforeUnmount(() => {
     </div>
 
     <div
-      v-if="editor.statusMessage.value"
+      v-if="shouldShowStatusBanner"
       class="spec-page__banner"
-      :data-status="editor.status.value"
+      :data-status="statusBannerDataStatus"
     >
-      <p>{{ editor.statusMessage.value }}</p>
-      <div v-if="editor.status.value === 'conflict'" class="spec-page__banner-actions">
-        <button type="button" class="spec-page__btn" @click="reloadDescriptionLatest()">
+      <p v-if="visibleStatusMessage">{{ visibleStatusMessage }}</p>
+      <!-- Item 409 専用。Group/Screen 等の generic conflict では表示しない -->
+      <div
+        v-if="editor.unresolvedItemConflict.value"
+        class="spec-page__banner-actions"
+      >
+        <button
+          type="button"
+          class="spec-page__btn"
+          data-action="recover-item-conflict"
+          @click="reloadConflictedItemDescription()"
+        >
           最新内容を再読み込み
         </button>
         <button
@@ -1818,7 +2185,12 @@ onBeforeUnmount(() => {
         v-else-if="editor.status.value === 'reload-failed'"
         class="spec-page__banner-actions"
       >
-        <button type="button" class="spec-page__btn" @click="reloadDescriptionLatest()">
+        <button
+          type="button"
+          class="spec-page__btn"
+          data-action="recover-reload-failed"
+          @click="reloadDescriptionAfterFailure()"
+        >
           再読み込み
         </button>
       </div>
@@ -2005,6 +2377,10 @@ onBeforeUnmount(() => {
                 "
                 :group-id="selectedTreeNodeRef.id"
                 :response="treeResponse"
+                :editing-enabled="editor.editingEnabled"
+                :mutation-pending="editor.mutationPending.value"
+                :reload-required="editor.reloadRequired.value"
+                @edit="openGroupEdit"
               />
               <ItemDescriptionTable
                 :screen="screen"
@@ -2074,6 +2450,20 @@ onBeforeUnmount(() => {
       :submit-disabled="editor.reloadRequired.value"
       @close="closeCreateItem"
       @create="onCreateItem"
+    />
+
+    <GroupEditDialog
+      v-if="groupEditDialogOpen && groupEditTarget"
+      :group-id="groupEditTarget.groupId"
+      :generation="groupEditTarget.generation"
+      :initial-name="groupEditTarget.name"
+      :initial-kind="groupEditTarget.kind"
+      :initial-description="groupEditTarget.description"
+      :pending="groupEditDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
+      :error-message="groupEditErrorMessage"
+      @close="closeGroupEdit"
+      @save="onSaveGroupEdit"
     />
 
     <DuplicateItemDialog

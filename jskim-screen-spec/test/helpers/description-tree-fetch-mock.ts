@@ -7,12 +7,25 @@ export type MockItemFields = {
   note: string;
 };
 
+export type MockTreeNodeRef = { type: 'group' | 'item'; id: string };
+
+export type MockTreeGroup = {
+  groupId: string;
+  name: string;
+  kind: string;
+  description?: string;
+  children: MockTreeNodeRef[];
+};
+
 export type MockTreeDoc = {
   screen: { id: string; name: string; description: string };
   itemOrder: string[];
   items: Record<string, MockItemFields>;
   excludedItems?: Record<string, MockItemFields>;
   collectedItemIds?: string[];
+  /** 指定時は v1.3 tree 表現として優先 */
+  rootNodes?: MockTreeNodeRef[];
+  groups?: MockTreeGroup[];
 };
 
 type TreeEntry = {
@@ -29,15 +42,17 @@ function parseBody(init?: RequestInit): Record<string, unknown> {
 
 function toTreeJson(entry: TreeEntry) {
   const { doc, revision } = entry;
+  const rootNodes =
+    doc.rootNodes ?? doc.itemOrder.map((id) => ({ type: 'item' as const, id }));
   return {
     revision,
-    sourceSchemaVersion: '1.2',
+    sourceSchemaVersion: doc.groups?.length ? '1.3' : '1.2',
     collectedItemIds: doc.collectedItemIds ?? [],
     description: {
       schemaVersion: '1.3',
       screen: doc.screen,
-      rootNodes: doc.itemOrder.map((id) => ({ type: 'item', id })),
-      groups: [],
+      rootNodes,
+      groups: doc.groups ?? [],
       items: doc.items,
       excludedItems: doc.excludedItems ?? {},
     },
@@ -226,6 +241,52 @@ export function stubDescriptionTreeFetch(
         }
         return new Response(
           JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const groupPatch = suffix.match(/^\/groups\/([^/]+)$/);
+      if (groupPatch && method === 'PATCH') {
+        const groupId = decodeURIComponent(groupPatch[1]);
+        const groups = entry.doc.groups ?? [];
+        const group = groups.find((entryGroup) => entryGroup.groupId === groupId);
+        if (!group) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+              message: 'Group が見つかりません。',
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        let changed = false;
+        if (typeof body.name === 'string' && body.name !== group.name) {
+          group.name = body.name;
+          changed = true;
+        }
+        if (typeof body.kind === 'string' && body.kind !== group.kind) {
+          group.kind = body.kind;
+          changed = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(body, 'description')) {
+          if (body.description === null || body.description === '') {
+            if (group.description !== undefined) {
+              delete group.description;
+              changed = true;
+            }
+          } else if (
+            typeof body.description === 'string' &&
+            body.description !== group.description
+          ) {
+            group.description = body.description;
+            changed = true;
+          }
+        }
+        return new Response(
+          JSON.stringify({
+            status: changed ? 'updated' : 'unchanged',
+            revision: changed ? bumpRevision(entry) : entry.revision,
+          }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }

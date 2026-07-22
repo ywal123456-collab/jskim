@@ -266,6 +266,39 @@ export async function reorderDescriptionChildren(
   );
 }
 
+export async function updateDescriptionGroup(
+  screenId: string,
+  groupId: string,
+  input: {
+    expectedRevision: string;
+    name?: string;
+    description?: string | null;
+    kind?: string;
+  },
+  fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
+) {
+  const body: Record<string, unknown> = {
+    expectedRevision: input.expectedRevision,
+  };
+  if (input.name !== undefined) {
+    body.name = input.name;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'description')) {
+    body.description = input.description ?? null;
+  }
+  if (input.kind !== undefined) {
+    body.kind = input.kind;
+  }
+  return mutateJson(
+    treeUrl(screenId, `/groups/${encodeURIComponent(groupId)}`),
+    'PATCH',
+    body,
+    fetchFn,
+    signal,
+  );
+}
+
 export function sanitizeMutationMessage(error: DescriptionMutationError): string {
   if (error.httpStatus >= 500) {
     return GENERIC_ERROR;

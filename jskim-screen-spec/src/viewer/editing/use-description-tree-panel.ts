@@ -1,11 +1,10 @@
 import { getCurrentInstance, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { fetchDescriptionTree } from './description-tree-client.js';
 import {
-  buildGroupMap,
+  collectActiveDescriptionTreeNodeIds,
   createDefaultExpandedGroupIds,
-  mergeExpandedGroupIds,
   nodeExistsInTree,
-  pruneExpandedGroupIds,
+  reconcileExpandedGroupIds,
 } from './description-tree-helpers.js';
 import type {
   DescriptionTreeGetResponse,
@@ -13,6 +12,12 @@ import type {
 } from './description-tree-types.js';
 
 export type DescriptionTreePanelStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
+
+type ExpandedInitialization = {
+  screenId: string;
+  lifecycleGeneration: number;
+  initialized: boolean;
+};
 
 export function useDescriptionTreePanel(options: {
   screenId: () => string;
@@ -27,10 +32,11 @@ export function useDescriptionTreePanel(options: {
   const selectedTreeNode = ref<SelectedTreeNode | null>(null);
   const expandedGroupIds = ref<Set<string>>(new Set());
 
-  const expandedByScreen = new Map<string, Set<string>>();
   let requestSeq = 0;
   let abort: AbortController | null = null;
   let activeScreenId = '';
+  let screenLifecycleGeneration = 0;
+  let expandedInit: ExpandedInitialization | null = null;
 
   function abortInflight(): void {
     abort?.abort();
@@ -42,8 +48,13 @@ export function useDescriptionTreePanel(options: {
     treeResponse.value = null;
     treeError.value = '';
     treeStatus.value = options.hasDescription() ? 'loading' : 'idle';
-    const saved = expandedByScreen.get(screenId);
-    expandedGroupIds.value = saved ? new Set(saved) : new Set();
+    screenLifecycleGeneration += 1;
+    expandedGroupIds.value = new Set();
+    expandedInit = {
+      screenId,
+      lifecycleGeneration: screenLifecycleGeneration,
+      initialized: false,
+    };
   }
 
   function syncSelectionWithTree(): void {
@@ -58,6 +69,26 @@ export function useDescriptionTreePanel(options: {
         options.onClearItemSelection();
       }
     }
+  }
+
+  function applyAuthoritativeExpanded(data: DescriptionTreeGetResponse, screenId: string): void {
+    const active = collectActiveDescriptionTreeNodeIds(data);
+    const defaults = createDefaultExpandedGroupIds(data.description.rootNodes);
+    const initialized =
+      expandedInit?.screenId === screenId &&
+      expandedInit.lifecycleGeneration === screenLifecycleGeneration &&
+      expandedInit.initialized;
+    expandedGroupIds.value = reconcileExpandedGroupIds({
+      activeGroupIds: active.groups,
+      previousExpandedGroupIds: expandedGroupIds.value,
+      defaultExpandedGroupIds: defaults,
+      initialized,
+    });
+    expandedInit = {
+      screenId,
+      lifecycleGeneration: screenLifecycleGeneration,
+      initialized: true,
+    };
   }
 
   async function loadTree(optionsReload: { refresh?: boolean } = {}): Promise<boolean> {
@@ -76,9 +107,13 @@ export function useDescriptionTreePanel(options: {
     abortInflight();
     abort = new AbortController();
     const seq = ++requestSeq;
+    const previousTree = treeResponse.value;
     treeStatus.value = 'loading';
     treeError.value = '';
-    treeResponse.value = null;
+    // same-screen reload では transient null にせず、失敗時も previous を維持する
+    if (!optionsReload.refresh) {
+      treeResponse.value = null;
+    }
 
     const result = await fetchDescriptionTree(
       screenId,
@@ -92,6 +127,9 @@ export function useDescriptionTreePanel(options: {
       if (result.aborted) {
         return false;
       }
+      if (optionsReload.refresh && previousTree && !treeResponse.value) {
+        treeResponse.value = previousTree;
+      }
       treeStatus.value = 'error';
       treeError.value = result.error.message || 'Item Tree を取得できませんでした。';
       return false;
@@ -99,13 +137,7 @@ export function useDescriptionTreePanel(options: {
 
     const data = result.data;
     treeResponse.value = data;
-    const groupMap = buildGroupMap(data);
-    const defaults = createDefaultExpandedGroupIds(data.description.rootNodes);
-    const previous = expandedByScreen.get(screenId) ?? expandedGroupIds.value;
-    const merged = mergeExpandedGroupIds(previous, defaults, groupMap);
-    const pruned = pruneExpandedGroupIds(merged, groupMap);
-    expandedGroupIds.value = pruned;
-    expandedByScreen.set(screenId, new Set(pruned));
+    applyAuthoritativeExpanded(data, screenId);
 
     if (data.description.rootNodes.length === 0) {
       treeStatus.value = 'empty';
@@ -129,7 +161,6 @@ export function useDescriptionTreePanel(options: {
       next.add(groupId);
     }
     expandedGroupIds.value = next;
-    expandedByScreen.set(options.screenId(), new Set(next));
   }
 
   function selectTreeItem(itemId: string): void {

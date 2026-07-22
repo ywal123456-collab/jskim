@@ -598,7 +598,7 @@ describe('Description mutation outcome', () => {
       await wrapper.vm.editor.saveScreenMetadata();
       expect(wrapper.vm.editor.reloadRequired.value).toBe(true);
 
-      await wrapper.vm.editor.reloadLatest();
+      await wrapper.vm.editor.reloadAfterFailure();
       await flushPromises();
       expect(wrapper.vm.editor.reloadRequired.value).toBe(false);
 
@@ -734,7 +734,7 @@ describe('Description mutation outcome', () => {
       await wrapper.vm.editor.saveScreenMetadata();
       expect(wrapper.vm.editor.reloadRequired.value).toBe(true);
 
-      await wrapper.vm.editor.reloadLatest();
+      await wrapper.vm.editor.reloadAfterFailure();
       await flushPromises();
       expect(wrapper.vm.editor.reloadRequired.value).toBe(false);
 

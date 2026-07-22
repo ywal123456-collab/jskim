@@ -56,25 +56,53 @@ export function createDefaultExpandedGroupIds(
 
 export function pruneExpandedGroupIds(
   expanded: Set<string>,
-  groupMap: Map<string, DescriptionTreeGroupRow>,
+  activeGroupIds: ReadonlySet<string>,
 ): Set<string> {
   const next = new Set<string>();
   for (const groupId of expanded) {
-    if (groupMap.has(groupId)) {
+    if (activeGroupIds.has(groupId)) {
       next.add(groupId);
     }
   }
   return next;
 }
 
+/**
+ * expanded 初期化済みかどうかで defaults 適用 / previous∩active を切り替える。
+ * 空 Set を「未初期化」とみなさない。
+ */
+export function reconcileExpandedGroupIds(input: {
+  activeGroupIds: ReadonlySet<string>;
+  previousExpandedGroupIds: ReadonlySet<string>;
+  defaultExpandedGroupIds: ReadonlySet<string>;
+  initialized: boolean;
+}): Set<string> {
+  if (!input.initialized) {
+    return pruneExpandedGroupIds(
+      new Set(input.defaultExpandedGroupIds),
+      input.activeGroupIds,
+    );
+  }
+  return pruneExpandedGroupIds(
+    new Set(input.previousExpandedGroupIds),
+    input.activeGroupIds,
+  );
+}
+
+/** @deprecated defaults を常に union するため same-screen reload には使わない */
 export function mergeExpandedGroupIds(
   previous: Set<string>,
   defaults: Set<string>,
-  groupMap: Map<string, DescriptionTreeGroupRow>,
+  activeGroupIds: ReadonlySet<string>,
 ): Set<string> {
-  const merged = new Set<string>(defaults);
+  const merged = new Set<string>();
+  for (const groupId of defaults) {
+    if (activeGroupIds.has(groupId)) {
+      merged.add(groupId);
+    }
+  }
   for (const groupId of previous) {
-    if (groupMap.has(groupId)) {
+    if (activeGroupIds.has(groupId)) {
       merged.add(groupId);
     }
   }
@@ -88,15 +116,69 @@ export function isSelectedTreeNode(
   return selected?.type === ref.type && selected.id === ref.id;
 }
 
+/**
+ * rootNodes から到達可能な active Group / Item ID を収集する。
+ * groups[] / items 定義だけの orphan は含めない。
+ */
+export function collectActiveDescriptionTreeNodeIds(
+  response: DescriptionTreeGetResponse,
+): { groups: Set<string>; items: Set<string> } {
+  const groupMap = buildGroupMap(response);
+  const activeGroups = new Set<string>();
+  const activeItems = new Set<string>();
+  const visitedGroups = new Set<string>();
+  const stack: DescriptionTreeNodeRef[] = [
+    ...(response.description.rootNodes ?? []),
+  ];
+
+  while (stack.length > 0) {
+    const ref = stack.pop()!;
+    if (ref.type === 'item') {
+      if (
+        Object.prototype.hasOwnProperty.call(response.description.items, ref.id)
+      ) {
+        activeItems.add(ref.id);
+      }
+      continue;
+    }
+    if (visitedGroups.has(ref.id)) {
+      continue;
+    }
+    visitedGroups.add(ref.id);
+    const definition = groupMap.get(ref.id);
+    if (!definition) {
+      continue;
+    }
+    activeGroups.add(ref.id);
+    for (const child of definition.children) {
+      stack.push(child);
+    }
+  }
+
+  return { groups: activeGroups, items: activeItems };
+}
+
+export function findActiveDescriptionGroup(
+  response: DescriptionTreeGetResponse,
+  groupId: string,
+): DescriptionTreeGroupRow | null {
+  const active = collectActiveDescriptionTreeNodeIds(response);
+  if (!active.groups.has(groupId)) {
+    return null;
+  }
+  return buildGroupMap(response).get(groupId) ?? null;
+}
+
+/** active tree 上に node が存在するか（definition だけの orphan は false）。 */
 export function nodeExistsInTree(
   response: DescriptionTreeGetResponse,
   node: SelectedTreeNode,
 ): boolean {
-  const groupMap = buildGroupMap(response);
+  const active = collectActiveDescriptionTreeNodeIds(response);
   if (node.type === 'group') {
-    return groupMap.has(node.id);
+    return active.groups.has(node.id);
   }
-  return Object.prototype.hasOwnProperty.call(response.description.items, node.id);
+  return active.items.has(node.id);
 }
 
 export function countDirectChildren(group: DescriptionTreeGroupRow): number {

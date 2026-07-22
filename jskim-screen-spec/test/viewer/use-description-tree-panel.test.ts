@@ -114,12 +114,121 @@ describe('useDescriptionTreePanel', () => {
     const fetchFn = vi.fn(async () => jsonResponse(treeA));
     const { api } = mountPanel({ fetchFn });
     await flushPromises();
-    api.toggleGroupExpanded('section');
+    expect(api.expandedGroupIds.value.has('section')).toBe(true);
     api.selectTreeItem('item-a');
     await api.reloadTree();
     await flushPromises();
     expect(api.expandedGroupIds.value.has('section')).toBe(true);
     expect(api.selectedTreeNode.value).toEqual({ type: 'item', id: 'item-a' });
+  });
+
+  it('すべて畳んだあと same-screen reload でも defaults を再適用しない', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(treeA));
+    const { api } = mountPanel({ fetchFn });
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('section')).toBe(true);
+    api.toggleGroupExpanded('section');
+    expect(api.expandedGroupIds.value.has('section')).toBe(false);
+    await api.reloadTree();
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('section')).toBe(false);
+    expect(api.expandedGroupIds.value.size).toBe(0);
+  });
+
+  it('Screen A で全畳み → B では B の defaults を適用する', async () => {
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const id = decodeURIComponent(String(input).split('/').pop() || '');
+      if (id === 'screen-a') {
+        return jsonResponse(treeA);
+      }
+      return jsonResponse({
+        ...treeB,
+        description: {
+          ...treeB.description,
+          rootNodes: [
+            { type: 'group', id: 'b-root' },
+            { type: 'item', id: 'only-b' },
+          ],
+          groups: [
+            {
+              groupId: 'b-root',
+              name: 'B Root',
+              kind: 'SECTION',
+              children: [{ type: 'item', id: 'only-b' }],
+            },
+          ],
+        },
+      });
+    });
+    const screenId = ref('screen-a');
+    const { api } = mountPanel({ fetchFn, screenId });
+    await flushPromises();
+    api.toggleGroupExpanded('section');
+    expect(api.expandedGroupIds.value.size).toBe(0);
+
+    screenId.value = 'screen-b';
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('b-root')).toBe(true);
+    expect(api.expandedGroupIds.value.has('section')).toBe(false);
+  });
+
+  it('valid empty tree では expanded を空にする', async () => {
+    const emptyTree: DescriptionTreeGetResponse = {
+      revision: 'sha256:' + 'e'.repeat(64),
+      sourceSchemaVersion: '1.3',
+      description: {
+        schemaVersion: '1.3',
+        screen: { id: 'screen-a', name: 'A', description: '' },
+        rootNodes: [],
+        groups: [],
+        items: {},
+        excludedItems: {},
+      },
+    };
+    let call = 0;
+    const fetchFn = vi.fn(async () => {
+      call += 1;
+      return jsonResponse(call === 1 ? treeA : emptyTree);
+    });
+    const { api } = mountPanel({ fetchFn });
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('section')).toBe(true);
+    await api.reloadTree();
+    await flushPromises();
+    expect(api.treeStatus.value).toBe('empty');
+    expect(api.expandedGroupIds.value.size).toBe(0);
+  });
+
+  it('orphan expanded Group を prune する', async () => {
+    let call = 0;
+    const fetchFn = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse(treeA);
+      }
+      return jsonResponse({
+        ...treeA,
+        revision: 'sha256:' + 'c'.repeat(64),
+        description: {
+          ...treeA.description,
+          rootNodes: [{ type: 'item', id: 'item-a' }],
+          groups: [
+            {
+              groupId: 'section',
+              name: 'Section',
+              kind: 'SECTION',
+              children: [{ type: 'item', id: 'item-b' }],
+            },
+          ],
+        },
+      });
+    });
+    const { api } = mountPanel({ fetchFn });
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('section')).toBe(true);
+    await api.reloadTree();
+    await flushPromises();
+    expect(api.expandedGroupIds.value.has('section')).toBe(false);
   });
 
   it('GET 실패 시 error 상태', async () => {

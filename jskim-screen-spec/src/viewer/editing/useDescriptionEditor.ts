@@ -13,7 +13,12 @@ import {
   type ItemFields,
 } from './description-editor-helpers.js';
 import * as mutationClient from './description-mutation-client.js';
+import {
+  findActiveDescriptionGroup,
+  nodeExistsInTree,
+} from './description-tree-helpers.js';
 import type { DescriptionTreeGetResponse } from './description-tree-types.js';
+import type { GroupEditKind, GroupEditPayload } from './group-edit-validation.js';
 import {
   cloneEditableDocument,
   getSpecEditBootstrap,
@@ -44,6 +49,30 @@ export type LoadDescriptionReason =
   | 'screen-change'
   | 'same-screen-reload';
 
+/**
+ * same-screen reload の呼び出し意図。
+ * caller が明示し、global conflict 状態から推論しない。
+ */
+export type DescriptionReloadIntent =
+  | { type: 'generic-preserve' }
+  | { type: 'recover-reload-failed' }
+  | {
+      type: 'recover-item-conflict';
+      target: {
+        screenId: string;
+        itemId: string;
+        generation: number;
+        expectedRevision?: string;
+      };
+    };
+
+export type ConflictItemRecoveryTarget = {
+  screenId: string;
+  itemId: string;
+  generation: number;
+  expectedRevision?: string;
+};
+
 /** mutation 後 snapshot 適用時の draft 整理範囲。 */
 export type SnapshotDraftScope = 'full' | 'none' | 'screen' | 'item';
 
@@ -55,9 +84,44 @@ export type DescriptionMutationOutcome =
   | { status: 'commit-unknown' }
   | { status: 'stale-or-aborted' };
 
+/** Item Group metadata update 専用結果（authoritative 検証を含む）。 */
+export type GroupUpdateResult =
+  | { status: 'committed-refreshed' }
+  | {
+      status: 'authoritative-mismatch';
+      commitState: 'committed' | 'unknown' | 'rejected-not-found';
+      revision: string;
+      baseline: {
+        name: string;
+        kind: string;
+        description: string | null;
+      };
+    }
+  | {
+      status: 'target-absent';
+      commitState: 'committed' | 'unknown' | 'rejected-not-found';
+      revision: string;
+    }
+  | { status: 'committed-refresh-failed' }
+  | { status: 'mutation-rejected' }
+  | { status: 'stale-or-aborted' };
+
+type GroupAuthoritativeBaseline = {
+  name: string;
+  kind: string;
+  description: string | null;
+};
+
+type GroupAuthoritativeClass =
+  | { kind: 'match'; baseline: GroupAuthoritativeBaseline }
+  | { kind: 'mismatch'; baseline: GroupAuthoritativeBaseline }
+  | { kind: 'absent' };
+
 type MutationIdentity = {
   seq: number;
   screenId: string;
+  /** Item mutation の 409 recovery 対象 */
+  conflictItemId?: string;
 };
 
 /**
@@ -89,6 +153,8 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   let mutationRefreshAbort: AbortController | null = null;
   let activeScreenId = '';
   let activeMutation: MutationIdentity | null = null;
+  let conflictItemRecoveryGeneration = 0;
+  const conflictItemRecoveryTarget = ref<ConflictItemRecoveryTarget | null>(null);
 
   const revision = computed(() => snapshot.value?.revision ?? null);
   const collectedItemIds = computed(
@@ -171,6 +237,7 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     mutationPending.value = false;
     reloadRequired.value = false;
     reloadFailed.value = false;
+    conflictItemRecoveryTarget.value = null;
   }
 
   function invalidateForScreenChange(nextScreenId: string): void {
@@ -188,9 +255,13 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     screenDraft.value = null;
   }
 
-  function clearItemDraft(): void {
+  function clearItemEditDraft(): void {
     itemDraftItemId.value = null;
     itemDraft.value = null;
+  }
+
+  function clearItemDraft(): void {
+    clearItemEditDraft();
   }
 
   function reconcileItemDraftWithSnapshot(): void {
@@ -198,13 +269,27 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     if (!draftId || !snapshot.value) {
       return;
     }
-    if (!snapshot.value.description.items[draftId]) {
-      clearItemDraft();
+    // definition 存在だけでは不十分。active tree 上の Item のみ draft を維持する。
+    if (
+      !nodeExistsInTree(snapshot.value, { type: 'item', id: draftId })
+    ) {
+      clearItemEditDraft();
     }
   }
 
-  function syncStatusAfterSnapshotApply(draftScope: SnapshotDraftScope): void {
-    if (status.value === 'conflict') {
+  function syncStatusAfterSnapshotApply(
+    draftScope: SnapshotDraftScope,
+    options?: { keepRecoveryStatus?: boolean },
+  ): void {
+    // generic-preserve: conflict / reload-failed を暗黙解消しない
+    if (
+      options?.keepRecoveryStatus &&
+      (status.value === 'conflict' || status.value === 'reload-failed')
+    ) {
+      return;
+    }
+    // recover-item-conflict 中の conflict は後続 applyConflictItemRecovery が処理する
+    if (status.value === 'conflict' && draftScope !== 'full') {
       return;
     }
     if (draftScope === 'full') {
@@ -216,7 +301,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
 
   function applySnapshot(
     data: DescriptionTreeGetResponse,
-    options?: { draftScope?: SnapshotDraftScope },
+    options?: {
+      draftScope?: SnapshotDraftScope;
+      keepRecoveryStatus?: boolean;
+    },
   ): void {
     if (!componentMounted) {
       return;
@@ -265,7 +353,9 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     treeStatus.value =
       data.description.rootNodes.length === 0 ? 'empty' : 'ready';
     treeError.value = '';
-    syncStatusAfterSnapshotApply(draftScope);
+    syncStatusAfterSnapshotApply(draftScope, {
+      keepRecoveryStatus: options?.keepRecoveryStatus,
+    });
   }
 
   async function reloadTreeAfterMutation(
@@ -325,6 +415,17 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       };
       status.value = 'conflict';
       statusMessage.value = mutationClient.sanitizeMutationMessage(error);
+      if (identity.conflictItemId) {
+        conflictItemRecoveryGeneration += 1;
+        conflictItemRecoveryTarget.value = {
+          screenId: identity.screenId,
+          itemId: identity.conflictItemId,
+          generation: conflictItemRecoveryGeneration,
+          expectedRevision: error.expectedRevision,
+        };
+      } else {
+        conflictItemRecoveryTarget.value = null;
+      }
       return { status: 'mutation-rejected' };
     }
     if (mutationClient.isDefiniteMutationRejection(error)) {
@@ -340,12 +441,51 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     return { status: 'commit-unknown' };
   }
 
-  function tryBeginMutation(screenId: string): MutationIdentity | null {
+  /**
+   * unresolved Item conflict capability。
+   * display status（status==='conflict'）には依存しない。
+   * 有効な recovery target が残っている限り保護を維持する。
+   */
+  function isActiveConflictItemRecoveryTarget(
+    target: ConflictItemRecoveryTarget | null,
+  ): boolean {
+    return (
+      componentMounted &&
+      target !== null &&
+      target.screenId === screenIdRef()
+    );
+  }
+
+  function hasUnresolvedItemConflict(): boolean {
+    return isActiveConflictItemRecoveryTarget(conflictItemRecoveryTarget.value);
+  }
+
+  /**
+   * validation / status write より前に呼ぶ side-effect-free guard。
+   * true = 続行可。false = 遮断（state を一切変更しない）。
+   */
+  function guardUnresolvedItemConflict(): boolean {
+    return !hasUnresolvedItemConflict();
+  }
+
+  function rejectIfUnresolvedItemConflict(): DescriptionMutationOutcome | null {
+    if (!guardUnresolvedItemConflict()) {
+      return { status: 'mutation-rejected' };
+    }
+    return null;
+  }
+
+  function tryBeginMutation(
+    screenId: string,
+    options?: { conflictItemId?: string },
+  ): MutationIdentity | null {
+    // HTTP 直前の二重防衛。pending / status を変える前に capability を再確認する。
     if (
       !editingEnabled ||
       mutationPending.value ||
       reloadRequired.value ||
-      !revision.value
+      !revision.value ||
+      hasUnresolvedItemConflict()
     ) {
       return null;
     }
@@ -354,11 +494,13 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     const identity: MutationIdentity = {
       seq: ++mutationSeq,
       screenId,
+      conflictItemId: options?.conflictItemId,
     };
     activeMutation = identity;
     mutationPending.value = true;
     statusMessage.value = '';
     conflictError.value = null;
+    conflictItemRecoveryTarget.value = null;
     reloadFailed.value = false;
     status.value = 'saving';
     activeScreenId = screenId;
@@ -383,8 +525,9 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       | { ok: false; error: mutationClient.DescriptionMutationError; aborted?: boolean }
     >,
     draftScope: SnapshotDraftScope = 'none',
+    options?: { conflictItemId?: string },
   ): Promise<DescriptionMutationOutcome> {
-    const identity = tryBeginMutation(screenId);
+    const identity = tryBeginMutation(screenId, options);
     if (!identity) {
       return { status: 'mutation-rejected' };
     }
@@ -406,15 +549,59 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     }
   }
 
+  function applyConflictItemRecovery(
+    data: DescriptionTreeGetResponse,
+    target: ConflictItemRecoveryTarget,
+  ): void {
+    conflictItemRecoveryTarget.value = null;
+    conflictError.value = null;
+    reloadRequired.value = false;
+    reloadFailed.value = false;
+
+    if (!nodeExistsInTree(data, { type: 'item', id: target.itemId })) {
+      clearItemEditDraft();
+      status.value = 'error';
+      statusMessage.value =
+        '対象の項目が見つからないため、編集を終了しました。最新の項目情報に更新しました。';
+      return;
+    }
+    const fields = data.description.items[target.itemId];
+    if (!fields) {
+      clearItemEditDraft();
+      status.value = 'error';
+      statusMessage.value =
+        '対象の項目が見つからないため、編集を終了しました。最新の項目情報に更新しました。';
+      return;
+    }
+
+    itemDraftItemId.value = target.itemId;
+    itemDraft.value = cloneItemFields(fields);
+    statusMessage.value = '';
+    status.value = dirty.value ? 'dirty' : 'clean';
+  }
+
   async function loadDescription(
     screenId: string,
-    options?: { reason?: LoadDescriptionReason },
+    options?: {
+      reason?: LoadDescriptionReason;
+      /** same-screen-reload では必須。省略時は generic-preserve。 */
+      intent?: DescriptionReloadIntent;
+    },
   ): Promise<void> {
     if (!editingEnabled) {
       return;
     }
 
     const reason = options?.reason ?? 'initial-load';
+    const intent: DescriptionReloadIntent | null =
+      reason === 'same-screen-reload'
+        ? (options?.intent ?? { type: 'generic-preserve' })
+        : null;
+    const preserveDraftsOnReload = reason === 'same-screen-reload';
+    const conflictRecoveryAtStart =
+      intent?.type === 'recover-item-conflict'
+        ? { ...intent.target }
+        : null;
 
     if (reason === 'same-screen-reload') {
       if (mutationPending.value || activeScreenId !== screenId) {
@@ -432,10 +619,23 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     const seq = ++loadSeq;
     treeStatus.value = 'loading';
     treeError.value = '';
-    snapshot.value = null;
-    clearDrafts();
-    conflictError.value = null;
-    statusMessage.value = '';
+    // same-screen reload: transient null でも draft を消さない。authoritative 到着後に active-tree reconcile。
+    if (!preserveDraftsOnReload) {
+      snapshot.value = null;
+      clearDrafts();
+      conflictError.value = null;
+      conflictItemRecoveryTarget.value = null;
+      statusMessage.value = '';
+      // Screen 切替 / 初期 load では前 Screen の conflict / reload-failed を持ち越さない
+      if (
+        status.value === 'conflict' ||
+        status.value === 'reload-failed' ||
+        status.value === 'saving' ||
+        status.value === 'error'
+      ) {
+        status.value = 'idle';
+      }
+    }
 
     const result = await fetchDescriptionTree(
       screenId,
@@ -453,13 +653,71 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       if (result.aborted) {
         return;
       }
+      if (conflictRecoveryAtStart || intent?.type === 'recover-reload-failed') {
+        // recovery GET 失敗: stale draft / recovery UI / gate を維持
+        if (snapshot.value) {
+          treeStatus.value =
+            snapshot.value.description.rootNodes.length === 0 ? 'empty' : 'ready';
+        } else {
+          treeStatus.value = 'error';
+        }
+        treeError.value = result.error.message || '画面設計書の読み込みに失敗しました。';
+        return;
+      }
+      if (intent?.type === 'generic-preserve') {
+        // generic reload 失敗でも unresolved conflict / reload-failed を壊さない
+        if (snapshot.value) {
+          treeStatus.value =
+            snapshot.value.description.rootNodes.length === 0 ? 'empty' : 'ready';
+        } else {
+          treeStatus.value = 'error';
+        }
+        treeError.value = result.error.message || '画面設計書の読み込みに失敗しました。';
+        return;
+      }
       treeStatus.value = 'error';
       treeError.value = result.error.message || '画面設計書の読み込みに失敗しました。';
       status.value = 'error';
       statusMessage.value = treeError.value;
       return;
     }
-    applySnapshot(result.data);
+
+    if (conflictRecoveryAtStart) {
+      applySnapshot(result.data, { draftScope: 'none' });
+      // クリック時に capture した target のみ置換。global 状態の再読取で target を決めない。
+      if (
+        conflictItemRecoveryTarget.value?.generation ===
+          conflictRecoveryAtStart.generation &&
+        conflictItemRecoveryTarget.value.itemId === conflictRecoveryAtStart.itemId &&
+        conflictItemRecoveryTarget.value.screenId === screenIdRef() &&
+        conflictRecoveryAtStart.screenId === screenIdRef()
+      ) {
+        applyConflictItemRecovery(result.data, conflictRecoveryAtStart);
+      }
+      return;
+    }
+
+    if (intent?.type === 'recover-reload-failed') {
+      applySnapshot(result.data, { draftScope: 'none' });
+      reloadRequired.value = false;
+      reloadFailed.value = false;
+      conflictError.value = null;
+      statusMessage.value = '';
+      status.value = dirty.value ? 'dirty' : 'clean';
+      return;
+    }
+
+    if (intent?.type === 'generic-preserve') {
+      // authoritative snapshot は更新し得るが、conflict / reload-failed は暗黙解消しない
+      applySnapshot(result.data, {
+        draftScope: 'none',
+        keepRecoveryStatus: true,
+      });
+      return;
+    }
+
+    // initial-load / screen-change
+    applySnapshot(result.data, { draftScope: 'full' });
     reloadRequired.value = false;
     reloadFailed.value = false;
   }
@@ -469,6 +727,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function saveScreenMetadata(): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     if (!screenDirty.value || !snapshot.value) {
       return { status: 'committed-refreshed' };
     }
@@ -494,6 +756,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function saveItemMetadata(itemId: string): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     if (!itemDirty.value || itemDraftItemId.value !== itemId || !itemDraft.value) {
       return { status: 'committed-refreshed' };
     }
@@ -516,11 +782,16 @@ export function useDescriptionEditor(screenIdRef: () => string) {
           signal,
         ),
       'item',
+      { conflictItemId: itemId },
     );
   }
 
   /** @deprecated 互換のため残す。screen + 選択 Item を順に保存。 */
   async function save(): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     if (screenDirty.value) {
       const screenOutcome = await saveScreenMetadata();
       if (screenOutcome.status !== 'committed-refreshed') {
@@ -536,6 +807,7 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   function cancel(): void {
     clearDrafts();
     conflictError.value = null;
+    conflictItemRecoveryTarget.value = null;
     if (!reloadRequired.value) {
       reloadFailed.value = false;
       status.value = snapshot.value ? 'clean' : 'idle';
@@ -544,15 +816,73 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   function cancelItemEdit(): void {
-    itemDraftItemId.value = null;
-    itemDraft.value = null;
-    if (!screenDirty.value && status.value !== 'conflict') {
+    clearItemEditDraft();
+    // Item draft 取消でも mutation/reload recovery 状態は維持する
+    if (
+      reloadRequired.value ||
+      mutationPending.value ||
+      status.value === 'reload-failed' ||
+      status.value === 'saving' ||
+      status.value === 'conflict' ||
+      hasUnresolvedItemConflict()
+    ) {
+      return;
+    }
+    if (!screenDirty.value) {
       status.value = 'clean';
     }
   }
 
+  /** generic same-screen reload。conflict recovery には使わない。 */
   async function reloadLatest(): Promise<void> {
-    await loadDescription(screenIdRef(), { reason: 'same-screen-reload' });
+    await loadDescription(screenIdRef(), {
+      reason: 'same-screen-reload',
+      intent: { type: 'generic-preserve' },
+    });
+  }
+
+  /** reload-failed recovery action 専用。 */
+  async function reloadAfterFailure(): Promise<void> {
+    await loadDescription(screenIdRef(), {
+      reason: 'same-screen-reload',
+      intent: { type: 'recover-reload-failed' },
+    });
+  }
+
+  /**
+   * Item 409 conflict recovery action 専用。
+   * target はクリック時点で capture した identity を渡す。
+   */
+  async function reloadConflictedItemLatest(
+    target: ConflictItemRecoveryTarget,
+  ): Promise<void> {
+    await loadDescription(screenIdRef(), {
+      reason: 'same-screen-reload',
+      intent: {
+        type: 'recover-item-conflict',
+        target: { ...target },
+      },
+    });
+  }
+
+  function captureConflictItemRecoveryTarget(): ConflictItemRecoveryTarget | null {
+    if (!conflictItemRecoveryTarget.value) {
+      return null;
+    }
+    return { ...conflictItemRecoveryTarget.value };
+  }
+
+  const unresolvedItemConflict = computed(() => hasUnresolvedItemConflict());
+
+  function canMarkDirtyStatus(): boolean {
+    return (
+      !reloadRequired.value &&
+      !mutationPending.value &&
+      !hasUnresolvedItemConflict() &&
+      status.value !== 'conflict' &&
+      status.value !== 'reload-failed' &&
+      status.value !== 'saving'
+    );
   }
 
   function updateScreenField(
@@ -564,17 +894,24 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     }
     const current = screenDraft.value ?? {};
     screenDraft.value = { ...current, [field]: value };
-    if (status.value !== 'conflict') {
+    if (canMarkDirtyStatus()) {
       status.value = 'dirty';
     }
   }
 
   function beginItemEdit(itemId: string): void {
-    if (!snapshot.value?.description.items[itemId]) {
+    if (
+      !snapshot.value ||
+      !nodeExistsInTree(snapshot.value, { type: 'item', id: itemId })
+    ) {
+      return;
+    }
+    const fields = snapshot.value.description.items[itemId];
+    if (!fields) {
       return;
     }
     itemDraftItemId.value = itemId;
-    itemDraft.value = cloneItemFields(snapshot.value.description.items[itemId]);
+    itemDraft.value = cloneItemFields(fields);
   }
 
   function updateItemField(
@@ -582,7 +919,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     field: 'name' | 'type' | 'description' | 'note',
     value: string,
   ): void {
-    if (!snapshot.value?.description.items[itemId]) {
+    if (
+      !snapshot.value ||
+      !nodeExistsInTree(snapshot.value, { type: 'item', id: itemId })
+    ) {
       return;
     }
     if (itemDraftItemId.value !== itemId || !itemDraft.value) {
@@ -592,7 +932,7 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       return;
     }
     itemDraft.value = { ...itemDraft.value, [field]: value };
-    if (status.value !== 'conflict') {
+    if (canMarkDirtyStatus()) {
       status.value = 'dirty';
     }
   }
@@ -606,6 +946,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     parentGroupId?: string | null;
     insertIndex?: number;
   }): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     const screenId = screenIdRef();
     return runMutation(screenId, (expectedRevision, signal) =>
       mutationClient.createDescriptionItem(
@@ -615,6 +959,222 @@ export function useDescriptionEditor(screenIdRef: () => string) {
         signal,
       ),
     );
+  }
+
+  function normalizeGroupDescription(
+    value: string | undefined | null,
+  ): string | null {
+    if (value == null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed === '' ? null : trimmed;
+  }
+
+  function classifyGroupAuthoritative(
+    groupId: string,
+    submitted: GroupEditPayload,
+  ): GroupAuthoritativeClass {
+    const current = snapshot.value;
+    if (!current) {
+      return { kind: 'absent' };
+    }
+    const group = findActiveDescriptionGroup(current, groupId);
+    if (!group) {
+      return { kind: 'absent' };
+    }
+    const baseline: GroupAuthoritativeBaseline = {
+      name: group.name,
+      kind: group.kind,
+      description: normalizeGroupDescription(group.description),
+    };
+    const matches =
+      baseline.name.trim() === submitted.name &&
+      baseline.kind === submitted.kind &&
+      baseline.description === submitted.description;
+    return matches
+      ? { kind: 'match', baseline }
+      : { kind: 'mismatch', baseline };
+  }
+
+  function applyGroupAuthoritativeClass(
+    classification: GroupAuthoritativeClass,
+    commitState: 'committed' | 'unknown' | 'rejected-not-found',
+  ): GroupUpdateResult {
+    const currentRevision = snapshot.value?.revision ?? '';
+    if (classification.kind === 'absent') {
+      reloadFailed.value = false;
+      reloadRequired.value = false;
+      status.value = 'error';
+      statusMessage.value =
+        '対象のグループが見つからないため、編集を終了しました。最新の項目情報に更新しました。';
+      return {
+        status: 'target-absent',
+        commitState,
+        revision: currentRevision,
+      };
+    }
+    if (commitState === 'rejected-not-found') {
+      reloadFailed.value = false;
+      reloadRequired.value = false;
+      status.value = 'error';
+      statusMessage.value =
+        '対象のグループを更新できませんでした。最新内容を確認して再度保存してください。';
+      return {
+        status: 'authoritative-mismatch',
+        commitState,
+        revision: currentRevision,
+        baseline: classification.baseline,
+      };
+    }
+    if (classification.kind === 'match') {
+      reloadFailed.value = false;
+      reloadRequired.value = false;
+      statusMessage.value = '保存しました。';
+      status.value = dirty.value ? 'dirty' : 'saved';
+      return { status: 'committed-refreshed' };
+    }
+    reloadFailed.value = false;
+    reloadRequired.value = false;
+    status.value = 'error';
+    statusMessage.value =
+      '保存後に別の変更が反映されました。最新内容を確認し、必要な場合はもう一度保存してください。';
+    return {
+      status: 'authoritative-mismatch',
+      commitState,
+      revision: currentRevision,
+      baseline: classification.baseline,
+    };
+  }
+
+  async function fetchAndClassifyGroupUpdate(
+    screenId: string,
+    identity: MutationIdentity,
+    groupId: string,
+    submitted: GroupEditPayload,
+    commitState: 'committed' | 'unknown' | 'rejected-not-found',
+    reloadFailedStatus: 'committed-refresh-failed' | 'mutation-rejected',
+  ): Promise<GroupUpdateResult> {
+    mutationRefreshAbort?.abort();
+    mutationRefreshAbort = new AbortController();
+    const refreshSignal = mutationRefreshAbort.signal;
+    const refreshGeneration = lifecycleGeneration;
+    const refreshLoadSeq = loadSeq;
+
+    const result = await fetchDescriptionTree(screenId, refreshSignal, fetch);
+
+    if (!isActiveMutationIdentity(identity)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!isEditorLifecycleActive(refreshGeneration)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (refreshLoadSeq !== loadSeq) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (result.aborted) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!result.ok) {
+      reloadFailed.value = true;
+      reloadRequired.value = true;
+      status.value = 'reload-failed';
+      if (reloadFailedStatus === 'committed-refresh-failed') {
+        statusMessage.value =
+          '保存されましたが、最新内容を再読み込みできませんでした。';
+        return { status: 'committed-refresh-failed' };
+      }
+      statusMessage.value =
+        '保存結果を確認できませんでした。最新内容を再読み込みしてください。';
+      return { status: 'mutation-rejected' };
+    }
+
+    applySnapshot(result.data, { draftScope: 'none' });
+    return applyGroupAuthoritativeClass(
+      classifyGroupAuthoritative(groupId, submitted),
+      commitState,
+    );
+  }
+
+  async function updateGroupMetadata(input: {
+    groupId: string;
+    expectedRevision: string;
+    name: string;
+    kind: GroupEditKind;
+    description: string | null;
+  }): Promise<GroupUpdateResult> {
+    if (!guardUnresolvedItemConflict()) {
+      return { status: 'mutation-rejected' };
+    }
+    const screenId = screenIdRef();
+    const identity = tryBeginMutation(screenId);
+    if (!identity) {
+      return { status: 'mutation-rejected' };
+    }
+
+    const submitted: GroupEditPayload = {
+      name: input.name,
+      kind: input.kind,
+      description: input.description,
+    };
+
+    try {
+      const result = await mutationClient.updateDescriptionGroup(
+        screenId,
+        input.groupId,
+        {
+          expectedRevision: input.expectedRevision,
+          name: submitted.name,
+          kind: submitted.kind,
+          description: submitted.description,
+        },
+        fetch,
+        mutationAbort!.signal,
+      );
+
+      if (!isActiveMutationIdentity(identity)) {
+        return { status: 'stale-or-aborted' };
+      }
+      if (!result.ok) {
+        if (result.aborted) {
+          return { status: 'stale-or-aborted' };
+        }
+        if (result.error.httpStatus === 404) {
+          return await fetchAndClassifyGroupUpdate(
+            screenId,
+            identity,
+            input.groupId,
+            submitted,
+            'rejected-not-found',
+            'mutation-rejected',
+          );
+        }
+        if (mutationClient.isDefiniteMutationRejection(result.error)) {
+          const rejected = handleMutationError(result.error, identity);
+          return rejected.status === 'stale-or-aborted'
+            ? rejected
+            : { status: 'mutation-rejected' };
+        }
+        return await fetchAndClassifyGroupUpdate(
+          screenId,
+          identity,
+          input.groupId,
+          submitted,
+          'unknown',
+          'mutation-rejected',
+        );
+      }
+      return await fetchAndClassifyGroupUpdate(
+        screenId,
+        identity,
+        input.groupId,
+        submitted,
+        'committed',
+        'committed-refresh-failed',
+      );
+    } finally {
+      finishMutation(identity);
+    }
   }
 
   async function duplicateItem(
@@ -627,6 +1187,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
       note: string;
     },
   ): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     if (!snapshot.value) {
       status.value = 'error';
       statusMessage.value = '複製元の配置を特定できませんでした。';
@@ -656,6 +1220,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function deleteItem(itemId: string): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     const screenId = screenIdRef();
     return runMutation(screenId, (expectedRevision, signal) =>
       mutationClient.deleteDescriptionItem(
@@ -669,6 +1237,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function excludeItem(itemId: string): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     const screenId = screenIdRef();
     return runMutation(screenId, (expectedRevision, signal) =>
       mutationClient.excludeDescriptionItem(
@@ -682,6 +1254,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function restoreItem(itemId: string): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     const screenId = screenIdRef();
     return runMutation(screenId, (expectedRevision, signal) =>
       mutationClient.restoreDescriptionItem(
@@ -695,6 +1271,10 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function reorderItem(itemId: string, direction: -1 | 1): Promise<DescriptionMutationOutcome> {
+    const blocked = rejectIfUnresolvedItemConflict();
+    if (blocked) {
+      return blocked;
+    }
     if (!snapshot.value || !nodeExistsInActiveTree(snapshot.value, itemId)) {
       return { status: 'mutation-rejected' };
     }
@@ -737,6 +1317,9 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     description: string;
     note: string;
   }): boolean {
+    if (!guardUnresolvedItemConflict()) {
+      return false;
+    }
     void createItem(item).then((outcome) => {
       if (outcome.status === 'committed-refreshed') {
         statusMessage.value = '項目を追加しました。';
@@ -746,6 +1329,9 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   function removeItem(itemId: string): boolean {
+    if (!guardUnresolvedItemConflict()) {
+      return false;
+    }
     void deleteItem(itemId);
     return true;
   }
@@ -812,19 +1398,25 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     mutationPending,
     reloadFailed,
     reloadRequired,
+    unresolvedItemConflict,
     loadDescription,
     reloadLatest,
     reloadTree: reloadLatest,
+    reloadAfterFailure,
+    reloadConflictedItemLatest,
+    captureConflictItemRecoveryTarget,
     save,
     saveScreenMetadata,
     saveItemMetadata,
     cancel,
     cancelItemEdit,
+    clearItemEditDraft,
     updateScreenField,
     updateItemField,
     beginItemEdit,
     addItem,
     createItem,
+    updateGroupMetadata,
     duplicateItem,
     deleteItem,
     removeItem,

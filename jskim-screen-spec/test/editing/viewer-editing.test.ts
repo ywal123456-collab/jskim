@@ -29,6 +29,8 @@ function createBaseTreeDoc(overrides?: Partial<MockTreeDoc>): MockTreeDoc {
       },
     },
     collectedItemIds: overrides?.collectedItemIds,
+    rootNodes: overrides?.rootNodes,
+    groups: overrides?.groups,
   };
 }
 
@@ -1178,5 +1180,840 @@ describe('Description Viewer editing', () => {
     expect(wrapper.vm.editor.itemDraft.value).toBeNull();
     expect(wrapper.vm.editor.itemDirty.value).toBe(false);
     expect(wrapper.vm.editor.draftDocument.value?.items.manual?.name).toBe('手動');
+  });
+
+  it('orphan Item（definition のみ）では hidden item draft/dirty を clear する', async () => {
+    const { state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        rootNodes: [{ type: 'group', id: 'parent' }],
+        groups: [
+          {
+            groupId: 'parent',
+            name: '親',
+            kind: 'SECTION',
+            children: [{ type: 'item', id: 'leaf' }],
+          },
+        ],
+        itemOrder: ['leaf'],
+        items: {
+          leaf: {
+            name: '末端',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['leaf'],
+      }),
+    });
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('leaf');
+    wrapper.vm.editor.updateItemField('leaf', 'name', '孤児 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    const entry = state.get('demo')!;
+    entry.revision = 'sha256:r-orphan-item';
+    entry.doc.groups = [
+      {
+        groupId: 'parent',
+        name: '親',
+        kind: 'SECTION',
+        children: [],
+      },
+    ];
+    expect(entry.doc.items.leaf).toBeTruthy();
+
+    await wrapper.vm.editor.reloadTree();
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(wrapper.vm.editor.dirty.value).toBe(false);
+  });
+
+  it('active nested Item draft は Group metadata reload 後も維持する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        rootNodes: [{ type: 'group', id: 'parent' }],
+        groups: [
+          {
+            groupId: 'parent',
+            name: '親',
+            kind: 'SECTION',
+            description: '親説明',
+            children: [{ type: 'item', id: 'leaf' }],
+          },
+        ],
+        itemOrder: ['leaf'],
+        items: {
+          leaf: {
+            name: '末端',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['leaf'],
+      }),
+    });
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('leaf');
+    wrapper.vm.editor.updateItemField('leaf', 'name', '維持 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    const outcome = await wrapper.vm.editor.updateGroupMetadata({
+      groupId: 'parent',
+      expectedRevision: wrapper.vm.editor.revision.value!,
+      name: '親改名',
+      kind: 'SECTION',
+      description: '親説明',
+    });
+    await flushPromises();
+
+    expect(outcome.status).toBe('committed-refreshed');
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBe('leaf');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('維持 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+  });
+
+  it('excluded Item へ移動した draft target を clear する', async () => {
+    stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        itemOrder: ['title', 'layout'],
+        items: {
+          title: {
+            name: 'タイトル',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+          layout: {
+            name: '枠',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+        collectedItemIds: ['title', 'layout'],
+      }),
+    });
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('layout');
+    wrapper.vm.editor.updateItemField('layout', 'name', '除外前 draft');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.excludeItem('layout');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+  });
+
+  it('reload-failed 中の cancelItemEdit / clearItemEditDraft は global status を汚さない', async () => {
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    let itemPatchDone = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          itemPatchDone = true;
+        }
+        if (
+          itemPatchDone &&
+          method === 'GET' &&
+          url.includes('/description-tree/demo')
+        ) {
+          return new Response('reload failed', { status: 500 });
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', 'Item draft');
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    expect(wrapper.vm.editor.status.value).toBe('reload-failed');
+    expect(wrapper.vm.editor.reloadRequired.value).toBe(true);
+    const message = wrapper.vm.editor.statusMessage.value;
+    expect(message).toBeTruthy();
+
+    wrapper.vm.editor.clearItemEditDraft();
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.status.value).toBe('reload-failed');
+    expect(wrapper.vm.editor.reloadRequired.value).toBe(true);
+    expect(wrapper.vm.editor.statusMessage.value).toBe(message);
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '再編集');
+    wrapper.vm.editor.cancelItemEdit();
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.status.value).toBe('reload-failed');
+    expect(wrapper.vm.editor.reloadRequired.value).toBe(true);
+    expect(wrapper.vm.editor.statusMessage.value).toBe(message);
+  });
+
+  it('通常 dirty の明示的 cancelItemEdit は clean に戻す', async () => {
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '取消対象');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.status.value).toBe('dirty');
+
+    wrapper.vm.editor.cancelItemEdit();
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(wrapper.vm.editor.status.value).toBe('clean');
+    expect(wrapper.vm.editor.reloadRequired.value).toBe(false);
+  });
+
+  it('A: conflict recovery 成功で Item draft を authoritative 値へ置換する', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '他の変更と衝突しました。',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    const entry = state.get('demo')!;
+    entry.doc.items.title.name = 'サーバ側更新';
+    entry.revision = 'sha256:r-server';
+
+    const outcome = await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    expect(outcome.status).toBe('mutation-rejected');
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
+
+    const target = wrapper.vm.editor.captureConflictItemRecoveryTarget();
+    expect(target).toBeTruthy();
+    await wrapper.vm.editor.reloadConflictedItemLatest(target!);
+    await flushPromises();
+
+    expect(wrapper.vm.editor.status.value).toBe('clean');
+    expect(wrapper.vm.editor.conflictError.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBe('title');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('サーバ側更新');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(false);
+    expect(wrapper.vm.editor.revision.value).toBe('sha256:r-server');
+  });
+
+  it('B: conflict recovery GET 失敗では stale draft と conflict UI を維持する', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    let failNextTreeGet = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        if (
+          failNextTreeGet &&
+          method === 'GET' &&
+          url.includes('/description-tree/demo') &&
+          !url.includes('/items/')
+        ) {
+          failNextTreeGet = false;
+          return new Response('reload failed', { status: 500 });
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+
+    failNextTreeGet = true;
+    const target = wrapper.vm.editor.captureConflictItemRecoveryTarget();
+    expect(target).toBeTruthy();
+    await wrapper.vm.editor.reloadConflictedItemLatest(target!);
+    await flushPromises();
+
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+  });
+
+  it('C: recovery 成功後 target absent なら draft/selection target を clear する', async () => {
+    const { state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc({
+        rootNodes: [{ type: 'item', id: 'title' }],
+        itemOrder: ['title'],
+      }),
+    });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    const entry = state.get('demo')!;
+    entry.revision = 'sha256:r-gone';
+    entry.doc.rootNodes = [];
+    entry.doc.itemOrder = [];
+    delete entry.doc.items.title;
+
+    const target = wrapper.vm.editor.captureConflictItemRecoveryTarget();
+    expect(target).toBeTruthy();
+    await wrapper.vm.editor.reloadConflictedItemLatest(target!);
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+    expect(wrapper.vm.editor.itemDraft.value).toBeNull();
+    expect(wrapper.vm.editor.conflictError.value).toBeNull();
+    expect(wrapper.vm.editor.statusMessage.value).toContain(
+      '対象の項目が見つからない',
+    );
+  });
+
+  it('D: 一般 same-screen reload は dirty Item draft を保持する', async () => {
+    stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '維持したい草案');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+
+    await wrapper.vm.editor.reloadLatest();
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('維持したい草案');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+  });
+
+  it('F: Screen 切替後の stale conflict recovery は新 Screen を壊さない', async () => {
+    const { state } = stubDescriptionTreeFetch({
+      demo: createBaseTreeDoc(),
+      other: createBaseTreeDoc({
+        screen: { id: 'other', name: 'Other', description: '' },
+        items: {
+          title: {
+            name: '他画面項目',
+            type: 'text',
+            description: '',
+            note: '',
+          },
+        },
+      }),
+    });
+    let releaseRecoveryGet!: () => void;
+    const recoveryGetGate = new Promise<void>((resolve) => {
+      releaseRecoveryGet = resolve;
+    });
+    const baseFetch = global.fetch;
+    let blockNextTreeGet = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        if (
+          blockNextTreeGet &&
+          method === 'GET' &&
+          url.includes('/description-tree/demo') &&
+          !url.includes('/items/')
+        ) {
+          blockNextTreeGet = false;
+          await recoveryGetGate;
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+
+    blockNextTreeGet = true;
+    const target = wrapper.vm.editor.captureConflictItemRecoveryTarget();
+    expect(target).toBeTruthy();
+    const pendingReload = wrapper.vm.editor.reloadConflictedItemLatest(target!);
+    await flushPromises();
+
+    wrapper.vm.screenId = 'other';
+    await wrapper.vm.editor.loadDescription('other', { reason: 'screen-change' });
+    await flushPromises();
+    expect(wrapper.vm.editor.revision.value).toBe('sha256:r1');
+    expect(wrapper.vm.editor.itemDraftItemId.value).toBeNull();
+
+    releaseRecoveryGet();
+    await pendingReload;
+    await flushPromises();
+
+    expect(wrapper.vm.screenId).toBe('other');
+    expect(wrapper.vm.editor.revision.value).toBe('sha256:r1');
+    expect(wrapper.vm.editor.status.value).not.toBe('conflict');
+    expect(wrapper.vm.editor.itemDraft.value?.name).not.toBe('サーバ側更新');
+  });
+
+  it('G: same Item 新 lifecycle 中の stale recovery は新 draft を壊さない', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    let releaseRecoveryGet!: () => void;
+    const recoveryGetGate = new Promise<void>((resolve) => {
+      releaseRecoveryGet = resolve;
+    });
+    const baseFetch = global.fetch;
+    let blockNextTreeGet = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        if (
+          blockNextTreeGet &&
+          method === 'GET' &&
+          url.includes('/description-tree/demo') &&
+          !url.includes('/items/')
+        ) {
+          blockNextTreeGet = false;
+          await recoveryGetGate;
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    blockNextTreeGet = true;
+    const target = wrapper.vm.editor.captureConflictItemRecoveryTarget();
+    expect(target).toBeTruthy();
+    const pendingReload = wrapper.vm.editor.reloadConflictedItemLatest(target!);
+    await flushPromises();
+
+    // lifecycle 無効化後に同 Item を新規編集
+    wrapper.vm.editor.cancel();
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '新しい編集');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('新しい編集');
+
+    releaseRecoveryGet();
+    await pendingReload;
+    await flushPromises();
+
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('新しい編集');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+  });
+
+  it('A2: conflict 中の generic reloadLatest は draft 置換も conflict 解除もしない', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+
+    await wrapper.vm.editor.reloadLatest();
+    await flushPromises();
+
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
+    expect(wrapper.vm.editor.itemDirty.value).toBe(true);
+    expect(wrapper.vm.editor.revision.value).toBe('sha256:r-server');
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+
+    const blocked = await wrapper.vm.editor.saveItemMetadata('title');
+    expect(blocked.status).toBe('mutation-rejected');
+    const patchCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/title') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(patchCalls).toHaveLength(1);
+  });
+
+  it('A/B: duplicate missing source は conflict capability を壊さず Save/PATCH を遮断する', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    const conflictMessage = wrapper.vm.editor.statusMessage.value;
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+    expect(wrapper.vm.editor.captureConflictItemRecoveryTarget()?.itemId).toBe(
+      'title',
+    );
+
+    const dupOutcome = await wrapper.vm.editor.duplicateItem('missing-item', {
+      itemId: 'copy-1',
+      name: '複製',
+      type: 'text',
+      description: '',
+      note: '',
+    });
+    await flushPromises();
+
+    expect(dupOutcome.status).toBe('mutation-rejected');
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.statusMessage.value).toBe(conflictMessage);
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+    expect(wrapper.vm.editor.captureConflictItemRecoveryTarget()?.itemId).toBe(
+      'title',
+    );
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
+
+    const saveOutcome = await wrapper.vm.editor.saveItemMetadata('title');
+    expect(saveOutcome.status).toBe('mutation-rejected');
+    const patchCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items/title') &&
+        (init?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(patchCalls).toHaveLength(1);
+    const createCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/items') &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST' &&
+        !String(url).includes('/delete') &&
+        !String(url).includes('/exclude'),
+    );
+    expect(createCalls).toHaveLength(0);
+  });
+
+  it('C: delete missing target も conflict capability を壊さない', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    const conflictMessage = wrapper.vm.editor.statusMessage.value;
+
+    const deleteOutcome = await wrapper.vm.editor.deleteItem('missing-item');
+    await flushPromises();
+
+    expect(deleteOutcome.status).toBe('mutation-rejected');
+    expect(wrapper.vm.editor.status.value).toBe('conflict');
+    expect(wrapper.vm.editor.statusMessage.value).toBe(conflictMessage);
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+    expect(wrapper.vm.editor.captureConflictItemRecoveryTarget()?.itemId).toBe(
+      'title',
+    );
+    const deleteCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/delete') &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(deleteCalls).toHaveLength(0);
+  });
+
+  it('D: capability は status ではなく recovery target を SoT にする', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+
+    // production event: invalid mutation は status を書き換えない（先行 guard）
+    await wrapper.vm.editor.duplicateItem('missing', {
+      itemId: 'x',
+      name: 'x',
+      type: 'text',
+      description: '',
+      note: '',
+    });
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+    expect(wrapper.vm.editor.captureConflictItemRecoveryTarget()).toBeTruthy();
+  });
+
+  it('reloadAfterFailure は statusMessage を空にしても unresolved capability を維持する', async () => {
+    const { state } = stubDescriptionTreeFetch({ demo: createBaseTreeDoc() });
+    const baseFetch = global.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/items/title') && method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_REVISION_CONFLICT',
+              message: '衝突',
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return baseFetch(input, init);
+      }),
+    );
+
+    const { wrapper } = await mountEditor();
+    await wrapper.vm.editor.loadDescription('demo');
+    await flushPromises();
+
+    wrapper.vm.editor.beginItemEdit('title');
+    wrapper.vm.editor.updateItemField('title', 'name', '草案名称');
+    state.get('demo')!.doc.items.title.name = 'サーバ側更新';
+    state.get('demo')!.revision = 'sha256:r-server';
+    await wrapper.vm.editor.saveItemMetadata('title');
+    await flushPromises();
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+
+    await wrapper.vm.editor.reloadAfterFailure();
+    await flushPromises();
+
+    expect(wrapper.vm.editor.statusMessage.value).toBe('');
+    expect(['dirty', 'clean']).toContain(wrapper.vm.editor.status.value);
+    expect(wrapper.vm.editor.unresolvedItemConflict.value).toBe(true);
+    expect(wrapper.vm.editor.captureConflictItemRecoveryTarget()?.itemId).toBe(
+      'title',
+    );
+    expect(wrapper.vm.editor.itemDraft.value?.name).toBe('草案名称');
+
+    const blocked = await wrapper.vm.editor.saveItemMetadata('title');
+    expect(blocked.status).toBe('mutation-rejected');
   });
 });

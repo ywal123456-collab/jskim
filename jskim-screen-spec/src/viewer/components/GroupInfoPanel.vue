@@ -12,6 +12,13 @@ import type { DescriptionTreeGetResponse } from '../editing/description-tree-typ
 const props = defineProps<{
   groupId: string;
   response: DescriptionTreeGetResponse;
+  editingEnabled?: boolean;
+  mutationPending?: boolean;
+  reloadRequired?: boolean;
+}>();
+
+const emit = defineEmits<{
+  edit: [];
 }>();
 
 const groupMap = computed(() => buildGroupMap(props.response));
@@ -29,6 +36,20 @@ const descendantItems = computed(() =>
 const descendantGroups = computed(() =>
   group.value ? countDescendantGroups(props.groupId, groupMap.value) : 0,
 );
+
+const canEdit = computed(
+  () =>
+    Boolean(props.editingEnabled) &&
+    !props.mutationPending &&
+    !props.reloadRequired,
+);
+
+function onEditClick(): void {
+  if (!canEdit.value) {
+    return;
+  }
+  emit('edit');
+}
 </script>
 
 <template>
@@ -38,7 +59,19 @@ const descendantGroups = computed(() =>
     aria-label="グループ情報"
     data-testid="group-info-panel"
   >
-    <h3 class="group-info-panel__title">グループ情報</h3>
+    <div class="group-info-panel__header">
+      <h3 class="group-info-panel__title">グループ情報</h3>
+      <button
+        v-if="editingEnabled"
+        type="button"
+        class="spec-page__btn spec-page__btn--secondary"
+        data-testid="group-edit-open"
+        :disabled="!canEdit"
+        @click="onEditClick"
+      >
+        グループを編集
+      </button>
+    </div>
     <dl class="group-info-panel__list">
       <div class="group-info-panel__row">
         <dt>名前</dt>
@@ -67,3 +100,17 @@ const descendantGroups = computed(() =>
     </dl>
   </section>
 </template>
+
+<style scoped>
+.group-info-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.group-info-panel__header .group-info-panel__title {
+  margin: 0;
+}
+</style>
