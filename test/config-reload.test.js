@@ -707,14 +707,26 @@ describe('config hot reload', { timeout: 120000 }, () => {
     assert.equal(sse.count('reload'), 0);
     assert.equal(sse.count('css'), 0);
 
+    const distIndex = path.join(ws.workspaceRoot, 'dist/sample/index.html');
     const before = (cli.output.match(/再ビルドが完了しました/g) || []).length;
     await fsp.writeFile(
       indexPath,
       '{% extends "layouts/base.njk" %}{% block content %}<p>CFG_BUILD_OK</p>{% endblock %}\n',
       'utf8'
     );
+    // ログ件数だけでなく、復旧 source が実際にビルドされた結果を待つ
     await waitFor(
-      () => (cli.output.match(/再ビルドが完了しました/g) || []).length > before,
+      () => {
+        try {
+          return (
+            (cli.output.match(/再ビルドが完了しました/g) || []).length >
+              before &&
+            fs.readFileSync(distIndex, 'utf8').includes('CFG_BUILD_OK')
+          );
+        } catch {
+          return false;
+        }
+      },
       { timeoutMs: 20000, label: 'source recover after config apply fail' }
     );
     await waitFor(() => sse.count('reload') >= 1, {
@@ -722,6 +734,7 @@ describe('config hot reload', { timeout: 120000 }, () => {
       label: 'reload after build recover',
     });
     assert.equal(sse.count('reload'), 1);
+    assert.match(fs.readFileSync(distIndex, 'utf8'), /CFG_BUILD_OK/);
 
     sse.close();
     await cli.stop();

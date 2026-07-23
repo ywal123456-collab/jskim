@@ -51,7 +51,10 @@ const DEV_RESTART_KEYS = [
  * @param {boolean} [options.injectSpecLiveReload=false]
  * @param {(payload: object) => void} [options.afterSourceBuildSuccess]
  * @param {(ctx: object) => void} [options.onDevSessionReady]
- * @returns {{ start: Function, close: Function }}
+ * @param {(project: object) => void} [options.onProjectCommitted]
+ * @param {(payload: { project: object, buildSucceeded: boolean }) => void} [options.onConfigActivationComplete]
+ * @param {(project: object, options?: object) => import('node:events').EventEmitter} [options.projectWatcherFactory]
+ * @returns {{ start: Function, close: Function, getProjectWatcher: Function }}
  */
 function createWatchRuntime(options) {
   const mode = options.mode;
@@ -60,6 +63,11 @@ function createWatchRuntime(options) {
   const usageLine =
     options.usageLine || `jskim ${commandName} [<project>]`;
   const openBrowserFn = options.openBrowserFn || defaultOpenBrowser;
+  const projectWatcherFactory =
+    typeof options.projectWatcherFactory === 'function'
+      ? options.projectWatcherFactory
+      : (project, watcherOptions) =>
+          createProjectWatcher(project, watcherOptions);
   const cliOverrides = {
     host: options.cliOverrides && options.cliOverrides.host,
     port: options.cliOverrides && options.cliOverrides.port,
@@ -75,6 +83,14 @@ function createWatchRuntime(options) {
   const onDevSessionReady =
     typeof options.onDevSessionReady === 'function'
       ? options.onDevSessionReady
+      : null;
+  const onProjectCommitted =
+    typeof options.onProjectCommitted === 'function'
+      ? options.onProjectCommitted
+      : null;
+  const onConfigActivationComplete =
+    typeof options.onConfigActivationComplete === 'function'
+      ? options.onConfigActivationComplete
       : null;
   const descriptionEditApi =
     options.descriptionEditApi &&
@@ -121,12 +137,24 @@ function createWatchRuntime(options) {
   let liveReloadEnabled = false;
   let browserOpened = false;
 
+  const RUNTIME_PHASE = {
+    starting: 'starting',
+    ready: 'ready',
+    stopping: 'stopping',
+    closed: 'closed',
+  };
+
   let stopping = false;
   let started = false;
+  /** @type {'starting'|'ready'|'stopping'|'closed'} */
+  let runtimePhase = RUNTIME_PHASE.starting;
   let configDebounceTimer = null;
   let configReloadPromise = null;
   let pendingConfigReload = false;
   let sourceBuilding = false;
+  let replacementGeneration = 0;
+  /** @type {{ generation: number, cancelled: boolean, candidateWatcher: object|null, rollbackWatcher: object|null }|null} */
+  let replacementContext = null;
 
   function withCliOverrides(project) {
     return applyServeCliOverrides(project, {
@@ -159,34 +187,90 @@ function createWatchRuntime(options) {
     };
   }
 
+  function markRuntimeReady() {
+    if (runtimePhase !== RUNTIME_PHASE.starting) {
+      return;
+    }
+    runtimePhase = RUNTIME_PHASE.ready;
+    if (pendingConfigReload) {
+      pendingConfigReload = false;
+      requestConfigReload();
+    }
+  }
+
+  function beginReplacementContext() {
+    replacementGeneration += 1;
+    const ctx = {
+      generation: replacementGeneration,
+      cancelled: false,
+      candidateWatcher: null,
+      rollbackWatcher: null,
+    };
+    replacementContext = ctx;
+    return ctx;
+  }
+
+  function clearReplacementContext(ctx) {
+    if (replacementContext === ctx) {
+      replacementContext = null;
+    }
+  }
+
+  function isReplacementActive(ctx) {
+    return Boolean(
+      ctx &&
+        !ctx.cancelled &&
+        !stopping &&
+        runtimePhase === RUNTIME_PHASE.ready &&
+        replacementContext === ctx &&
+        ctx.generation === replacementGeneration
+    );
+  }
+
+  function createCancelledReplacementError() {
+    const err = new Error('設定の再読み込みが中断されました。');
+    err.code = 'JSKIM_CONFIG_RELOAD_CANCELLED';
+    return err;
+  }
+
+  function commitAuthoritativeWatcher(project, watcher) {
+    projectWatcher = watcher;
+    currentProject = project;
+    if (onProjectCommitted) {
+      onProjectCommitted(project);
+    }
+  }
+
   async function start() {
     if (started) {
       return;
     }
     started = true;
+    runtimePhase = RUNTIME_PHASE.starting;
 
     const resolved = resolveCurrentProject();
     currentProject = resolved.project;
     configPath = resolved.configPath;
 
-    // ready ログより先に config 監視を開始する。
-    // そうしないと「監視しています」直後の config 変更を見逃すことがある。
+    // config 監視は early に開始するが、replacement は runtime ready 後のみ。
+    // そうしないと initial Project Watcher startup と競合しうる。
     beginConfigWatching();
 
-    if (mode === 'dev') {
-      await startDevSession(currentProject, { initial: true });
-    } else {
-      await startWatchSession(currentProject, { initial: true });
+    try {
+      if (mode === 'dev') {
+        await startDevSession(currentProject, { initial: true });
+      } else {
+        await startWatchSession(currentProject, { initial: true });
+      }
+    } catch (err) {
+      throw err;
     }
+
+    markRuntimeReady();
   }
 
   async function startWatchSession(project, { initial }) {
-    projectWatcher = createProjectWatcher(project, {
-      runInitialBuild: true,
-      logChanges: true,
-    });
-
-    wireSourceBuildTracking(projectWatcher);
+    projectWatcher = createAndWireProjectWatcher(project);
 
     if (initial) {
       projectWatcher.on('ready', ({ displayPaths, debounceMs }) => {
@@ -289,14 +373,7 @@ function createWatchRuntime(options) {
         : undefined,
     });
 
-    projectWatcher = createProjectWatcher(project, {
-      runInitialBuild: true,
-      logChanges: true,
-    });
-
-    wireSourceBuildTracking(projectWatcher);
-    wireDevSourceReload(projectWatcher);
-    wireSpecDevHooks(projectWatcher);
+    projectWatcher = createAndWireProjectWatcher(project);
 
     await projectWatcher.start({ watchFiles: false });
 
@@ -383,6 +460,67 @@ function createWatchRuntime(options) {
       sourceBuilding = false;
       maybeRunPendingConfigReload();
     });
+  }
+
+  /**
+   * ready 後の project watcher runtime error を表示する。
+   * EventEmitter 'error' は listener 必須のため、no-op ではなくログ consumer を接続する。
+   */
+  function wireWatcherRuntimeErrors(watcher) {
+    const onError = (err) => {
+      const message = err && err.message ? err.message : String(err);
+      console.error(`[JSKim] ウォッチャーエラー: ${message}`);
+    };
+    watcher.on('error', onError);
+    return () => {
+      watcher.off('error', onError);
+    };
+  }
+
+  /**
+   * candidate / rollback で同じ production wiring を共有する。
+   */
+  function createAndWireProjectWatcher(project, hooks = {}) {
+    const watcher = projectWatcherFactory(project, {
+      runInitialBuild: true,
+      logChanges: true,
+    });
+
+    wireSourceBuildTracking(watcher);
+    wireWatcherRuntimeErrors(watcher);
+    if (mode === 'dev') {
+      wireDevSourceReload(watcher);
+      wireSpecDevHooks(watcher);
+    }
+
+    if (
+      typeof hooks.onInitialBuildSuccess === 'function' ||
+      typeof hooks.onInitialBuildFailure === 'function'
+    ) {
+      watcher.on('build:success', ({ initial }) => {
+        if (initial && hooks.onInitialBuildSuccess) {
+          hooks.onInitialBuildSuccess();
+        }
+      });
+      watcher.on('build:failure', ({ initial, error }) => {
+        if (initial && hooks.onInitialBuildFailure) {
+          hooks.onInitialBuildFailure(error);
+        }
+      });
+    }
+
+    return watcher;
+  }
+
+  async function safeCloseProjectWatcher(watcher) {
+    if (!watcher) {
+      return;
+    }
+    try {
+      await watcher.close();
+    } catch {
+      // reload / rollback 時の close エラーは無視
+    }
   }
 
   function wireDevSourceReload(watcher) {
@@ -485,7 +623,13 @@ function createWatchRuntime(options) {
   }
 
   function requestConfigReload() {
-    if (stopping) {
+    if (stopping || runtimePhase === RUNTIME_PHASE.stopping || runtimePhase === RUNTIME_PHASE.closed) {
+      return;
+    }
+
+    // initial runtime ready 前は transaction を始めず pending のみ保持する
+    if (runtimePhase !== RUNTIME_PHASE.ready) {
+      pendingConfigReload = true;
       return;
     }
 
@@ -499,7 +643,11 @@ function createWatchRuntime(options) {
         await performConfigReload();
       } finally {
         configReloadPromise = null;
-        if (!stopping && pendingConfigReload) {
+        if (
+          !stopping &&
+          runtimePhase === RUNTIME_PHASE.ready &&
+          pendingConfigReload
+        ) {
           pendingConfigReload = false;
           requestConfigReload();
         }
@@ -508,14 +656,19 @@ function createWatchRuntime(options) {
   }
 
   function maybeRunPendingConfigReload() {
-    if (!stopping && pendingConfigReload && !configReloadPromise) {
+    if (
+      !stopping &&
+      runtimePhase === RUNTIME_PHASE.ready &&
+      pendingConfigReload &&
+      !configReloadPromise
+    ) {
       pendingConfigReload = false;
       requestConfigReload();
     }
   }
 
   async function performConfigReload() {
-    if (stopping) {
+    if (stopping || runtimePhase !== RUNTIME_PHASE.ready) {
       return;
     }
 
@@ -577,25 +730,53 @@ function createWatchRuntime(options) {
 
     let buildSucceeded = false;
     try {
-      await replaceProjectWatcher(candidate, {
-        onInitialBuildSuccess: () => {
-          buildSucceeded = true;
-        },
-        onInitialBuildFailure: () => {
-          buildSucceeded = false;
-        },
-      });
-      currentProject = candidate;
-      console.log('[JSKim] 監視対象を更新しました。');
-      if (mode === 'watch') {
-        console.log('パス:');
-        for (const display of projectWatcher.displayPaths) {
-          console.log(`- ${display}`);
-        }
-        console.log(`Debounce: ${projectWatcher.debounceMs}ms`);
-      }
+      // runInitialBuild は queue drain 後の最終結果を返す
+      const activationResult = await replaceProjectWatcher(candidate);
+      buildSucceeded = activationResult != null;
     } catch (err) {
+      const code = err && err.code;
       const message = err && err.message ? err.message : String(err);
+      if (code === 'JSKIM_CONFIG_RELOAD_CANCELLED') {
+        return;
+      }
+      if (code === 'JSKIM_CONFIG_WATCHER_ROLLED_BACK') {
+        console.error('[JSKim] 設定の再読み込み後に監視の更新に失敗しました。');
+        if (err.candidateError) {
+          const candidateMessage =
+            err.candidateError.message || String(err.candidateError);
+          console.error(candidateMessage);
+        }
+        console.error(`[JSKim] ${message}`);
+        if (err.rollbackBuildSucceeded === false) {
+          console.error(
+            '[JSKim] 以前の設定での監視は継続していますが、再ビルドに失敗しました。'
+          );
+        }
+        if (mode === 'dev' && liveReloadEnabled && liveReload) {
+          liveReload.broadcastConfigError(message);
+        }
+        return;
+      }
+      if (code === 'JSKIM_CONFIG_WATCHER_UNAVAILABLE') {
+        console.error(`[JSKim] ${message}`);
+        if (err.candidateError) {
+          console.error(
+            `新しい設定: ${err.candidateError.message || String(err.candidateError)}`
+          );
+        }
+        if (err.rollbackError) {
+          console.error(
+            `以前の監視: ${err.rollbackError.message || String(err.rollbackError)}`
+          );
+        }
+        console.error(
+          '[JSKim] 設定ファイルを修正するか、devサーバーを再起動してください。'
+        );
+        if (mode === 'dev' && liveReloadEnabled && liveReload) {
+          liveReload.broadcastConfigError(message);
+        }
+        return;
+      }
       console.error('[JSKim] 設定の再読み込み後に監視の更新に失敗しました。');
       console.error(message);
       console.error('[JSKim] 以前の正常な設定を継続します。');
@@ -605,6 +786,13 @@ function createWatchRuntime(options) {
       return;
     }
 
+    if (onConfigActivationComplete) {
+      onConfigActivationComplete({
+        project: currentProject,
+        buildSucceeded,
+      });
+    }
+
     if (!buildSucceeded) {
       console.error(
         '[JSKim] 設定の再読み込み後にbuildが失敗しました。監視は新しい設定で継続します。'
@@ -612,46 +800,137 @@ function createWatchRuntime(options) {
       return;
     }
 
+    // activation final success のみ完了 signal
+    console.log('[JSKim] 監視対象を更新しました。');
+    if (mode === 'watch' && projectWatcher) {
+      console.log('パス:');
+      for (const display of projectWatcher.displayPaths) {
+        console.log(`- ${display}`);
+      }
+      console.log(`Debounce: ${projectWatcher.debounceMs}ms`);
+    }
+
     if (mode === 'dev' && liveReloadEnabled && liveReload) {
       liveReload.broadcastReload();
     }
   }
 
+  /**
+   * Project watcher を transactional に置換する。
+   *
+   * 順序:
+   * 1. old close
+   * 2. candidate startWatching（ready まで。build なし）
+   * 3. ready 成功後に authoritative state を同期 commit
+   * 4. candidate runInitialBuild
+   *
+   * ready 前の candidate build / output write は行わない。
+   * local candidate/rollback は replacementContext が所有する。
+   */
   async function replaceProjectWatcher(project, hooks = {}) {
-    if (projectWatcher) {
+    const ctx = beginReplacementContext();
+    const oldProject = currentProject;
+    const previousWatcher = projectWatcher;
+
+    try {
+      if (previousWatcher) {
+        await safeCloseProjectWatcher(previousWatcher);
+        if (!isReplacementActive(ctx)) {
+          throw createCancelledReplacementError();
+        }
+        if (projectWatcher === previousWatcher) {
+          projectWatcher = null;
+        }
+      }
+
+      const candidateWatcher = createAndWireProjectWatcher(project, hooks);
+      ctx.candidateWatcher = candidateWatcher;
       try {
-        await projectWatcher.close();
-      } catch {
-        // reload 時の close エラーは無視
+        await candidateWatcher.startWatching();
+      } catch (candidateError) {
+        await safeCloseProjectWatcher(candidateWatcher);
+        ctx.candidateWatcher = null;
+        if (!isReplacementActive(ctx)) {
+          throw createCancelledReplacementError();
+        }
+
+        if (!oldProject) {
+          projectWatcher = null;
+          const unavailable = new Error(
+            '新しい設定の適用と以前の監視状態の復旧に失敗しました。'
+          );
+          unavailable.code = 'JSKIM_CONFIG_WATCHER_UNAVAILABLE';
+          unavailable.candidateError = candidateError;
+          unavailable.rollbackError = null;
+          throw unavailable;
+        }
+
+        const rollbackWatcher = createAndWireProjectWatcher(oldProject);
+        ctx.rollbackWatcher = rollbackWatcher;
+        try {
+          await rollbackWatcher.startWatching();
+        } catch (rollbackError) {
+          await safeCloseProjectWatcher(rollbackWatcher);
+          ctx.rollbackWatcher = null;
+          if (!isReplacementActive(ctx)) {
+            throw createCancelledReplacementError();
+          }
+          projectWatcher = null;
+          const unavailable = new Error(
+            '新しい設定の適用と以前の監視状態の復旧に失敗しました。'
+          );
+          unavailable.code = 'JSKIM_CONFIG_WATCHER_UNAVAILABLE';
+          unavailable.candidateError = candidateError;
+          unavailable.rollbackError = rollbackError;
+          throw unavailable;
+        }
+
+        if (!isReplacementActive(ctx)) {
+          await safeCloseProjectWatcher(rollbackWatcher);
+          ctx.rollbackWatcher = null;
+          throw createCancelledReplacementError();
+        }
+
+        // rollback ready 後: old authoritative state を確定してから drain まで build
+        commitAuthoritativeWatcher(oldProject, rollbackWatcher);
+        ctx.rollbackWatcher = null;
+
+        const rollbackResult = await rollbackWatcher.runInitialBuild();
+        if (!isReplacementActive(ctx)) {
+          throw createCancelledReplacementError();
+        }
+
+        const rollbackBuildSucceeded = rollbackResult != null;
+        const rolledBack = new Error(
+          rollbackBuildSucceeded
+            ? '新しい設定の適用に失敗したため、以前の設定に戻しました。'
+            : '新しい設定の適用に失敗し、以前の設定での再ビルドにも失敗しました。'
+        );
+        rolledBack.code = 'JSKIM_CONFIG_WATCHER_ROLLED_BACK';
+        rolledBack.candidateError = candidateError;
+        rolledBack.rollbackBuildSucceeded = rollbackBuildSucceeded;
+        rolledBack.watcherAvailable = true;
+        throw rolledBack;
       }
-      projectWatcher = null;
+
+      if (!isReplacementActive(ctx)) {
+        await safeCloseProjectWatcher(candidateWatcher);
+        ctx.candidateWatcher = null;
+        throw createCancelledReplacementError();
+      }
+
+      // candidate ready 後・initial build 前に state を同期 commit
+      commitAuthoritativeWatcher(project, candidateWatcher);
+      ctx.candidateWatcher = null;
+
+      const activationResult = await candidateWatcher.runInitialBuild();
+      if (!isReplacementActive(ctx)) {
+        throw createCancelledReplacementError();
+      }
+      return activationResult;
+    } finally {
+      clearReplacementContext(ctx);
     }
-
-    projectWatcher = createProjectWatcher(project, {
-      runInitialBuild: true,
-      logChanges: true,
-    });
-
-    wireSourceBuildTracking(projectWatcher);
-    if (mode === 'dev') {
-      wireDevSourceReload(projectWatcher);
-      wireSpecDevHooks(projectWatcher);
-    }
-
-    const onSuccess = ({ initial }) => {
-      if (initial && hooks.onInitialBuildSuccess) {
-        hooks.onInitialBuildSuccess();
-      }
-    };
-    const onFailure = ({ initial, error }) => {
-      if (initial && hooks.onInitialBuildFailure) {
-        hooks.onInitialBuildFailure(error);
-      }
-    };
-    projectWatcher.on('build:success', onSuccess);
-    projectWatcher.on('build:failure', onFailure);
-
-    await projectWatcher.start();
   }
 
   async function cleanupDevComponents() {
@@ -686,10 +965,23 @@ function createWatchRuntime(options) {
       return;
     }
     stopping = true;
+    runtimePhase = RUNTIME_PHASE.stopping;
+    pendingConfigReload = false;
 
     if (configDebounceTimer) {
       clearTimeout(configDebounceTimer);
       configDebounceTimer = null;
+    }
+
+    // close 中に replace 側が context を clear しても触れるようローカルに固定する
+    const inFlightReplacement = replacementContext;
+    if (inFlightReplacement) {
+      inFlightReplacement.cancelled = true;
+      // in-flight local watcher を先に閉じ、startup Promise を settle させる
+      await safeCloseProjectWatcher(inFlightReplacement.candidateWatcher);
+      inFlightReplacement.candidateWatcher = null;
+      await safeCloseProjectWatcher(inFlightReplacement.rollbackWatcher);
+      inFlightReplacement.rollbackWatcher = null;
     }
 
     if (configWatcher) {
@@ -719,11 +1011,16 @@ function createWatchRuntime(options) {
       }
       projectWatcher = null;
     }
+
+    runtimePhase = RUNTIME_PHASE.closed;
   }
 
   return {
     start,
     close,
+    getProjectWatcher() {
+      return projectWatcher;
+    },
     get project() {
       return currentProject;
     },

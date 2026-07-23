@@ -147,6 +147,10 @@ describe('CLI host/port/open', { timeout: 120000 }, () => {
     await waitForOutput(() => cli.output, '設定を再読み込みしました', {
       timeoutMs: 15000,
     });
+    // watch ready → state commit → initial build 完了後に確認する
+    await waitForOutput(() => cli.output, '監視対象を更新しました', {
+      timeoutMs: 15000,
+    });
     assert.equal(cli.output.includes('再起動が必要です'), false);
 
     const still = await httpRequest({ port, path: '/' });
