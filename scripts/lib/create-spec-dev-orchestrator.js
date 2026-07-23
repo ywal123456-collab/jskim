@@ -28,7 +28,8 @@ const DEFAULT_DEBOUNCE_MS = 100;
 function createSpecDevOrchestrator(options) {
   const workspaceRoot = path.resolve(options.workspaceRoot);
   const projectName = options.projectName;
-  const project = options.project;
+  /** authoritative app project（config activation commit で更新） */
+  let activeProject = options.project;
   const collectScreenSpecProject = options.collectScreenSpecProject;
   const buildViewer = options.buildViewer;
   const broadcastSpecReload = options.broadcastSpecReload;
@@ -42,6 +43,29 @@ function createSpecDevOrchestrator(options) {
 
   let metadataWatcher = null;
   let closed = false;
+
+  /**
+   * watch runtime が candidate/rollback を authoritative に commit したときに呼ぶ。
+   * @param {object} project
+   */
+  function setActiveProject(project) {
+    if (closed || !project) {
+      return;
+    }
+    activeProject = project;
+  }
+
+  /**
+   * config activation final success（または rollback build success）後の
+   * full collect+build を 1 回 enqueue する。
+   */
+  function requestFullCollectAndBuild() {
+    if (closed || !activeProject) {
+      return;
+    }
+    // queue は paths 必須のため sourceDir を marker として使う
+    queue.enqueue([activeProject.sourceDir], 'COLLECT_AND_BUILD');
+  }
 
   const queue = createSpecTaskQueue({
     debounceMs,
@@ -81,7 +105,7 @@ function createSpecDevOrchestrator(options) {
 
     if (batch.kind === 'COLLECT_AND_BUILD') {
       await runScreenSpecCollect({
-        project,
+        project: activeProject,
         workspaceRoot,
         projectName,
         collectScreenSpecProject,
@@ -175,7 +199,7 @@ function createSpecDevOrchestrator(options) {
       const kind = classifyPath({
         rootDir: workspaceRoot,
         projectName,
-        sourceDir: project.sourceDir,
+        sourceDir: activeProject.sourceDir,
         filePath: absolute,
       });
       kinds.push(kind);
@@ -203,7 +227,7 @@ function createSpecDevOrchestrator(options) {
     const kind = classifyPath({
       rootDir: workspaceRoot,
       projectName,
-      sourceDir: project.sourceDir,
+      sourceDir: activeProject.sourceDir,
       filePath,
     });
     if (kind !== 'BUILD_ONLY') {
@@ -325,9 +349,14 @@ function createSpecDevOrchestrator(options) {
     startMetadataWatching,
     handleSourceBuildSuccess,
     handleMetadataChange,
+    setActiveProject,
+    requestFullCollectAndBuild,
     enqueue: queue.enqueue,
     close,
     getState: queue.getState,
+    getActiveProject() {
+      return activeProject;
+    },
   };
 }
 

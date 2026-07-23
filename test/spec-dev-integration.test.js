@@ -7,7 +7,9 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { EventEmitter } = require('node:events');
 const { createSpecDevRuntime } = require('../scripts/lib/create-spec-dev-runtime');
+const { createProjectWatcher } = require('../scripts/lib/create-project-watcher');
 const { getFreePort } = require('./helpers/get-free-port');
 const { httpRequest, openSse } = require('./helpers/http-request');
 const { waitFor, sleep } = require('./helpers/wait-for-output');
@@ -678,5 +680,370 @@ describe('spec dev orchestration', () => {
     );
     assert.equal(kept.screen.description, '外部更新');
     assert.equal(kept.screen.name, 'Demo External');
+  });
+
+  async function writeSampleConfig(workspaceRoot, values) {
+    const configPath = path.join(workspaceRoot, 'jskim.config.js');
+    const body = `module.exports = {
+  defaults: {
+    files: [{ from: 'pages', to: '' }],
+    templates: ['layouts'],
+    build: { clean: true },
+    watch: { debounce: ${values.debounce} },
+    serve: { host: '127.0.0.1', port: ${values.port} },
+    dev: { liveReload: true },
+  },
+  projects: {
+    sample: {
+      sourceDir: ${JSON.stringify(values.sourceDir)},
+      outputDir: 'dist/sample',
+    },
+  },
+};
+`;
+    delete require.cache[require.resolve(configPath)];
+    await fsp.writeFile(configPath, body, 'utf8');
+  }
+
+  async function prepareAltSource(workspaceRoot, marker) {
+    const oldRoot = path.join(workspaceRoot, 'src', 'sample');
+    const altRoot = path.join(workspaceRoot, 'src', 'sample-alt');
+    await fsp.cp(oldRoot, altRoot, { recursive: true });
+    await fsp.writeFile(
+      path.join(oldRoot, 'pages', 'index.html.njk'),
+      `{% extends "base.njk" %}{% block body %}MARKER_OLD APP_OK{% endblock %}\n`,
+      'utf8'
+    );
+    await fsp.writeFile(
+      path.join(altRoot, 'pages', 'index.html.njk'),
+      `{% extends "base.njk" %}{% block body %}${marker} APP_OK{% endblock %}\n`,
+      'utf8'
+    );
+  }
+
+  it('config activation success 後は Screen Spec が candidate project で collect する', async () => {
+    const collectedMarkers = [];
+    /** @type {object|null} */
+    let orchestrator = null;
+    const port = await getFreePort();
+    const { workspaceRoot, counters } = await startSpecDev({
+      port,
+      skipInitialCollect: true,
+      skipMetadataWatch: true,
+      onReady({ orchestrator: orch }) {
+        orchestrator = orch;
+      },
+      collectFn: async (opts) => {
+        counters.collect += 1;
+        const html = await fsp.readFile(
+          path.join(opts.renderedRootDir, 'index.html'),
+          'utf8'
+        );
+        if (html.includes('MARKER_ALT')) {
+          collectedMarkers.push('alt');
+        } else if (html.includes('MARKER_OLD')) {
+          collectedMarkers.push('old');
+        } else {
+          collectedMarkers.push('unknown');
+        }
+        return {
+          screens: 1,
+          states: 1,
+          updated: 1,
+          unchanged: 0,
+        };
+      },
+    });
+
+    await prepareAltSource(workspaceRoot, 'MARKER_ALT');
+    // old source 書き換えで baseline collect（activeProject=old）
+    await waitFor(() => collectedMarkers.includes('old'), {
+      timeoutMs: 20000,
+      label: 'baseline collect old project',
+    });
+    const collectBefore = counters.collect;
+
+    await writeSampleConfig(workspaceRoot, {
+      debounce: 40,
+      port,
+      sourceDir: 'src/sample-alt',
+    });
+
+    await waitFor(
+      () =>
+        orchestrator &&
+        String(orchestrator.getActiveProject().sourceDir).includes(
+          'sample-alt'
+        ) &&
+        collectedMarkers.includes('alt') &&
+        counters.collect >= collectBefore + 1,
+      { timeoutMs: 20000, label: 'candidate collect after activation' }
+    );
+
+    assert.equal(
+      collectedMarkers[collectedMarkers.length - 1],
+      'alt',
+      '最終 collect は candidate'
+    );
+    assert.ok(collectedMarkers.includes('old'));
+  });
+
+  it('candidate activation build failure では collect せず、recovery 後に candidate で collect する', async () => {
+    const collectedMarkers = [];
+    /** @type {object|null} */
+    let orchestrator = null;
+    const port = await getFreePort();
+    const { workspaceRoot, counters } = await startSpecDev({
+      port,
+      skipInitialCollect: true,
+      skipMetadataWatch: true,
+      onReady({ orchestrator: orch }) {
+        orchestrator = orch;
+      },
+      collectFn: async (opts) => {
+        counters.collect += 1;
+        const html = await fsp.readFile(
+          path.join(opts.renderedRootDir, 'index.html'),
+          'utf8'
+        );
+        collectedMarkers.push(
+          html.includes('MARKER_ALT')
+            ? 'alt'
+            : html.includes('MARKER_OLD')
+              ? 'old'
+              : 'unknown'
+        );
+        return {
+          screens: 1,
+          states: 1,
+          updated: 1,
+          unchanged: 0,
+        };
+      },
+    });
+
+    await prepareAltSource(workspaceRoot, 'MARKER_ALT');
+    const brokenAlt = path.join(
+      workspaceRoot,
+      'src',
+      'sample-alt',
+      'pages',
+      'index.html.njk'
+    );
+    await fsp.writeFile(brokenAlt, '{% invalid nunjucks %}\n', 'utf8');
+
+    const collectBefore = counters.collect;
+    await writeSampleConfig(workspaceRoot, {
+      debounce: 40,
+      port,
+      sourceDir: 'src/sample-alt',
+    });
+
+    await waitFor(
+      () =>
+        orchestrator &&
+        String(orchestrator.getActiveProject().sourceDir).includes(
+          'sample-alt'
+        ),
+      { timeoutMs: 20000, label: 'activeProject becomes candidate' }
+    );
+    await sleep(400);
+    assert.equal(
+      counters.collect,
+      collectBefore,
+      'activation failure で成功 collect しない'
+    );
+
+    await fsp.writeFile(
+      brokenAlt,
+      '{% extends "base.njk" %}{% block body %}MARKER_ALT APP_OK{% endblock %}\n',
+      'utf8'
+    );
+
+    await waitFor(
+      () => collectedMarkers.includes('alt') && counters.collect === collectBefore + 1,
+      { timeoutMs: 20000, label: 'recovery collect on candidate' }
+    );
+    assert.equal(collectedMarkers[collectedMarkers.length - 1], 'alt');
+  });
+
+  it('連続 config reload の最終 Screen Spec collect は最新 project のみ', async () => {
+    const collectedMarkers = [];
+    /** @type {object|null} */
+    let orchestrator = null;
+    const port = await getFreePort();
+    const { workspaceRoot, counters } = await startSpecDev({
+      port,
+      skipInitialCollect: true,
+      skipMetadataWatch: true,
+      onReady({ orchestrator: orch }) {
+        orchestrator = orch;
+      },
+      collectFn: async (opts) => {
+        counters.collect += 1;
+        const html = await fsp.readFile(
+          path.join(opts.renderedRootDir, 'index.html'),
+          'utf8'
+        );
+        if (html.includes('MARKER_C')) {
+          collectedMarkers.push('c');
+        } else if (html.includes('MARKER_B')) {
+          collectedMarkers.push('b');
+        } else if (html.includes('MARKER_OLD')) {
+          collectedMarkers.push('old');
+        } else {
+          collectedMarkers.push('unknown');
+        }
+        return {
+          screens: 1,
+          states: 1,
+          updated: 1,
+          unchanged: 0,
+        };
+      },
+    });
+
+    const oldRoot = path.join(workspaceRoot, 'src', 'sample');
+    await fsp.writeFile(
+      path.join(oldRoot, 'pages', 'index.html.njk'),
+      '{% extends "base.njk" %}{% block body %}MARKER_OLD APP_OK{% endblock %}\n',
+      'utf8'
+    );
+    for (const [name, marker] of [
+      ['sample-b', 'MARKER_B'],
+      ['sample-c', 'MARKER_C'],
+    ]) {
+      const root = path.join(workspaceRoot, 'src', name);
+      await fsp.cp(oldRoot, root, { recursive: true });
+      await fsp.writeFile(
+        path.join(root, 'pages', 'index.html.njk'),
+        `{% extends "base.njk" %}{% block body %}${marker} APP_OK{% endblock %}\n`,
+        'utf8'
+      );
+    }
+
+    await writeSampleConfig(workspaceRoot, {
+      debounce: 40,
+      port,
+      sourceDir: 'src/sample-b',
+    });
+    await waitFor(
+      () =>
+        orchestrator &&
+        String(orchestrator.getActiveProject().sourceDir).includes('sample-b') &&
+        collectedMarkers.includes('b'),
+      { timeoutMs: 20000, label: 'activation B collect' }
+    );
+
+    await writeSampleConfig(workspaceRoot, {
+      debounce: 40,
+      port,
+      sourceDir: 'src/sample-c',
+    });
+    await waitFor(
+      () =>
+        orchestrator &&
+        String(orchestrator.getActiveProject().sourceDir).includes('sample-c') &&
+        collectedMarkers.includes('c'),
+      { timeoutMs: 20000, label: 'activation C collect' }
+    );
+
+    assert.equal(collectedMarkers[collectedMarkers.length - 1], 'c');
+    const lastB = collectedMarkers.lastIndexOf('b');
+    const lastC = collectedMarkers.lastIndexOf('c');
+    assert.ok(lastC > lastB, 'stale B が最終結果を上書きしない');
+  });
+
+  it('candidate startup failure + rollback success では old project で collect する', async () => {
+    const collectedMarkers = [];
+    /** @type {object|null} */
+    let orchestrator = null;
+    let createCount = 0;
+    const port = await getFreePort();
+
+    function projectWatcherFactory(project, options = {}) {
+      createCount += 1;
+      const index = createCount;
+      const watchFactory = () => {
+        const current = new EventEmitter();
+        current.close = async () => {
+          current.removeAllListeners();
+        };
+        queueMicrotask(() => {
+          if (index === 2) {
+            current.emit(
+              'error',
+              Object.assign(new Error('injected candidate startup failure'), {
+                code: 'JSKIM_TEST_WATCH_START_FAIL',
+              })
+            );
+          } else {
+            current.emit('ready');
+          }
+        });
+        return current;
+      };
+      return createProjectWatcher(project, {
+        ...options,
+        watchFactory,
+      });
+    }
+
+    const { workspaceRoot, counters } = await startSpecDev({
+      port,
+      skipInitialCollect: true,
+      skipMetadataWatch: true,
+      projectWatcherFactory,
+      onReady({ orchestrator: orch }) {
+        orchestrator = orch;
+      },
+      collectFn: async (opts) => {
+        counters.collect += 1;
+        const html = await fsp.readFile(
+          path.join(opts.renderedRootDir, 'index.html'),
+          'utf8'
+        );
+        collectedMarkers.push(
+          html.includes('MARKER_ALT')
+            ? 'alt'
+            : html.includes('MARKER_OLD')
+              ? 'old'
+              : 'unknown'
+        );
+        return {
+          screens: 1,
+          states: 1,
+          updated: 1,
+          unchanged: 0,
+        };
+      },
+    });
+
+    await prepareAltSource(workspaceRoot, 'MARKER_ALT');
+    orchestrator.requestFullCollectAndBuild();
+    await waitFor(() => collectedMarkers.includes('old'), {
+      timeoutMs: 20000,
+      label: 'baseline old collect before rollback scenario',
+    });
+    const oldSource = orchestrator.getActiveProject().sourceDir;
+    const collectBefore = counters.collect;
+
+    await writeSampleConfig(workspaceRoot, {
+      debounce: 0,
+      port,
+      sourceDir: 'src/sample-alt',
+    });
+
+    await waitFor(
+      () =>
+        counters.collect >= collectBefore + 1 &&
+        collectedMarkers[collectedMarkers.length - 1] === 'old' &&
+        String(orchestrator.getActiveProject().sourceDir) === String(oldSource),
+      { timeoutMs: 20000, label: 'rollback collect keeps old project' }
+    );
+    assert.equal(
+      String(orchestrator.getActiveProject().sourceDir).includes('sample-alt'),
+      false
+    );
   });
 });

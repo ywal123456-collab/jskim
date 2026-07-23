@@ -517,6 +517,7 @@ function createSpecDevRuntime(options = {}) {
         open: Boolean(options.open),
       },
       openBrowserFn: options.openBrowserFn,
+      projectWatcherFactory: options.projectWatcherFactory,
       initialDevLog:
         options.initialDevLog === undefined ? 'spec-dev' : options.initialDevLog,
       injectSpecLiveReload: options.injectSpecLiveReload !== false,
@@ -532,6 +533,22 @@ function createSpecDevRuntime(options = {}) {
       afterSourceBuildSuccess: (payload) => {
         if (orchestrator) {
           orchestrator.handleSourceBuildSuccess(payload);
+        }
+      },
+      onProjectCommitted: (project) => {
+        if (orchestrator) {
+          orchestrator.setActiveProject(project);
+        }
+      },
+      onConfigActivationComplete: ({ project, buildSucceeded }) => {
+        if (!orchestrator) {
+          return;
+        }
+        if (project) {
+          orchestrator.setActiveProject(project);
+        }
+        if (buildSucceeded) {
+          orchestrator.requestFullCollectAndBuild();
         }
       },
       onDevSessionReady: ({ project: readyProject, liveReload }) => {

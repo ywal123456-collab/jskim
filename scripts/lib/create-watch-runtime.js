@@ -555,6 +555,11 @@ function createWatchRuntime(options) {
       return;
     }
     watcher.on('build:success', (payload) => {
+      // config activation 中の build success は抑制し、
+      // onConfigActivationComplete 側で full collect を 1 回だけ行う。
+      if (configReloadPromise) {
+        return;
+      }
       try {
         afterSourceBuildSuccess(payload);
       } catch (err) {
@@ -751,6 +756,12 @@ function createWatchRuntime(options) {
           console.error(
             '[JSKim] 以前の設定での監視は継続していますが、再ビルドに失敗しました。'
           );
+        } else if (onConfigActivationComplete) {
+          // rollback build success のみ collect 接続点を発火する
+          onConfigActivationComplete({
+            project: currentProject,
+            buildSucceeded: true,
+          });
         }
         if (mode === 'dev' && liveReloadEnabled && liveReload) {
           liveReload.broadcastConfigError(message);
