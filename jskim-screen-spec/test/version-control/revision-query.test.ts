@@ -180,7 +180,10 @@ describe('revision-query domain', () => {
     });
   });
 
-  it('project / screen / feature history と pagination / historyHead を扱う', () => {
+  // 並列実行時の filesystem 競合で既定 5s を超えることがあるため、この複合 integration のみ明示する
+  it(
+    'project / screen / feature history と pagination / historyHead を扱う',
+    () => {
     const ctx = setupBase();
     const c1 = commitAll(ctx, '初回登録');
 
@@ -326,7 +329,9 @@ describe('revision-query domain', () => {
     const features = listBrowserVersionFeatures(ctx);
     expect(features.features.some((f) => f.featureId === 'other')).toBe(true);
     assertNoSecrets(features);
-  });
+  },
+    10000,
+  );
 
   it('過去にだけ存在する screen の履歴を取得できる', () => {
     const ctx = setupBase();

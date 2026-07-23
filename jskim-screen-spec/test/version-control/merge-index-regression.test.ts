@@ -98,7 +98,11 @@ function setupAbcConflict(ctx: { rootDir: string; projectName: string }) {
   return { mergeResult, mainHeadBeforeMerge };
 }
 
-describe('merge index regression', () => {
+// 並列 filesystem 競合で既定 5s を超える場合があるため、この merge index suite 全体に明示する
+describe(
+  'merge index regression',
+  { timeout: 10_000 },
+  () => {
   it('conflict setup で index に auto-merge された B/C を含める', () => {
     const ctx = setupProject({ screens: ['a', 'b', 'c'] });
     const { mergeResult } = setupAbcConflict(ctx);
@@ -324,4 +328,5 @@ describe('merge index regression', () => {
     writeVersionMergeState({ ...ctx, state });
     assertFsckClean(ctx);
   });
-});
+  },
+);

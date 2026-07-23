@@ -87,7 +87,11 @@ function resolveAllConflicts(
   stageScreen({ ...ctx, screenId: 'a' });
 }
 
-describe('merge transaction fault injection', () => {
+// 並列 filesystem 競合で既定 5s を超える場合があるため、この fault-injection suite 全体に明示する
+describe(
+  'merge transaction fault injection',
+  { timeout: 10_000 },
+  () => {
   it('conflict setup: source install 後の index 失敗は ours source/index へ rollback する', () => {
     const ctx = setupProject({ screens: ['a', 'b', 'c'] });
     const { beforeHead, beforeIndex } = setupAbcConflict(ctx);
@@ -300,4 +304,5 @@ describe('merge transaction fault injection', () => {
     expect(listIncompleteTransactions(ctx)).toEqual([]);
     expect(getVersionStatus(ctx).clean).toBe(true);
   });
-});
+  },
+);

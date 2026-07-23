@@ -91,7 +91,10 @@ describe('findMergeBase', () => {
     expect(result.baseTree).toBe(base.treeHash);
   });
 
-  it('merge commit を含む DAG でも three-way base を決定する', () => {
+  // 並列実行時の filesystem 競合で既定 5s を超えることがあるため、この複合 integration のみ明示する
+  it(
+    'merge commit を含む DAG でも three-way base を決定する',
+    () => {
     const ctx = setupProject({ screens: ['a', 'b', 'c'] });
     const base = initialCommit(ctx);
     createVersionBranch({ ...ctx, name: 'feat' });
@@ -145,7 +148,9 @@ describe('findMergeBase', () => {
     expect(result.kind).toBe('three-way');
     expect(result.base).not.toBe(afterMerge.commitHash);
     expect(result.base).not.toBe(feat2.commitHash);
-  });
+  },
+    10000,
+  );
 
   it('共通 ancestor が無い場合は NOT_FOUND', () => {
     const ctx = setupProject({ screens: ['a'] });
