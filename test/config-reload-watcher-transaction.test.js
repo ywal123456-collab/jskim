@@ -1425,4 +1425,521 @@ describe('config reload watcher transaction', { timeout: 60000 }, () => {
       logs.restore();
     }
   });
+
+  it('M: candidate activation build 中の close は follow-up を開始しない', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          watch: { debounce: 0 },
+          build: { clean: false },
+        },
+      },
+    });
+    workspaces.push(ws);
+    await prepareCleanFalseSources(ws.workspaceRoot);
+    const logs = captureConsole();
+    const distRoot = path.join(ws.workspaceRoot, 'dist/sample');
+    const sharedPath = path.join(
+      ws.workspaceRoot,
+      'src/sample-alt/pages/shared.njk'
+    );
+
+    let createCount = 0;
+    /** @type {Array<() => void>} */
+    const releases = [];
+    let buildCount = 0;
+    let buildStartsAfterClose = 0;
+    let closeRequested = false;
+    let activationCompleteCalls = 0;
+    /** @type {ReturnType<typeof createControllableWatchFactory> | null} */
+    let candidateFake = null;
+    /** @type {{ closed: boolean, closeCalls: number, watcher: object } | null} */
+    let candidateRecord = null;
+
+    function projectWatcherFactory(project, options = {}) {
+      createCount += 1;
+      const isCandidate = createCount >= 2;
+      const fake = createControllableWatchFactory();
+      if (isCandidate) {
+        candidateFake = fake;
+      }
+      const watchFactory = () => {
+        const watcher = fake.watchFactory();
+        queueMicrotask(() => {
+          fake.emitReady();
+        });
+        return watcher;
+      };
+
+      const watcher = createProjectWatcher(project, {
+        ...options,
+        watchFactory,
+        async executeBuildImpl({ initial, project: buildProject }) {
+          if (!isCandidate) {
+            return runBuild(buildProject, {
+              logTitle: initial
+                ? 'ビルドが完了しました'
+                : '再ビルドが完了しました',
+              includeOutput: initial,
+            });
+          }
+          buildCount += 1;
+          await new Promise((resolve) => {
+            releases.push(resolve);
+          });
+          return runBuild(buildProject, {
+            logTitle: initial
+              ? 'ビルドが完了しました'
+              : '再ビルドが完了しました',
+            includeOutput: initial,
+          });
+        },
+      });
+
+      if (isCandidate) {
+        candidateRecord = { closed: false, closeCalls: 0, watcher };
+        const originalClose = watcher.close.bind(watcher);
+        watcher.close = async () => {
+          candidateRecord.closeCalls += 1;
+          candidateRecord.closed = true;
+          await originalClose();
+        };
+        watcher.on('build:start', () => {
+          if (closeRequested) {
+            buildStartsAfterClose += 1;
+          }
+        });
+      }
+
+      return watcher;
+    }
+
+    const runtime = createWatchRuntime({
+      mode: 'watch',
+      workspaceRoot: ws.workspaceRoot,
+      projectName: 'sample',
+      projectWatcherFactory,
+      onConfigActivationComplete() {
+        activationCompleteCalls += 1;
+      },
+    });
+    runtimes.push(runtime);
+
+    try {
+      await runtime.start();
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample-alt',
+        outputDir: 'dist/sample',
+      });
+      await waitFor(() => buildCount >= 1 && releases.length >= 1, {
+        timeoutMs: 10000,
+        label: 'candidate activation paused',
+      });
+
+      // pending follow-up を登録（内容変更は initial 完了 write と区別できないため event のみ）
+      candidateFake.emitChange(sharedPath);
+      assert.equal(buildCount, 1, 'follow-up はまだ開始していない');
+
+      closeRequested = true;
+      const closePromise = runtime.close();
+      await waitFor(() => candidateRecord && candidateRecord.closed, {
+        timeoutMs: 10000,
+        label: 'authoritative candidate close started',
+      });
+      assert.equal(buildCount, 1);
+      assert.equal(buildStartsAfterClose, 0);
+
+      releases[0]();
+      await closePromise;
+
+      assert.equal(candidateRecord.closeCalls, 1);
+      assert.equal(buildCount, 1, 'close 後 follow-up build 0');
+      assert.equal(buildStartsAfterClose, 0);
+      assert.equal(activationCompleteCalls, 0);
+      assert.equal(logs.output().includes('監視対象を更新しました'), false);
+      assert.equal(logs.output().includes('以前の設定に戻しました'), false);
+      void distRoot;
+    } finally {
+      for (const release of releases) {
+        release();
+      }
+      logs.restore();
+    }
+  });
+
+  it('N: rollback activation build 中の close は follow-up と rollback 案内を出さない', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          watch: { debounce: 0 },
+          build: { clean: false },
+        },
+      },
+    });
+    workspaces.push(ws);
+    await prepareCleanFalseSources(ws.workspaceRoot);
+    const logs = captureConsole();
+    const sharedPath = path.join(
+      ws.workspaceRoot,
+      'src/sample/pages/shared.njk'
+    );
+
+    let createCount = 0;
+    /** @type {Array<() => void>} */
+    const releases = [];
+    let rollbackBuilds = 0;
+    let buildStartsAfterClose = 0;
+    let closeRequested = false;
+    let activationCompleteCalls = 0;
+    /** @type {ReturnType<typeof createControllableWatchFactory> | null} */
+    let rollbackFake = null;
+    /** @type {{ closed: boolean, closeCalls: number } | null} */
+    let rollbackRecord = null;
+
+    function projectWatcherFactory(project, options = {}) {
+      createCount += 1;
+      const index = createCount;
+      const isCandidate = index === 2;
+      const isRollback = index === 3;
+      const fake = createControllableWatchFactory();
+      if (isRollback) {
+        rollbackFake = fake;
+      }
+      const watchFactory = () => {
+        const watcher = fake.watchFactory();
+        queueMicrotask(() => {
+          if (isCandidate) {
+            fake.emitError(
+              Object.assign(new Error('injected candidate startup failure'), {
+                code: 'JSKIM_TEST_WATCH_START_FAIL',
+              })
+            );
+          } else {
+            fake.emitReady();
+          }
+        });
+        return watcher;
+      };
+
+      const watcher = createProjectWatcher(project, {
+        ...options,
+        watchFactory,
+        async executeBuildImpl({ initial, project: buildProject }) {
+          if (!isRollback) {
+            return runBuild(buildProject, {
+              logTitle: initial
+                ? 'ビルドが完了しました'
+                : '再ビルドが完了しました',
+              includeOutput: initial,
+            });
+          }
+          rollbackBuilds += 1;
+          await new Promise((resolve) => {
+            releases.push(resolve);
+          });
+          return runBuild(buildProject, {
+            logTitle: initial
+              ? 'ビルドが完了しました'
+              : '再ビルドが完了しました',
+            includeOutput: initial,
+          });
+        },
+      });
+
+      if (isRollback) {
+        rollbackRecord = { closed: false, closeCalls: 0 };
+        const originalClose = watcher.close.bind(watcher);
+        watcher.close = async () => {
+          rollbackRecord.closeCalls += 1;
+          rollbackRecord.closed = true;
+          await originalClose();
+        };
+        watcher.on('build:start', () => {
+          if (closeRequested) {
+            buildStartsAfterClose += 1;
+          }
+        });
+      }
+
+      return watcher;
+    }
+
+    const runtime = createWatchRuntime({
+      mode: 'watch',
+      workspaceRoot: ws.workspaceRoot,
+      projectName: 'sample',
+      projectWatcherFactory,
+      onConfigActivationComplete() {
+        activationCompleteCalls += 1;
+      },
+    });
+    runtimes.push(runtime);
+
+    try {
+      await runtime.start();
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample-alt',
+        outputDir: 'dist/sample',
+      });
+      await waitFor(() => rollbackBuilds >= 1 && releases.length >= 1, {
+        timeoutMs: 10000,
+        label: 'rollback activation paused',
+      });
+
+      await fsp.writeFile(
+        sharedPath,
+        '{% extends "layouts/base.njk" %}{% block content %}ROLLBACK_FOLLOW_UP{% endblock %}\n',
+        'utf8'
+      );
+      rollbackFake.emitChange(sharedPath);
+
+      closeRequested = true;
+      const closePromise = runtime.close();
+      await waitFor(() => rollbackRecord && rollbackRecord.closed, {
+        timeoutMs: 10000,
+        label: 'authoritative rollback close started',
+      });
+      assert.equal(rollbackBuilds, 1);
+      assert.equal(buildStartsAfterClose, 0);
+
+      releases[0]();
+      await closePromise;
+
+      assert.equal(rollbackRecord.closeCalls, 1);
+      assert.equal(rollbackBuilds, 1, 'close 後 follow-up build 0');
+      assert.equal(buildStartsAfterClose, 0);
+      assert.equal(activationCompleteCalls, 0);
+      assert.equal(logs.output().includes('以前の設定に戻しました'), false);
+      assert.equal(
+        logs.output().includes('再ビルドにも失敗しました'),
+        false
+      );
+      assert.equal(
+        logs.output().includes('監視対象を更新しました'),
+        false
+      );
+      assert.equal(
+        logs.output().includes('JSKIM_CONFIG_WATCHER_UNAVAILABLE') ||
+          logs.output().includes('以前の監視状態の復旧に失敗'),
+        false,
+        'shutdown を unavailable と誤案内しない'
+      );
+    } finally {
+      for (const release of releases) {
+        release();
+      }
+      logs.restore();
+    }
+  });
+
+  it('O: candidate activation close 中の config reentry は次 transaction を始めない', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          watch: { debounce: 0 },
+          build: { clean: false },
+        },
+      },
+    });
+    workspaces.push(ws);
+    await prepareCleanFalseSources(ws.workspaceRoot);
+    const logs = captureConsole();
+
+    let createCount = 0;
+    /** @type {Array<() => void>} */
+    const releases = [];
+    let candidateBuilds = 0;
+
+    function projectWatcherFactory(project, options = {}) {
+      createCount += 1;
+      const isCandidate = createCount >= 2;
+      const fake = createControllableWatchFactory();
+      const watchFactory = () => {
+        const watcher = fake.watchFactory();
+        queueMicrotask(() => {
+          fake.emitReady();
+        });
+        return watcher;
+      };
+      return createProjectWatcher(project, {
+        ...options,
+        watchFactory,
+        async executeBuildImpl({ initial, project: buildProject }) {
+          if (!isCandidate) {
+            return runBuild(buildProject, {
+              logTitle: initial
+                ? 'ビルドが完了しました'
+                : '再ビルドが完了しました',
+              includeOutput: initial,
+            });
+          }
+          candidateBuilds += 1;
+          await new Promise((resolve) => {
+            releases.push(resolve);
+          });
+          return runBuild(buildProject, {
+            logTitle: initial
+              ? 'ビルドが完了しました'
+              : '再ビルドが完了しました',
+            includeOutput: initial,
+          });
+        },
+      });
+    }
+
+    const runtime = createWatchRuntime({
+      mode: 'watch',
+      workspaceRoot: ws.workspaceRoot,
+      projectName: 'sample',
+      projectWatcherFactory,
+    });
+    runtimes.push(runtime);
+
+    try {
+      await runtime.start();
+      assert.equal(createCount, 1);
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample-alt',
+        outputDir: 'dist/sample',
+      });
+      await waitFor(() => candidateBuilds >= 1 && releases.length >= 1, {
+        timeoutMs: 10000,
+        label: 'candidate activation paused for reentry',
+      });
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample',
+        outputDir: 'dist/sample',
+      });
+      assert.equal(createCount, 2, 'reentry は pending のみ');
+
+      const closePromise = runtime.close();
+      releases[0]();
+      await closePromise;
+
+      assert.equal(createCount, 2, 'close 後に次 transaction なし');
+      assert.equal(logs.output().includes('監視対象を更新しました'), false);
+    } finally {
+      for (const release of releases) {
+        release();
+      }
+      logs.restore();
+    }
+  });
+
+  it('P: rollback activation close 中の config reentry は次 transaction を始めない', async () => {
+    const ws = await createTestWorkspace({
+      configOverrides: {
+        defaults: {
+          watch: { debounce: 0 },
+          build: { clean: false },
+        },
+      },
+    });
+    workspaces.push(ws);
+    await prepareCleanFalseSources(ws.workspaceRoot);
+    const logs = captureConsole();
+
+    let createCount = 0;
+    /** @type {Array<() => void>} */
+    const releases = [];
+    let rollbackBuilds = 0;
+
+    function projectWatcherFactory(project, options = {}) {
+      createCount += 1;
+      const index = createCount;
+      const isCandidate = index === 2;
+      const isRollback = index === 3;
+      const fake = createControllableWatchFactory();
+      const watchFactory = () => {
+        const watcher = fake.watchFactory();
+        queueMicrotask(() => {
+          if (isCandidate) {
+            fake.emitError(
+              Object.assign(new Error('injected candidate startup failure'), {
+                code: 'JSKIM_TEST_WATCH_START_FAIL',
+              })
+            );
+          } else {
+            fake.emitReady();
+          }
+        });
+        return watcher;
+      };
+      return createProjectWatcher(project, {
+        ...options,
+        watchFactory,
+        async executeBuildImpl({ initial, project: buildProject }) {
+          if (!isRollback) {
+            return runBuild(buildProject, {
+              logTitle: initial
+                ? 'ビルドが完了しました'
+                : '再ビルドが完了しました',
+              includeOutput: initial,
+            });
+          }
+          rollbackBuilds += 1;
+          await new Promise((resolve) => {
+            releases.push(resolve);
+          });
+          return runBuild(buildProject, {
+            logTitle: initial
+              ? 'ビルドが完了しました'
+              : '再ビルドが完了しました',
+            includeOutput: initial,
+          });
+        },
+      });
+    }
+
+    const runtime = createWatchRuntime({
+      mode: 'watch',
+      workspaceRoot: ws.workspaceRoot,
+      projectName: 'sample',
+      projectWatcherFactory,
+    });
+    runtimes.push(runtime);
+
+    try {
+      await runtime.start();
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample-alt',
+        outputDir: 'dist/sample',
+      });
+      await waitFor(() => rollbackBuilds >= 1 && releases.length >= 1, {
+        timeoutMs: 10000,
+        label: 'rollback activation paused for reentry',
+      });
+      const createsAtPause = createCount;
+
+      await writeCleanFalseConfig(ws.workspaceRoot, {
+        debounce: 0,
+        sourceDir: 'src/sample',
+        outputDir: 'dist/sample',
+      });
+      assert.equal(createCount, createsAtPause, 'reentry は pending のみ');
+
+      const closePromise = runtime.close();
+      releases[0]();
+      await closePromise;
+
+      assert.equal(createCount, createsAtPause, 'close 後に次 transaction なし');
+      assert.equal(logs.output().includes('以前の設定に戻しました'), false);
+      assert.equal(logs.output().includes('監視対象を更新しました'), false);
+    } finally {
+      for (const release of releases) {
+        release();
+      }
+      logs.restore();
+    }
+  });
 });

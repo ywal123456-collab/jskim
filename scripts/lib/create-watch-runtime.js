@@ -234,11 +234,44 @@ function createWatchRuntime(options) {
   }
 
   function commitAuthoritativeWatcher(project, watcher) {
+    if (
+      stopping ||
+      runtimePhase === RUNTIME_PHASE.stopping ||
+      runtimePhase === RUNTIME_PHASE.closed
+    ) {
+      return;
+    }
     projectWatcher = watcher;
     currentProject = project;
     if (onProjectCommitted) {
       onProjectCommitted(project);
     }
+  }
+
+  function isShutdownCancellation() {
+    return (
+      stopping ||
+      runtimePhase === RUNTIME_PHASE.stopping ||
+      runtimePhase === RUNTIME_PHASE.closed
+    );
+  }
+
+  /**
+   * close 対象 watcher を重複なく集める。
+   * @param {...(object|null|undefined)} watchers
+   * @returns {object[]}
+   */
+  function collectUniqueWatchers(...watchers) {
+    const list = [];
+    const seen = new Set();
+    for (const watcher of watchers) {
+      if (!watcher || seen.has(watcher)) {
+        continue;
+      }
+      seen.add(watcher);
+      list.push(watcher);
+    }
+    return list;
   }
 
   async function start() {
@@ -741,7 +774,7 @@ function createWatchRuntime(options) {
     } catch (err) {
       const code = err && err.code;
       const message = err && err.message ? err.message : String(err);
-      if (code === 'JSKIM_CONFIG_RELOAD_CANCELLED') {
+      if (code === 'JSKIM_CONFIG_RELOAD_CANCELLED' || isShutdownCancellation()) {
         return;
       }
       if (code === 'JSKIM_CONFIG_WATCHER_ROLLED_BACK') {
@@ -794,6 +827,10 @@ function createWatchRuntime(options) {
       if (mode === 'dev' && liveReloadEnabled && liveReload) {
         liveReload.broadcastConfigError(message);
       }
+      return;
+    }
+
+    if (isShutdownCancellation()) {
       return;
     }
 
@@ -903,11 +940,19 @@ function createWatchRuntime(options) {
         }
 
         // rollback ready 後: old authoritative state を確定してから drain まで build
+        // Approach A: transaction 終了まで context 参照を維持（close ownership gap 防止）
         commitAuthoritativeWatcher(oldProject, rollbackWatcher);
-        ctx.rollbackWatcher = null;
 
-        const rollbackResult = await rollbackWatcher.runInitialBuild();
-        if (!isReplacementActive(ctx)) {
+        let rollbackResult;
+        try {
+          rollbackResult = await rollbackWatcher.runInitialBuild();
+        } catch (buildError) {
+          if (!isReplacementActive(ctx) || isShutdownCancellation()) {
+            throw createCancelledReplacementError();
+          }
+          throw buildError;
+        }
+        if (!isReplacementActive(ctx) || isShutdownCancellation()) {
           throw createCancelledReplacementError();
         }
 
@@ -926,16 +971,23 @@ function createWatchRuntime(options) {
 
       if (!isReplacementActive(ctx)) {
         await safeCloseProjectWatcher(candidateWatcher);
-        ctx.candidateWatcher = null;
         throw createCancelledReplacementError();
       }
 
       // candidate ready 後・initial build 前に state を同期 commit
+      // Approach A: transaction 終了まで context 参照を維持（close ownership gap 防止）
       commitAuthoritativeWatcher(project, candidateWatcher);
-      ctx.candidateWatcher = null;
 
-      const activationResult = await candidateWatcher.runInitialBuild();
-      if (!isReplacementActive(ctx)) {
+      let activationResult;
+      try {
+        activationResult = await candidateWatcher.runInitialBuild();
+      } catch (buildError) {
+        if (!isReplacementActive(ctx) || isShutdownCancellation()) {
+          throw createCancelledReplacementError();
+        }
+        throw buildError;
+      }
+      if (!isReplacementActive(ctx) || isShutdownCancellation()) {
         throw createCancelledReplacementError();
       }
       return activationResult;
@@ -988,12 +1040,19 @@ function createWatchRuntime(options) {
     const inFlightReplacement = replacementContext;
     if (inFlightReplacement) {
       inFlightReplacement.cancelled = true;
-      // in-flight local watcher を先に閉じ、startup Promise を settle させる
-      await safeCloseProjectWatcher(inFlightReplacement.candidateWatcher);
-      inFlightReplacement.candidateWatcher = null;
-      await safeCloseProjectWatcher(inFlightReplacement.rollbackWatcher);
-      inFlightReplacement.rollbackWatcher = null;
     }
+
+    // local candidate/rollback + authoritative projectWatcher を重複なく即 close 開始
+    // （activation build 中の ownership gap / follow-up 開始を防ぐ）
+    const watchersToClose = collectUniqueWatchers(
+      inFlightReplacement && inFlightReplacement.candidateWatcher,
+      inFlightReplacement && inFlightReplacement.rollbackWatcher,
+      projectWatcher
+    );
+    const watcherClosePromise = Promise.all(
+      watchersToClose.map((watcher) => safeCloseProjectWatcher(watcher))
+    );
+    projectWatcher = null;
 
     if (configWatcher) {
       try {
@@ -1004,23 +1063,16 @@ function createWatchRuntime(options) {
       configWatcher = null;
     }
 
-    if (configReloadPromise) {
-      try {
-        await configReloadPromise;
-      } catch {
-        // ignore
-      }
-    }
+    const reloadPromise = configReloadPromise
+      ? configReloadPromise.catch(() => {})
+      : Promise.resolve();
+
+    // watcher close と config transaction を並列 settle（相互待機 deadlock を避ける）
+    await Promise.all([watcherClosePromise, reloadPromise]);
 
     if (mode === 'dev') {
+      // projectWatcher は上で close 済み
       await cleanupDevComponents();
-    } else if (projectWatcher) {
-      try {
-        await projectWatcher.close();
-      } catch {
-        // ignore
-      }
-      projectWatcher = null;
     }
 
     runtimePhase = RUNTIME_PHASE.closed;
