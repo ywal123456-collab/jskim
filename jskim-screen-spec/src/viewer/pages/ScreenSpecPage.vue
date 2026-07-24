@@ -18,6 +18,7 @@ import GroupInfoPanel from '../components/GroupInfoPanel.vue';
 import GroupEditDialog from '../components/GroupEditDialog.vue';
 import GroupCreateDialog from '../components/GroupCreateDialog.vue';
 import GroupUngroupDialog from '../components/GroupUngroupDialog.vue';
+import GroupDeleteSubtreeDialog from '../components/GroupDeleteSubtreeDialog.vue';
 import DuplicateScreenDialog from '../components/DuplicateScreenDialog.vue';
 import DeleteScreenDialog from '../components/DeleteScreenDialog.vue';
 import RevisionHistoryDialog from '../components/RevisionHistoryDialog.vue';
@@ -25,6 +26,7 @@ import {
   useDescriptionEditor,
   type DescriptionMutationOutcome,
   type GroupCreateResult,
+  type GroupSubtreeDeleteResult,
   type GroupUngroupResult,
   type GroupUpdateResult,
   type LoadDescriptionReason,
@@ -47,6 +49,12 @@ import {
   matchesUngroupCapture,
   type UngroupCaptureSnapshot,
 } from '../editing/group-ungroup-helpers';
+import {
+  captureActiveGroupSubtree,
+  isNodeInGroupSubtreeCapture,
+  matchesGroupSubtreeDeleteCapture,
+  type GroupSubtreeDeleteCapture,
+} from '../editing/group-subtree-delete-helpers';
 import type { GroupEditPayload } from '../editing/group-edit-validation';
 import type { GroupCreatePayload } from '../editing/group-create-validation';
 import { useVersionHistory } from '../version-history/use-version-history';
@@ -164,6 +172,16 @@ const groupUngroupTarget = ref<{
   generation: number;
   selectionGeneration: number;
 } | null>(null);
+const groupSubtreeDeleteDialogOpen = ref(false);
+const groupSubtreeDeleteDialogPending = ref(false);
+const groupSubtreeDeleteErrorMessage = ref('');
+const groupSubtreeDeleteTarget = ref<{
+  screenId: string;
+  capture: GroupSubtreeDeleteCapture;
+  expectedRevision: string;
+  generation: number;
+  selectionGeneration: number;
+} | null>(null);
 
 type UncertainItemMutationPayload = {
   itemId: string;
@@ -240,6 +258,8 @@ let groupCreateOpSeq = 0;
 let groupCreateDialogGeneration = 0;
 let groupUngroupOpSeq = 0;
 let groupUngroupDialogGeneration = 0;
+let groupSubtreeDeleteOpSeq = 0;
+let groupSubtreeDeleteDialogGeneration = 0;
 let treeSelectionGeneration = 0;
 const activeDuplicateOp = ref<ItemDialogOperation | null>(null);
 const activeDeleteOp = ref<ItemDialogOperation | null>(null);
@@ -275,6 +295,18 @@ type GroupUngroupOperation = {
 
 const activeGroupUngroupOp = ref<GroupUngroupOperation | null>(null);
 
+type GroupSubtreeDeleteOperation = {
+  seq: number;
+  screenId: string;
+  groupId: string;
+  generation: number;
+  selectionGeneration: number;
+  /** confirm 時点で選択が削除 subtree 内だったか（reconcile 後の null でも fallback するため） */
+  selectionInSubtreeAtSubmit: boolean;
+};
+
+const activeGroupSubtreeDeleteOp = ref<GroupSubtreeDeleteOperation | null>(null);
+
 function invalidateItemDialogOperations(): void {
   duplicateOpSeq += 1;
   deleteOpSeq += 1;
@@ -286,6 +318,8 @@ function invalidateItemDialogOperations(): void {
   groupCreateDialogGeneration += 1;
   groupUngroupOpSeq += 1;
   groupUngroupDialogGeneration += 1;
+  groupSubtreeDeleteOpSeq += 1;
+  groupSubtreeDeleteDialogGeneration += 1;
   activeDuplicateOp.value = null;
   activeDeleteOp.value = null;
   activeExcludeOp.value = null;
@@ -293,6 +327,7 @@ function invalidateItemDialogOperations(): void {
   activeGroupEditOp.value = null;
   activeGroupCreateOp.value = null;
   activeGroupUngroupOp.value = null;
+  activeGroupSubtreeDeleteOp.value = null;
   duplicateDialogPending.value = false;
   deleteDialogPending.value = false;
   excludeDialogPending.value = false;
@@ -303,6 +338,8 @@ function invalidateItemDialogOperations(): void {
   groupCreateErrorMessage.value = '';
   groupUngroupDialogPending.value = false;
   groupUngroupErrorMessage.value = '';
+  groupSubtreeDeleteDialogPending.value = false;
+  groupSubtreeDeleteErrorMessage.value = '';
   duplicateSourceItemId.value = null;
   deleteTargetItemId.value = null;
   excludeTargetItemId.value = null;
@@ -313,6 +350,8 @@ function invalidateItemDialogOperations(): void {
   groupCreateTarget.value = null;
   groupUngroupDialogOpen.value = false;
   groupUngroupTarget.value = null;
+  groupSubtreeDeleteDialogOpen.value = false;
+  groupSubtreeDeleteTarget.value = null;
   uncertainItemMutation.value = null;
 }
 
@@ -2005,6 +2044,21 @@ const canOpenGroupUngroup = computed(
     !editor.reloadRequired.value &&
     !editor.unresolvedItemConflict.value &&
     !groupUngroupDialogPending.value &&
+    !groupSubtreeDeleteDialogPending.value &&
+    !groupEditDialogPending.value &&
+    !groupCreateDialogPending.value &&
+    Boolean(editor.revision.value) &&
+    Boolean(treeResponse.value),
+);
+
+const canOpenGroupSubtreeDelete = computed(
+  () =>
+    Boolean(editor.editingEnabled) &&
+    !editor.mutationPending.value &&
+    !editor.reloadRequired.value &&
+    !editor.unresolvedItemConflict.value &&
+    !groupSubtreeDeleteDialogPending.value &&
+    !groupUngroupDialogPending.value &&
     !groupEditDialogPending.value &&
     !groupCreateDialogPending.value &&
     Boolean(editor.revision.value) &&
@@ -2267,6 +2321,307 @@ function onConfirmGroupUngroup(): void {
         return;
       }
       finishGroupUngroupOperation(op, outcome, target.capture.groupId);
+    });
+}
+
+function openGroupSubtreeDelete(): void {
+  if (!canOpenGroupSubtreeDelete.value || editor.unresolvedItemConflict.value) {
+    return;
+  }
+  const selected = selectedTreeNodeRef.value;
+  if (!selected || selected.type !== 'group' || !treeResponse.value) {
+    return;
+  }
+  if (!editor.revision.value) {
+    return;
+  }
+  const capture = captureActiveGroupSubtree(treeResponse.value, selected.id);
+  if (!capture) {
+    return;
+  }
+  groupSubtreeDeleteDialogGeneration += 1;
+  groupSubtreeDeleteErrorMessage.value = '';
+  groupSubtreeDeleteTarget.value = {
+    screenId: props.screenId,
+    capture,
+    expectedRevision: editor.revision.value,
+    generation: groupSubtreeDeleteDialogGeneration,
+    selectionGeneration: treeSelectionGeneration,
+  };
+  groupSubtreeDeleteDialogOpen.value = true;
+}
+
+function closeGroupSubtreeDeleteForced(): void {
+  groupSubtreeDeleteDialogOpen.value = false;
+  groupSubtreeDeleteTarget.value = null;
+  groupSubtreeDeleteErrorMessage.value = '';
+  groupSubtreeDeleteDialogPending.value = false;
+  activeGroupSubtreeDeleteOp.value = null;
+}
+
+function closeGroupSubtreeDelete(): void {
+  if (groupSubtreeDeleteDialogPending.value) {
+    return;
+  }
+  closeGroupSubtreeDeleteForced();
+}
+
+function beginGroupSubtreeDeleteOperation(
+  groupId: string,
+): GroupSubtreeDeleteOperation | null {
+  if (
+    groupSubtreeDeleteDialogPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value
+  ) {
+    return null;
+  }
+  const target = groupSubtreeDeleteTarget.value;
+  if (!target || target.capture.groupId !== groupId) {
+    return null;
+  }
+  if (target.capture.containsCollectedItem) {
+    return null;
+  }
+  const selected = selectedTreeNodeRef.value;
+  const op: GroupSubtreeDeleteOperation = {
+    seq: ++groupSubtreeDeleteOpSeq,
+    screenId: props.screenId,
+    groupId,
+    generation: target.generation,
+    selectionGeneration: target.selectionGeneration,
+    selectionInSubtreeAtSubmit:
+      selected != null &&
+      isNodeInGroupSubtreeCapture(selected, target.capture),
+  };
+  activeGroupSubtreeDeleteOp.value = op;
+  groupSubtreeDeleteDialogPending.value = true;
+  groupSubtreeDeleteErrorMessage.value = '';
+  return op;
+}
+
+function isActiveGroupSubtreeDeleteOperation(
+  op: GroupSubtreeDeleteOperation,
+  groupId: string,
+): boolean {
+  if (!pageMounted) {
+    return false;
+  }
+  if (!groupSubtreeDeleteDialogOpen.value || !groupSubtreeDeleteTarget.value) {
+    return false;
+  }
+  if (
+    !activeGroupSubtreeDeleteOp.value ||
+    activeGroupSubtreeDeleteOp.value.seq !== op.seq
+  ) {
+    return false;
+  }
+  if (activeGroupSubtreeDeleteOp.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (activeGroupSubtreeDeleteOp.value.groupId !== op.groupId) {
+    return false;
+  }
+  if (activeGroupSubtreeDeleteOp.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupSubtreeDeleteTarget.value.generation !== op.generation) {
+    return false;
+  }
+  if (groupSubtreeDeleteTarget.value.screenId !== props.screenId) {
+    return false;
+  }
+  if (groupId !== op.groupId) {
+    return false;
+  }
+  return true;
+}
+
+function applySubtreeDeleteSelection(
+  outcome: Extract<GroupSubtreeDeleteResult, { status: 'committed-refreshed' }>,
+): void {
+  const response = treeResponse.value;
+  if (outcome.parentGroupId != null) {
+    if (
+      response &&
+      findActiveDescriptionGroup(response, outcome.parentGroupId)
+    ) {
+      selectTreeGroup(outcome.parentGroupId);
+      return;
+    }
+  }
+
+  const trySelect = (
+    ref: { type: 'group' | 'item'; id: string } | null,
+  ): boolean => {
+    if (!ref || !response) {
+      return false;
+    }
+    if (!nodeExistsInTree(response, ref)) {
+      return false;
+    }
+    if (ref.type === 'group') {
+      selectTreeGroup(ref.id);
+    } else {
+      selectTreeItem(ref.id);
+    }
+    return true;
+  };
+
+  if (trySelect(outcome.nextSibling)) {
+    return;
+  }
+  if (trySelect(outcome.previousSibling)) {
+    return;
+  }
+  selectedTreeNodeRef.value = null;
+  selectedItemId.value = null;
+}
+
+function pruneExpandedAfterSubtreeDelete(groupIds: string[]): void {
+  let changed = false;
+  const next = new Set(editingExpandedGroupIds.value);
+  for (const id of groupIds) {
+    if (next.delete(id)) {
+      changed = true;
+    }
+  }
+  if (changed) {
+    editingExpandedGroupIds.value = next;
+  }
+}
+
+function clearDraftsForDeletedSubtreeItems(itemIds: string[]): void {
+  const draftId = editor.itemDraftItemId.value;
+  if (draftId && itemIds.includes(draftId)) {
+    editor.clearItemEditDraft();
+  }
+}
+
+function finishGroupSubtreeDeleteOperation(
+  op: GroupSubtreeDeleteOperation,
+  outcome: GroupSubtreeDeleteResult,
+  groupId: string,
+): void {
+  if (!isActiveGroupSubtreeDeleteOperation(op, groupId)) {
+    return;
+  }
+  if (outcome.status === 'stale-or-aborted') {
+    return;
+  }
+  groupSubtreeDeleteDialogPending.value = false;
+  activeGroupSubtreeDeleteOp.value = null;
+
+  if (outcome.status === 'committed-refreshed') {
+    const selectionUnchanged =
+      treeSelectionGeneration === op.selectionGeneration;
+    const deletedCapture: GroupSubtreeDeleteCapture = {
+      groupId: outcome.groupId,
+      name: '',
+      parentGroupId: outcome.parentGroupId,
+      parentName: null,
+      targetIndex: 0,
+      previousSibling: outcome.previousSibling,
+      nextSibling: outcome.nextSibling,
+      subtreeGroupIds: outcome.subtreeGroupIds,
+      subtreeItemIds: outcome.subtreeItemIds,
+      descendantGroupCount: 0,
+      itemCount: 0,
+      containsCollectedItem: false,
+    };
+    const selected = selectedTreeNodeRef.value;
+    const selectedInDeleted =
+      selected != null &&
+      isNodeInGroupSubtreeCapture(selected, deletedCapture);
+
+    closeGroupSubtreeDeleteForced();
+    pruneExpandedAfterSubtreeDelete(outcome.subtreeGroupIds);
+    clearDraftsForDeletedSubtreeItems(outcome.subtreeItemIds);
+
+    if (
+      selectionUnchanged ||
+      selectedInDeleted ||
+      op.selectionInSubtreeAtSubmit
+    ) {
+      void nextTick(() => {
+        const current = selectedTreeNodeRef.value;
+        // pending 中に削除対象外の生存 node へ移した場合は上書きしない
+        if (
+          current &&
+          treeResponse.value &&
+          nodeExistsInTree(treeResponse.value, current) &&
+          !isNodeInGroupSubtreeCapture(current, deletedCapture)
+        ) {
+          return;
+        }
+        applySubtreeDeleteSelection(outcome);
+        const nextSelected = selectedTreeNodeRef.value;
+        if (nextSelected) {
+          expandAncestorsForSelection(nextSelected.id, nextSelected.type);
+        }
+      });
+    }
+    return;
+  }
+
+  if (
+    outcome.status === 'authoritative-mismatch' ||
+    outcome.status === 'revision-diverged' ||
+    outcome.status === 'committed-refresh-failed'
+  ) {
+    closeGroupSubtreeDeleteForced();
+    return;
+  }
+
+  if (outcome.status === 'target-still-present') {
+    if (outcome.commitState === 'unknown') {
+      groupSubtreeDeleteErrorMessage.value = editor.statusMessage.value;
+      return;
+    }
+    closeGroupSubtreeDeleteForced();
+    return;
+  }
+
+  if (outcome.status === 'mutation-rejected') {
+    groupSubtreeDeleteErrorMessage.value = editor.statusMessage.value;
+  }
+}
+
+function onConfirmGroupSubtreeDelete(): void {
+  const target = groupSubtreeDeleteTarget.value;
+  if (
+    !target ||
+    groupSubtreeDeleteDialogPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value ||
+    target.screenId !== props.screenId
+  ) {
+    return;
+  }
+  if (target.capture.containsCollectedItem) {
+    return;
+  }
+  const response = treeResponse.value;
+  if (!response || !matchesGroupSubtreeDeleteCapture(response, target.capture)) {
+    groupSubtreeDeleteErrorMessage.value =
+      'グループの配置が変わったため削除できません。キャンセルして最新内容を確認してください。';
+    return;
+  }
+  const op = beginGroupSubtreeDeleteOperation(target.capture.groupId);
+  if (!op) {
+    return;
+  }
+  const capturedRevision = target.expectedRevision;
+  void editor
+    .deleteGroupSubtree({
+      expectedRevision: capturedRevision,
+      capture: target.capture,
+    })
+    .then((outcome) => {
+      if (!isActiveGroupSubtreeDeleteOperation(op, target.capture.groupId)) {
+        return;
+      }
+      finishGroupSubtreeDeleteOperation(op, outcome, target.capture.groupId);
     });
 }
 
@@ -3026,6 +3381,7 @@ onBeforeUnmount(() => {
                 @edit="openGroupEdit"
                 @add-child-group="openChildGroupCreate"
                 @ungroup="openGroupUngroup"
+                @delete-subtree="openGroupSubtreeDelete"
               />
               <ItemDescriptionTable
                 :screen="screen"
@@ -3139,6 +3495,20 @@ onBeforeUnmount(() => {
       :error-message="groupUngroupErrorMessage"
       @close="closeGroupUngroup"
       @confirm="onConfirmGroupUngroup"
+    />
+
+    <GroupDeleteSubtreeDialog
+      v-if="groupSubtreeDeleteDialogOpen && groupSubtreeDeleteTarget"
+      :group-id="groupSubtreeDeleteTarget.capture.groupId"
+      :group-name="groupSubtreeDeleteTarget.capture.name"
+      :descendant-group-count="groupSubtreeDeleteTarget.capture.descendantGroupCount"
+      :item-count="groupSubtreeDeleteTarget.capture.itemCount"
+      :contains-collected-item="groupSubtreeDeleteTarget.capture.containsCollectedItem"
+      :pending="groupSubtreeDeleteDialogPending"
+      :submit-disabled="editor.reloadRequired.value"
+      :error-message="groupSubtreeDeleteErrorMessage"
+      @close="closeGroupSubtreeDelete"
+      @confirm="onConfirmGroupSubtreeDelete"
     />
 
     <DuplicateItemDialog

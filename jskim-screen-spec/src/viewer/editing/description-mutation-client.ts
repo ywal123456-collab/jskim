@@ -314,6 +314,25 @@ export async function deleteDescriptionGroup(
   );
 }
 
+export async function deleteDescriptionGroupSubtree(
+  screenId: string,
+  groupId: string,
+  expectedRevision: string,
+  fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
+) {
+  return mutateJson(
+    treeUrl(
+      screenId,
+      `/groups/${encodeURIComponent(groupId)}/delete-subtree`,
+    ),
+    'POST',
+    { expectedRevision },
+    fetchFn,
+    signal,
+  );
+}
+
 export async function updateDescriptionGroup(
   screenId: string,
   groupId: string,
@@ -348,6 +367,9 @@ export async function updateDescriptionGroup(
 }
 
 export function sanitizeMutationMessage(error: DescriptionMutationError): string {
+  if (error.code === 'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE') {
+    return 'collected Item の状態を判定できないため削除できません。最新内容を再読み込みしてください。';
+  }
   if (error.httpStatus >= 500) {
     return GENERIC_ERROR;
   }
@@ -375,6 +397,11 @@ export function sanitizeMutationMessage(error: DescriptionMutationError): string
   if (error.code === 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED') {
     return '実装画面と連携された項目は削除できません。設計対象に残すか、設計対象から除外してください。';
   }
+  if (
+    error.code === 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM'
+  ) {
+    return '配下に実装画面と連携された項目があるため、このグループを削除できません。';
+  }
   if (error.code === 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED') {
     return '実装画面と連携していない項目は設計対象から除外できません。不要な場合は項目を削除してください。';
   }
@@ -393,6 +420,14 @@ export function isDefiniteMutationRejection(
     return true;
   }
   if (error.code === 'SPEC_DESCRIPTION_COLLECTED_ITEM_DELETE_NOT_ALLOWED') {
+    return true;
+  }
+  if (
+    error.code === 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM'
+  ) {
+    return true;
+  }
+  if (error.code === 'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE') {
     return true;
   }
   if (error.code === 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED') {

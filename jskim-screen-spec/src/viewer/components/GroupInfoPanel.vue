@@ -24,6 +24,7 @@ const emit = defineEmits<{
   edit: [];
   addChildGroup: [];
   ungroup: [];
+  deleteSubtree: [];
 }>();
 
 const groupMap = computed(() => buildGroupMap(props.response));
@@ -58,6 +59,8 @@ const canAddChild = computed(
 
 const canUngroup = computed(() => canMutate.value);
 
+const canDeleteSubtree = computed(() => canMutate.value);
+
 function onEditClick(): void {
   if (!canEdit.value) {
     return;
@@ -77,6 +80,13 @@ function onUngroupClick(): void {
     return;
   }
   emit('ungroup');
+}
+
+function onDeleteSubtreeClick(): void {
+  if (!canDeleteSubtree.value) {
+    return;
+  }
+  emit('deleteSubtree');
 }
 </script>
 
@@ -116,6 +126,15 @@ function onUngroupClick(): void {
           @click="onUngroupClick"
         >
           グループを解除
+        </button>
+        <button
+          type="button"
+          class="spec-page__btn spec-page__btn--danger"
+          data-testid="group-delete-subtree-open"
+          :disabled="!canDeleteSubtree"
+          @click="onDeleteSubtreeClick"
+        >
+          グループを削除
         </button>
       </div>
     </div>

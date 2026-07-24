@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteDescriptionGroup,
+  deleteDescriptionGroupSubtree,
   isDefiniteMutationRejection,
+  sanitizeMutationMessage,
 } from '../../src/viewer/editing/description-mutation-client';
 import { mockDescriptionRevision } from '../helpers/description-tree-fetch-mock';
 
@@ -133,5 +135,120 @@ describe('deleteDescriptionGroup client（ungroup）', () => {
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).includes('delete-subtree')),
     ).toBe(false);
+  });
+});
+
+describe('deleteDescriptionGroupSubtree client', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('POST /groups/:id/delete-subtree で expectedRevision のみ送る', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ status: 'updated', revision: VALID_R2 });
+    });
+    const result = await deleteDescriptionGroupSubtree(
+      'demo/screen',
+      'group/id',
+      VALID_R1,
+      fetchMock,
+    );
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/_jskim/spec/description-tree/demo%2Fscreen/groups/group%2Fid/delete-subtree',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(capturedBody).toEqual({ expectedRevision: VALID_R1 });
+    expect(capturedBody).not.toHaveProperty('groupId');
+  });
+
+  it('AbortSignal を fetch に渡す', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal);
+      return jsonResponse({ status: 'updated', revision: VALID_R2 });
+    });
+    await deleteDescriptionGroupSubtree(
+      'demo',
+      'section',
+      VALID_R1,
+      fetchMock,
+      controller.signal,
+    );
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('invalid revision envelope は definite rejection ではない', async () => {
+    const result = await deleteDescriptionGroupSubtree(
+      'demo',
+      'section',
+      VALID_R1,
+      vi.fn(async () =>
+        jsonResponse({ status: 'updated', revision: 'same-invalid-revision' }),
+      ),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('SPEC_DESCRIPTION_INVALID');
+      expect(isDefiniteMutationRejection(result.error)).toBe(false);
+    }
+  });
+
+  it('HTTP 409 collected subtree / 500 unavailable / network を区別する', async () => {
+    const collected = await deleteDescriptionGroupSubtree(
+      'demo',
+      'section',
+      VALID_R1,
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            code: 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM',
+            message: 'collected',
+          },
+          409,
+        ),
+      ),
+    );
+    expect(collected.ok).toBe(false);
+    if (!collected.ok) {
+      expect(isDefiniteMutationRejection(collected.error)).toBe(true);
+      expect(sanitizeMutationMessage(collected.error)).toContain('連携された項目');
+    }
+
+    const unavailable = await deleteDescriptionGroupSubtree(
+      'demo',
+      'section',
+      VALID_R1,
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            code: 'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE',
+            message: 'unavailable',
+          },
+          500,
+        ),
+      ),
+    );
+    expect(unavailable.ok).toBe(false);
+    if (!unavailable.ok) {
+      expect(isDefiniteMutationRejection(unavailable.error)).toBe(true);
+      expect(sanitizeMutationMessage(unavailable.error)).toContain('判定できない');
+    }
+
+    const network = await deleteDescriptionGroupSubtree(
+      'demo',
+      'section',
+      VALID_R1,
+      vi.fn(async () => {
+        throw new Error('network');
+      }),
+    );
+    expect(network.ok).toBe(false);
+    if (!network.ok) {
+      expect(network.error.code).toBe('SPEC_DESCRIPTION_NETWORK');
+      expect(isDefiniteMutationRejection(network.error)).toBe(false);
+    }
   });
 });

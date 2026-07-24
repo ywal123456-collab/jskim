@@ -391,6 +391,110 @@ export function stubDescriptionTreeFetch(
         );
       }
 
+      const groupSubtreeDelete = suffix.match(
+        /^\/groups\/([^/]+)\/delete-subtree$/,
+      );
+      if (groupSubtreeDelete && method === 'POST') {
+        const groupId = decodeURIComponent(groupSubtreeDelete[1]);
+        if (!entry.doc.groups || !entry.doc.rootNodes) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+              message: 'Group が見つかりません。',
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        const groupMap = new Map(
+          entry.doc.groups.map((group) => [group.groupId, group]),
+        );
+        if (!groupMap.has(groupId)) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+              message: `Group が見つかりません: ${groupId}`,
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const subtreeGroupIds: string[] = [];
+        const subtreeItemIds: string[] = [];
+        const walk = (id: string): void => {
+          subtreeGroupIds.push(id);
+          const group = groupMap.get(id);
+          if (!group) {
+            return;
+          }
+          for (const child of group.children) {
+            if (child.type === 'item') {
+              subtreeItemIds.push(child.id);
+            } else if (child.type === 'group') {
+              walk(child.id);
+            }
+          }
+        };
+        walk(groupId);
+
+        const collected = new Set(entry.doc.collectedItemIds ?? []);
+        if (subtreeItemIds.some((id) => collected.has(id))) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_SUBTREE_CONTAINS_COLLECTED_ITEM',
+              message: '配下に collected Item があるため削除できません。',
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const removeFromContainer = (container: MockTreeNodeRef[]): boolean => {
+          const index = container.findIndex(
+            (ref) => ref.type === 'group' && ref.id === groupId,
+          );
+          if (index < 0) {
+            return false;
+          }
+          container.splice(index, 1);
+          return true;
+        };
+
+        let found = removeFromContainer(entry.doc.rootNodes);
+        if (!found) {
+          for (const group of entry.doc.groups) {
+            if (removeFromContainer(group.children)) {
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_NODE_NOT_FOUND',
+              message: `Group がツリー上に存在しません: ${groupId}`,
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const removeGroupIds = new Set(subtreeGroupIds);
+        const removeItemIds = new Set(subtreeItemIds);
+        entry.doc.groups = entry.doc.groups.filter(
+          (group) => !removeGroupIds.has(group.groupId),
+        );
+        for (const itemId of removeItemIds) {
+          delete entry.doc.items[itemId];
+        }
+        entry.doc.itemOrder = entry.doc.itemOrder.filter(
+          (id) => !removeItemIds.has(id),
+        );
+
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
       const groupDelete = suffix.match(/^\/groups\/([^/]+)\/delete$/);
       if (groupDelete && method === 'POST') {
         const groupId = decodeURIComponent(groupDelete[1]);
