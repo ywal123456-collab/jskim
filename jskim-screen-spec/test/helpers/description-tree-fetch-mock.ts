@@ -243,10 +243,172 @@ export function stubDescriptionTreeFetch(
       }
 
       if (suffix === '/children/reorder' && method === 'POST') {
-        const ordered = body.orderedNodes as Array<{ type: string; id: string }>;
-        if (Array.isArray(ordered) && body.parentGroupId == null) {
-          entry.doc.itemOrder = ordered.filter((node) => node.type === 'item').map((node) => node.id);
+        const ordered = body.orderedNodes as MockTreeNodeRef[];
+        if (!Array.isArray(ordered)) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_INVALID',
+              message: 'orderedNodes が不正です。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
         }
+        if (!entry.doc.rootNodes) {
+          entry.doc.rootNodes = entry.doc.itemOrder.map((id) => ({
+            type: 'item' as const,
+            id,
+          }));
+        }
+        if (!entry.doc.groups) {
+          entry.doc.groups = [];
+        }
+        const parentGroupId =
+          body.parentGroupId == null || body.parentGroupId === ''
+            ? null
+            : String(body.parentGroupId);
+        if (parentGroupId === null) {
+          entry.doc.rootNodes = ordered.map((node) => ({ ...node }));
+          entry.doc.itemOrder = ordered
+            .filter((node) => node.type === 'item')
+            .map((node) => node.id);
+        } else {
+          const parent = entry.doc.groups.find(
+            (group) => group.groupId === parentGroupId,
+          );
+          if (!parent) {
+            return new Response(
+              JSON.stringify({
+                code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+                message: `Group が見つかりません: ${parentGroupId}`,
+              }),
+              { status: 404, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          parent.children = ordered.map((node) => ({ ...node }));
+        }
+        return new Response(
+          JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (suffix === '/nodes/move' && method === 'POST') {
+        const node = body.node as MockTreeNodeRef | undefined;
+        if (
+          !node ||
+          (node.type !== 'group' && node.type !== 'item') ||
+          typeof node.id !== 'string'
+        ) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_INVALID',
+              message: 'node が不正です。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (!entry.doc.rootNodes) {
+          entry.doc.rootNodes = entry.doc.itemOrder.map((id) => ({
+            type: 'item' as const,
+            id,
+          }));
+        }
+        if (!entry.doc.groups) {
+          entry.doc.groups = [];
+        }
+
+        const removeFromContainer = (container: MockTreeNodeRef[]): boolean => {
+          const index = container.findIndex(
+            (ref) => ref.type === node.type && ref.id === node.id,
+          );
+          if (index < 0) {
+            return false;
+          }
+          container.splice(index, 1);
+          return true;
+        };
+
+        let removed = removeFromContainer(entry.doc.rootNodes);
+        if (!removed) {
+          for (const group of entry.doc.groups) {
+            if (removeFromContainer(group.children)) {
+              removed = true;
+              break;
+            }
+          }
+        }
+        if (!removed) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_NODE_NOT_FOUND',
+              message: `node が見つかりません: ${node.id}`,
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const destinationParentGroupId =
+          body.destinationParentGroupId == null ||
+          body.destinationParentGroupId === ''
+            ? null
+            : String(body.destinationParentGroupId);
+        const insertIndex =
+          typeof body.insertIndex === 'number' ? body.insertIndex : undefined;
+
+        let destination: MockTreeNodeRef[] | null = null;
+        if (destinationParentGroupId === null) {
+          destination = entry.doc.rootNodes;
+        } else {
+          const parent = entry.doc.groups.find(
+            (group) => group.groupId === destinationParentGroupId,
+          );
+          if (!parent) {
+            return new Response(
+              JSON.stringify({
+                code: 'SPEC_DESCRIPTION_GROUP_NOT_FOUND',
+                message: `Group が見つかりません: ${destinationParentGroupId}`,
+              }),
+              { status: 404, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          destination = parent.children;
+        }
+
+        const index = insertIndex ?? destination.length;
+        if (index < 0 || index > destination.length) {
+          return new Response(
+            JSON.stringify({
+              code: 'SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID',
+              message: 'insertIndex が不正です。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        destination.splice(index, 0, { type: node.type, id: node.id });
+
+        const docEntry = entry;
+        function flattenActiveItemIds(refs: MockTreeNodeRef[]): string[] {
+          const ids: string[] = [];
+          for (const ref of refs) {
+            if (ref.type === 'item') {
+              ids.push(ref.id);
+            } else {
+              const group = docEntry.doc.groups?.find(
+                (entryGroup) => entryGroup.groupId === ref.id,
+              );
+              if (group) {
+                ids.push(...flattenActiveItemIds(group.children));
+              }
+            }
+          }
+          return ids;
+        }
+        docEntry.doc.itemOrder = flattenActiveItemIds(
+          docEntry.doc.rootNodes ?? [],
+        ).filter(
+          (id) => Object.prototype.hasOwnProperty.call(docEntry.doc.items, id),
+        );
+
         return new Response(
           JSON.stringify({ status: 'updated', revision: bumpRevision(entry) }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },

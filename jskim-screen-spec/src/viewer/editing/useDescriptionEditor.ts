@@ -31,6 +31,15 @@ import {
   matchesGroupSubtreeDeleteCapture,
   type GroupSubtreeDeleteCapture,
 } from './group-subtree-delete-helpers.js';
+import {
+  buildNodeMoveCapture,
+  classifyNodeMoveAuthoritative,
+  planForDirection,
+  type NodeMoveCapture,
+  type NodeMoveClassification,
+  type NodeMovePlan,
+  type TreeNodeRef,
+} from './node-move-helpers.js';
 import type { DescriptionTreeGetResponse } from './description-tree-types.js';
 import type { GroupEditKind, GroupEditPayload } from './group-edit-validation.js';
 import {
@@ -96,6 +105,15 @@ export type DescriptionMutationOutcome =
   | { status: 'committed-refresh-failed' }
   | { status: 'mutation-rejected' }
   | { status: 'commit-unknown' }
+  | { status: 'stale-or-aborted' };
+
+/** Item/Group move/reorder 専用結果。 */
+export type NodeMoveResult =
+  | { status: 'committed-refreshed'; expandGroupIds?: string[] }
+  | { status: 'unavailable' }
+  | { status: 'not-committed' }
+  | { status: 'committed-refresh-failed' }
+  | { status: 'mutation-rejected' }
   | { status: 'stale-or-aborted' };
 
 /** Item Group metadata update 専用結果（authoritative 検証を含む）。 */
@@ -2039,34 +2057,24 @@ export function useDescriptionEditor(screenIdRef: () => string) {
   }
 
   async function reorderItem(itemId: string, direction: -1 | 1): Promise<DescriptionMutationOutcome> {
-    const blocked = rejectIfUnresolvedItemConflict();
-    if (blocked) {
-      return blocked;
-    }
-    if (!snapshot.value || !nodeExistsInActiveTree(snapshot.value, itemId)) {
-      return { status: 'mutation-rejected' };
-    }
-    const ctx = findItemSiblingContext(snapshot.value, itemId);
-    if (!ctx) {
-      return { status: 'mutation-rejected' };
-    }
-    const orderedNodes = swapSiblingOrder(ctx.siblings, ctx.index, direction);
-    if (!orderedNodes) {
-      return { status: 'mutation-rejected' };
-    }
-    const screenId = screenIdRef();
-    return runMutation(screenId, (expectedRevision, signal) =>
-      mutationClient.reorderDescriptionChildren(
-        screenId,
-        {
-          expectedRevision,
-          parentGroupId: ctx.parentGroupId,
-          orderedNodes,
-        },
-        fetch,
-        signal,
-      ),
+    const node: TreeNodeRef = { type: 'item', id: itemId };
+    const result = await moveTreeNode(
+      node,
+      direction === -1 ? 'up' : 'down',
     );
+    if (result.status === 'committed-refreshed') {
+      return { status: 'committed-refreshed' };
+    }
+    if (result.status === 'stale-or-aborted') {
+      return { status: 'stale-or-aborted' };
+    }
+    if (result.status === 'committed-refresh-failed') {
+      return { status: 'committed-refresh-failed' };
+    }
+    if (result.status === 'not-committed') {
+      return { status: 'mutation-rejected' };
+    }
+    return { status: 'mutation-rejected' };
   }
 
   async function moveItemUp(itemId: string): Promise<DescriptionMutationOutcome> {
@@ -2075,6 +2083,289 @@ export function useDescriptionEditor(screenIdRef: () => string) {
 
   async function moveItemDown(itemId: string): Promise<DescriptionMutationOutcome> {
     return reorderItem(itemId, 1);
+  }
+
+  type NodeMoveSubmitted = {
+    capture: NodeMoveCapture;
+    captureRevision: string;
+    mutationRevision: string | null;
+    expandGroupIds?: string[];
+  };
+
+  function applyNodeMoveClassification(
+    classification: NodeMoveClassification,
+    submitted: NodeMoveSubmitted,
+    commitState: 'committed' | 'unknown',
+    authoritative: DescriptionTreeGetResponse,
+  ): NodeMoveResult {
+    if (classification.kind === 'match-exact') {
+      applySnapshot(authoritative, { draftScope: 'none' });
+      reloadFailed.value = false;
+      reloadRequired.value = false;
+      statusMessage.value = '並び順を変更しました。';
+      status.value = dirty.value ? 'dirty' : 'saved';
+      const result: NodeMoveResult = { status: 'committed-refreshed' };
+      if (submitted.expandGroupIds?.length) {
+        result.expandGroupIds = [...submitted.expandGroupIds];
+      }
+      return result;
+    }
+
+    if (classification.kind === 'definitely-not-committed') {
+      status.value = 'error';
+      statusMessage.value =
+        '並び順の変更結果を確認できませんでした。最新内容を確認してください。';
+      return { status: 'not-committed' };
+    }
+
+    // exact 以外は snapshot を更新しない（optimistic / 部分反映禁止）
+    void authoritative;
+    reloadFailed.value = true;
+    reloadRequired.value = true;
+    status.value = 'reload-failed';
+
+    if (commitState === 'unknown') {
+      statusMessage.value =
+        '並び順の変更結果を確認できませんでした。最新内容を再読み込みしてください。';
+      return { status: 'mutation-rejected' };
+    }
+
+    statusMessage.value =
+      '並び順を変更しましたが、最新内容との整合を確認できませんでした。最新内容を再読み込みしてください。';
+    return { status: 'committed-refresh-failed' };
+  }
+
+  async function fetchAndClassifyNodeMove(
+    screenId: string,
+    identity: MutationIdentity,
+    submitted: NodeMoveSubmitted,
+    commitState: 'committed' | 'unknown',
+    reloadFailedStatus: 'committed-refresh-failed' | 'mutation-rejected',
+  ): Promise<NodeMoveResult> {
+    mutationRefreshAbort?.abort();
+    mutationRefreshAbort = new AbortController();
+    const refreshSignal = mutationRefreshAbort.signal;
+    const refreshGeneration = lifecycleGeneration;
+    const refreshLoadSeq = loadSeq;
+
+    const result = await fetchDescriptionTree(screenId, refreshSignal, fetch);
+
+    if (!isActiveMutationIdentity(identity)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!isEditorLifecycleActive(refreshGeneration)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (refreshLoadSeq !== loadSeq) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (result.aborted) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!result.ok) {
+      reloadFailed.value = true;
+      reloadRequired.value = true;
+      status.value = 'reload-failed';
+      if (reloadFailedStatus === 'committed-refresh-failed') {
+        statusMessage.value =
+          '並び順を変更しましたが、最新内容を再読み込みできませんでした。';
+        return { status: 'committed-refresh-failed' };
+      }
+      statusMessage.value =
+        '並び順の変更結果を確認できませんでした。最新内容を再読み込みしてください。';
+      return { status: 'mutation-rejected' };
+    }
+
+    return applyNodeMoveClassification(
+      classifyNodeMoveAuthoritative(result.data, submitted.capture, {
+        mutationRevision: submitted.mutationRevision,
+        captureRevision: submitted.captureRevision,
+      }),
+      submitted,
+      commitState,
+      result.data,
+    );
+  }
+
+  async function executeNodeMovePlan(
+    screenId: string,
+    identity: MutationIdentity,
+    plan: NodeMovePlan,
+    capture: NodeMoveCapture,
+    expectedRevision: string,
+  ): Promise<NodeMoveResult> {
+    const submitted: NodeMoveSubmitted = {
+      capture,
+      captureRevision: expectedRevision,
+      mutationRevision: null,
+      expandGroupIds:
+        plan.kind === 'indent' ? [...plan.expandGroupIds] : undefined,
+    };
+
+    let postResult:
+      | { ok: true; data: mutationClient.DescriptionMutationResult }
+      | { ok: false; error: mutationClient.DescriptionMutationError; aborted?: boolean };
+
+    if (plan.kind === 'reorder-up' || plan.kind === 'reorder-down') {
+      postResult = await mutationClient.reorderDescriptionChildren(
+        screenId,
+        {
+          expectedRevision,
+          parentGroupId: plan.sourceParentGroupId,
+          orderedNodes: plan.destinationOrderedNodes,
+        },
+        fetch,
+        mutationAbort!.signal,
+      );
+    } else if (plan.kind === 'indent') {
+      postResult = await mutationClient.moveDescriptionNode(
+        screenId,
+        {
+          expectedRevision,
+          node: plan.node,
+          destinationParentGroupId: plan.destinationParentGroupId,
+        },
+        fetch,
+        mutationAbort!.signal,
+      );
+    } else if (plan.kind === 'outdent') {
+      postResult = await mutationClient.moveDescriptionNode(
+        screenId,
+        {
+          expectedRevision,
+          node: plan.node,
+          destinationParentGroupId: plan.destinationParentGroupId,
+          insertIndex: plan.destinationIndex,
+        },
+        fetch,
+        mutationAbort!.signal,
+      );
+    } else {
+      return { status: 'unavailable' };
+    }
+
+    if (!isActiveMutationIdentity(identity)) {
+      return { status: 'stale-or-aborted' };
+    }
+    if (!postResult.ok) {
+      if (postResult.aborted) {
+        return { status: 'stale-or-aborted' };
+      }
+      if (mutationClient.isDefiniteMutationRejection(postResult.error)) {
+        handleMutationError(postResult.error, identity);
+        return { status: 'mutation-rejected' };
+      }
+      return fetchAndClassifyNodeMove(
+        screenId,
+        identity,
+        submitted,
+        'unknown',
+        'mutation-rejected',
+      );
+    }
+
+    submitted.mutationRevision = postResult.data.revision;
+    return fetchAndClassifyNodeMove(
+      screenId,
+      identity,
+      submitted,
+      'committed',
+      'committed-refresh-failed',
+    );
+  }
+
+  function canMoveTreeNode(
+    node: TreeNodeRef,
+    direction: 'up' | 'down' | 'indent' | 'outdent',
+  ): boolean {
+    if (
+      !editingEnabled ||
+      mutationPending.value ||
+      reloadRequired.value ||
+      !snapshot.value ||
+      hasUnresolvedItemConflict()
+    ) {
+      return false;
+    }
+    if (!nodeExistsInTree(snapshot.value, node)) {
+      return false;
+    }
+    return planForDirection(snapshot.value, node, direction) !== null;
+  }
+
+  async function moveTreeNode(
+    node: TreeNodeRef,
+    direction: 'up' | 'down' | 'indent' | 'outdent',
+  ): Promise<NodeMoveResult> {
+    if (!guardUnresolvedItemConflict()) {
+      return { status: 'mutation-rejected' };
+    }
+    const current = snapshot.value;
+    const expectedRevision = revision.value;
+    if (!current || !expectedRevision) {
+      return { status: 'mutation-rejected' };
+    }
+    if (!nodeExistsInTree(current, node)) {
+      return { status: 'unavailable' };
+    }
+    const plan = planForDirection(current, node, direction);
+    if (!plan) {
+      return { status: 'unavailable' };
+    }
+    const capture = buildNodeMoveCapture(current, plan, expectedRevision);
+    if (!capture) {
+      return { status: 'unavailable' };
+    }
+
+    const screenId = screenIdRef();
+    const identity = tryBeginMutation(screenId);
+    if (!identity) {
+      return { status: 'mutation-rejected' };
+    }
+
+    try {
+      return await executeNodeMovePlan(
+        screenId,
+        identity,
+        plan,
+        capture,
+        expectedRevision,
+      );
+    } finally {
+      finishMutation(identity);
+    }
+  }
+
+  async function moveSelectedNodeUp(node: TreeNodeRef): Promise<NodeMoveResult> {
+    return moveTreeNode(node, 'up');
+  }
+
+  async function moveSelectedNodeDown(node: TreeNodeRef): Promise<NodeMoveResult> {
+    return moveTreeNode(node, 'down');
+  }
+
+  async function indentSelectedNode(node: TreeNodeRef): Promise<NodeMoveResult> {
+    return moveTreeNode(node, 'indent');
+  }
+
+  async function outdentSelectedNode(node: TreeNodeRef): Promise<NodeMoveResult> {
+    return moveTreeNode(node, 'outdent');
+  }
+
+  function canMoveUp(node: TreeNodeRef): boolean {
+    return canMoveTreeNode(node, 'up');
+  }
+
+  function canMoveDown(node: TreeNodeRef): boolean {
+    return canMoveTreeNode(node, 'down');
+  }
+
+  function canIndent(node: TreeNodeRef): boolean {
+    return canMoveTreeNode(node, 'indent');
+  }
+
+  function canOutdent(node: TreeNodeRef): boolean {
+    return canMoveTreeNode(node, 'outdent');
   }
 
   /** 互換: draft-only addItem → createItem API */
@@ -2197,6 +2488,15 @@ export function useDescriptionEditor(screenIdRef: () => string) {
     moveItemUp,
     moveItemDown,
     reorderItem,
+    moveTreeNode,
+    moveSelectedNodeUp,
+    moveSelectedNodeDown,
+    indentSelectedNode,
+    outdentSelectedNode,
+    canMoveUp,
+    canMoveDown,
+    canIndent,
+    canOutdent,
     copyDraftJson,
     flattenActiveItemIds: () =>
       snapshot.value ? flattenActiveItemIds(snapshot.value) : [],

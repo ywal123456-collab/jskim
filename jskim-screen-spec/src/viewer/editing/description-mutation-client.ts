@@ -266,6 +266,28 @@ export async function reorderDescriptionChildren(
   );
 }
 
+export async function moveDescriptionNode(
+  screenId: string,
+  input: {
+    expectedRevision: string;
+    node: { type: 'group' | 'item'; id: string };
+    destinationParentGroupId: string | null;
+    insertIndex?: number;
+  },
+  fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
+) {
+  const body: Record<string, unknown> = {
+    expectedRevision: input.expectedRevision,
+    node: input.node,
+    destinationParentGroupId: input.destinationParentGroupId,
+  };
+  if (typeof input.insertIndex === 'number') {
+    body.insertIndex = input.insertIndex;
+  }
+  return mutateJson(treeUrl(screenId, '/nodes/move'), 'POST', body, fetchFn, signal);
+}
+
 export async function createDescriptionGroup(
   screenId: string,
   input: {
@@ -404,6 +426,15 @@ export function sanitizeMutationMessage(error: DescriptionMutationError): string
   }
   if (error.code === 'SPEC_DESCRIPTION_MANUAL_ITEM_EXCLUDE_NOT_ALLOWED') {
     return '実装画面と連携していない項目は設計対象から除外できません。不要な場合は項目を削除してください。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_CYCLE') {
+    return 'グループを自身または配下のグループの中へは移動できません。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_REORDER_MISMATCH') {
+    return '並び順が変更されています。最新内容を再読み込みしてください。';
+  }
+  if (error.code === 'SPEC_DESCRIPTION_GROUP_INSERT_INDEX_INVALID') {
+    return '移動先の位置が不正です。最新内容を確認してください。';
   }
   return error.message || GENERIC_ERROR;
 }
