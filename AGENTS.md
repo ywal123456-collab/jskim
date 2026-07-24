@@ -107,6 +107,9 @@ JSKim 製品自体は AI フレームワークではありません。Cursor で
 - テストでは実際の `src/sample` と `dist/sample` を直接変更しない。一時ワークスペースを使う
 - テスト名と説明は日本語、識別子は英語とする
 - 外部テスト framework を増やさず、Node 標準の `node:test` を優先する
+- Root full は `npm test` を使う（`pretest` で Companion dist を build してから実行する）
+- Companion dist を消費する Root targeted test は `npm run test:root-file -- <test file...>` を使う
+- `node --test` を直接実行した dist 消費テストは最新 Companion dist を保証しないため、release 検証の根拠にしない
 
 ## 開発専用ファイル
 

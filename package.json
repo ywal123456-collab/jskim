@@ -43,7 +43,10 @@
     "docs:pdf": "node scripts/docs/build-user-guide-pdf.js",
     "docs:pdf:html": "node scripts/docs/build-user-guide-pdf.js --html-only",
     "docs:pdf:package": "node scripts/docs/build-user-guide-pdf.js --package-output",
+    "build:screen-spec": "npm --prefix jskim-screen-spec run build",
+    "pretest": "npm run build:screen-spec",
     "test": "node --test --test-concurrency=1 test/**/*.test.js",
+    "test:root-file": "npm run build:screen-spec && node --test --test-concurrency=1",
     "test:reference-image-viewer-stabilization": "node --test --test-concurrency=1 test/reference-image-viewer-stabilization.test.js"
   },
   "engines": {
