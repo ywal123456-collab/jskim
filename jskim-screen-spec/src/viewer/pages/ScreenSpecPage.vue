@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, ref, watch, type ComputedRef } from 'vue';
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type ComputedRef,
+} from 'vue';
 import DomPreview, {
   type PreviewStylesheet,
 } from '../components/DomPreview.vue';
@@ -15,6 +24,9 @@ import ExcludeItemDialog from '../components/ExcludeItemDialog.vue';
 import ExcludedItemsPanel from '../components/ExcludedItemsPanel.vue';
 import ItemTreePanel from '../components/ItemTreePanel.vue';
 import GroupInfoPanel from '../components/GroupInfoPanel.vue';
+import TreeNodeMoveControls, {
+  type TreeNodeMoveDirection,
+} from '../components/TreeNodeMoveControls.vue';
 import GroupEditDialog from '../components/GroupEditDialog.vue';
 import GroupCreateDialog from '../components/GroupCreateDialog.vue';
 import GroupUngroupDialog from '../components/GroupUngroupDialog.vue';
@@ -30,6 +42,7 @@ import {
   type GroupUngroupResult,
   type GroupUpdateResult,
   type LoadDescriptionReason,
+  type NodeMoveResult,
 } from '../editing/useDescriptionEditor';
 import { useDescriptionTreePanel } from '../editing/use-description-tree-panel';
 import {
@@ -2908,6 +2921,202 @@ function onMoveItemDown(itemId: string): void {
   void editor.moveItemDown(itemId);
 }
 
+const treeNodeMoveControlsRef = ref<InstanceType<
+  typeof TreeNodeMoveControls
+> | null>(null);
+
+const viewerDialogOpen = computed(
+  () =>
+    createItemDialogOpen.value ||
+    groupEditDialogOpen.value ||
+    groupCreateDialogOpen.value ||
+    groupUngroupDialogOpen.value ||
+    groupSubtreeDeleteDialogOpen.value ||
+    duplicateScreenDialogOpen.value ||
+    deleteScreenDialogOpen.value ||
+    duplicateSourceItemId.value != null ||
+    deleteTargetItemId.value != null ||
+    excludeTargetItemId.value != null ||
+    uncertainItemMutation.value != null ||
+    versionHistory.open.value,
+);
+
+const showTreeNodeMoveControls = computed(
+  () =>
+    editor.editingEnabled &&
+    Boolean(screenHasDescription.value) &&
+    selectedTreeNodeRef.value != null &&
+    treeResponse.value != null,
+);
+
+const selectedMoveNode = computed(() => selectedTreeNodeRef.value);
+
+const canMoveSelectedUp = computed(() =>
+  selectedMoveNode.value
+    ? editor.canMoveUp(selectedMoveNode.value)
+    : false,
+);
+const canMoveSelectedDown = computed(() =>
+  selectedMoveNode.value
+    ? editor.canMoveDown(selectedMoveNode.value)
+    : false,
+);
+const canIndentSelected = computed(() =>
+  selectedMoveNode.value
+    ? editor.canIndent(selectedMoveNode.value)
+    : false,
+);
+const canOutdentSelected = computed(() =>
+  selectedMoveNode.value
+    ? editor.canOutdent(selectedMoveNode.value)
+    : false,
+);
+
+function applyExpandGroupIdsFromMove(ids: string[] | undefined): void {
+  if (!ids || ids.length === 0) {
+    return;
+  }
+  const next = new Set(editingExpandedGroupIds.value);
+  for (const id of ids) {
+    next.add(id);
+  }
+  editingExpandedGroupIds.value = next;
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  const el = target.closest(
+    'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+  );
+  return el != null;
+}
+
+function directionFromAltArrowKey(key: string): TreeNodeMoveDirection | null {
+  switch (key) {
+    case 'ArrowUp':
+      return 'up';
+    case 'ArrowDown':
+      return 'down';
+    case 'ArrowRight':
+      return 'indent';
+    case 'ArrowLeft':
+      return 'outdent';
+    default:
+      return null;
+  }
+}
+
+function canExecuteSelectedNodeMove(direction: TreeNodeMoveDirection): boolean {
+  const node = selectedTreeNodeRef.value;
+  if (!node || !editor.editingEnabled || !treeResponse.value) {
+    return false;
+  }
+  if (
+    editor.mutationPending.value ||
+    editor.reloadRequired.value ||
+    editor.unresolvedItemConflict.value
+  ) {
+    return false;
+  }
+  switch (direction) {
+    case 'up':
+      return editor.canMoveUp(node);
+    case 'down':
+      return editor.canMoveDown(node);
+    case 'indent':
+      return editor.canIndent(node);
+    case 'outdent':
+      return editor.canOutdent(node);
+    default:
+      return false;
+  }
+}
+
+async function executeSelectedNodeMove(
+  direction: TreeNodeMoveDirection,
+  source: 'button' | 'keyboard',
+): Promise<void> {
+  const node = selectedTreeNodeRef.value;
+  if (!node) {
+    return;
+  }
+  if (!canExecuteSelectedNodeMove(direction)) {
+    return;
+  }
+
+  const screenIdAtStart = props.screenId;
+  const selectionGenerationAtStart = treeSelectionGeneration;
+
+  let result: NodeMoveResult;
+  switch (direction) {
+    case 'up':
+      result = await editor.moveSelectedNodeUp(node);
+      break;
+    case 'down':
+      result = await editor.moveSelectedNodeDown(node);
+      break;
+    case 'indent':
+      result = await editor.indentSelectedNode(node);
+      break;
+    case 'outdent':
+      result = await editor.outdentSelectedNode(node);
+      break;
+    default:
+      return;
+  }
+
+  if (!pageMounted || props.screenId !== screenIdAtStart) {
+    return;
+  }
+
+  if (result.status === 'committed-refreshed') {
+    applyExpandGroupIdsFromMove(result.expandGroupIds);
+    if (
+      source === 'button' &&
+      treeSelectionGeneration === selectionGenerationAtStart
+    ) {
+      await treeNodeMoveControlsRef.value?.restoreFocus(direction);
+    }
+  }
+}
+
+function onTreeNodeMoveControlsMove(direction: TreeNodeMoveDirection): void {
+  void executeSelectedNodeMove(direction, 'button');
+}
+
+function onTreeNodeMoveKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.repeat) {
+    return;
+  }
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    return;
+  }
+  const direction = directionFromAltArrowKey(event.key);
+  if (!direction) {
+    return;
+  }
+  if (!editor.editingEnabled || viewerDialogOpen.value) {
+    return;
+  }
+  if (isTextEntryTarget(event.target)) {
+    return;
+  }
+  if (!selectedTreeNodeRef.value) {
+    return;
+  }
+
+  // Viewer shortcut 文脈: 境界 unavailable でも browser history を防ぐ
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (!canExecuteSelectedNodeMove(direction)) {
+    return;
+  }
+  void executeSelectedNodeMove(direction, 'keyboard');
+}
+
 function openDuplicateScreen(): void {
   if (
     editor.dirty.value ||
@@ -2999,7 +3208,12 @@ watch(
   { immediate: true },
 );
 
+onMounted(() => {
+  window.addEventListener('keydown', onTreeNodeMoveKeydown);
+});
+
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onTreeNodeMoveKeydown);
   pageMounted = false;
   invalidatePageLoad();
   invalidateItemDialogOperations();
@@ -3365,6 +3579,15 @@ onBeforeUnmount(() => {
             />
 
             <div class="spec-page__items-detail">
+              <TreeNodeMoveControls
+                v-if="showTreeNodeMoveControls"
+                ref="treeNodeMoveControlsRef"
+                :can-move-up="canMoveSelectedUp"
+                :can-move-down="canMoveSelectedDown"
+                :can-indent="canIndentSelected"
+                :can-outdent="canOutdentSelected"
+                @move="onTreeNodeMoveControlsMove"
+              />
               <GroupInfoPanel
                 v-if="
                   selectedTreeNodeRef?.type === 'group' &&
