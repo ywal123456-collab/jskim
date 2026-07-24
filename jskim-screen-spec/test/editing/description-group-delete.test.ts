@@ -493,9 +493,9 @@ describe('deleteDescriptionGroupSubtree persistence', () => {
     ).toBe(mtimeBefore);
   });
 
-  it('manual-only subtree は snapshot 無しでも削除成功', async () => {
+  it('snapshot 無し subtree 削除は fail-closed で bytes / revision / mtime 不変', async () => {
     const root = tempRoot();
-    writeDescriptionFile(root, {
+    const original = writeDescriptionFile(root, {
       schemaVersion: '1.3',
       screen: { id: 'demo-screen', name: 'Demo', description: '' },
       rootNodes: [{ type: 'group', id: 'section' }],
@@ -510,15 +510,145 @@ describe('deleteDescriptionGroupSubtree persistence', () => {
       items: { 'manual-item': emptyItem() },
       excludedItems: { 'excluded-item': emptyItem() },
     });
+    const filePath = path.join(root, 'spec', 'demo', 'src', 'data', 'demo-screen.json');
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    const mtimeBefore = fs.statSync(filePath).mtimeMs;
+
+    await expectDocErrorCode(
+      () =>
+        deleteDescriptionGroupSubtree(ctx(root), {
+          groupId: 'section',
+          expectedRevision: revision,
+        }),
+      'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE',
+    );
+
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+    expect(readDescriptionRevision(root, 'demo', 'demo-screen')).toBe(revision);
+    expect(fs.statSync(filePath).mtimeMs).toBe(mtimeBefore);
+  });
+
+  it('snapshot 読取不能時も subtree 削除は fail-closed で Description 不変', async () => {
+    const root = tempRoot();
+    const original = writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: '' },
+      rootNodes: [{ type: 'group', id: 'section' }],
+      groups: [
+        {
+          groupId: 'section',
+          name: 'S',
+          kind: 'SECTION',
+          children: [{ type: 'item', id: 'manual-item' }],
+        },
+      ],
+      items: { 'manual-item': emptyItem() },
+      excludedItems: {},
+    });
+    const filePath = path.join(root, 'spec', 'demo', 'src', 'data', 'demo-screen.json');
+    const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
+    const mtimeBefore = fs.statSync(filePath).mtimeMs;
+    // ディレクトリではなくファイルにして readdir 失敗を起こす（既存 fs 契約の fail-closed）
+    const snapshotPath = path.join(
+      root,
+      'spec',
+      'demo',
+      'src',
+      'snapshots',
+      'demo-screen',
+    );
+    fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+    fs.writeFileSync(snapshotPath, 'not-a-directory', 'utf8');
+
+    await expectDocErrorCode(
+      () =>
+        deleteDescriptionGroupSubtree(ctx(root), {
+          groupId: 'section',
+          expectedRevision: revision,
+        }),
+      'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE',
+    );
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+    expect(readDescriptionRevision(root, 'demo', 'demo-screen')).toBe(revision);
+    expect(fs.statSync(filePath).mtimeMs).toBe(mtimeBefore);
+  });
+
+  it('manual-only nested subtree は空 snapshot 判定後に削除成功する', async () => {
+    const root = tempRoot();
+    writeSnapshot(root, '<div></div>');
+    writeDescriptionFile(root, {
+      schemaVersion: '1.3',
+      screen: { id: 'demo-screen', name: 'Demo', description: 'keep' },
+      rootNodes: [
+        { type: 'item', id: 'sibling-before' },
+        { type: 'group', id: 'section' },
+        { type: 'item', id: 'sibling-after' },
+        { type: 'group', id: 'other' },
+      ],
+      groups: [
+        {
+          groupId: 'section',
+          name: 'S',
+          kind: 'SECTION',
+          children: [
+            { type: 'item', id: 'manual-a' },
+            { type: 'group', id: 'nested' },
+            { type: 'item', id: 'manual-b' },
+          ],
+        },
+        {
+          groupId: 'nested',
+          name: 'N',
+          kind: 'SECTION',
+          children: [{ type: 'item', id: 'manual-n' }],
+        },
+        {
+          groupId: 'other',
+          name: 'O',
+          kind: 'SECTION',
+          children: [{ type: 'item', id: 'other-item' }],
+        },
+      ],
+      items: {
+        'sibling-before': emptyItem(),
+        'sibling-after': emptyItem(),
+        'manual-a': emptyItem(),
+        'manual-b': emptyItem(),
+        'manual-n': emptyItem(),
+        'other-item': emptyItem(),
+      },
+      excludedItems: { 'excluded-item': emptyItem() },
+    });
     const revision = readDescriptionRevision(root, 'demo', 'demo-screen')!;
     await deleteDescriptionGroupSubtree(ctx(root), {
       groupId: 'section',
       expectedRevision: revision,
     });
     const saved = readSaved(root);
-    expect(saved.rootNodes).toEqual([]);
-    expect(saved.groups).toEqual([]);
-    expect(saved.items).toEqual({});
+    expect(saved.schemaVersion).toBe('1.3');
+    expect(saved.screen).toEqual({
+      id: 'demo-screen',
+      name: 'Demo',
+      description: 'keep',
+    });
+    expect(saved.rootNodes).toEqual([
+      { type: 'item', id: 'sibling-before' },
+      { type: 'item', id: 'sibling-after' },
+      { type: 'group', id: 'other' },
+    ]);
+    expect(saved.groups).toEqual([
+      {
+        groupId: 'other',
+        name: 'O',
+        kind: 'SECTION',
+        children: [{ type: 'item', id: 'other-item' }],
+      },
+    ]);
+    expect(Object.keys(saved.items as object).sort()).toEqual([
+      'other-item',
+      'sibling-after',
+      'sibling-before',
+    ]);
     expect(saved.excludedItems).toEqual({ 'excluded-item': emptyItem() });
   });
 });

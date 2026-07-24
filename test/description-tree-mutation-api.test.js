@@ -811,9 +811,35 @@ describe('description-tree mutation API', () => {
       },
       excludedItems: { 'excluded-item': emptyItem() },
     };
+    const noSnapshotSession = await openSession({ 'demo-screen': manualDoc });
+    const noSnapshotBefore = await getTree(noSnapshotSession.port);
+    const noSnapshotPath = path.join(noSnapshotSession.dataDir, 'demo-screen.json');
+    const noSnapshotBytes = fs.readFileSync(noSnapshotPath);
+    const noSnapshotMtime = fs.statSync(noSnapshotPath).mtimeMs;
+    const unavailable = await httpRequest({
+      port: noSnapshotSession.port,
+      method: 'POST',
+      path: treePath('demo-screen', '/groups/section/delete-subtree'),
+      headers: jsonHeaders(noSnapshotSession.port),
+      body: JSON.stringify({ expectedRevision: noSnapshotBefore.revision }),
+    });
+    // deleteItem と同じ: collected 判定不能は 500 SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE
+    assert.equal(unavailable.status, 500);
+    assert.equal(
+      parseJson(unavailable).code,
+      'SPEC_DESCRIPTION_COLLECTED_STATE_UNAVAILABLE',
+    );
+    assert.equal(fs.readFileSync(noSnapshotPath).equals(noSnapshotBytes), true);
+    assert.equal(fs.statSync(noSnapshotPath).mtimeMs, noSnapshotMtime);
+    assert.equal(
+      (await getTree(noSnapshotSession.port)).revision,
+      noSnapshotBefore.revision,
+    );
+    assertNoLockResidue(noSnapshotSession.rootDir);
+
     const { rootDir, dataDir, port } = await openSession({ 'demo-screen': manualDoc });
+    writeSnapshot(rootDir, '<div></div>');
     const before = await getTree(port);
-    const filePath = path.join(dataDir, 'demo-screen.json');
     const res = await httpRequest({
       port,
       method: 'POST',
@@ -1080,6 +1106,8 @@ describe('description-tree mutation API', () => {
         excludedItems: {},
       },
     });
+    // fail-closed 後は snapshot 判定が必須。CAS 競合検証のため空 snapshot を置く
+    writeSnapshot(subtreeSession.rootDir, '<div></div>');
     const subtreeBefore = await getTree(subtreeSession.port);
     const [subtreeRes, moveRes2] = await Promise.all([
       httpRequest({

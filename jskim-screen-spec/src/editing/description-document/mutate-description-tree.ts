@@ -41,10 +41,7 @@ import type { RestoreItemInput } from './restore-item.js';
 import { applyRestoreItem } from './restore-item.js';
 import type { ApplyUpdateScreenResult, UpdateScreenInput } from './update-screen.js';
 import { applyUpdateScreen } from './update-screen.js';
-import {
-  collectCollectedItemIdsForDestructiveMutation,
-  collectCollectedItemIdsForScreen,
-} from '../collect-collected-item-ids.js';
+import { collectCollectedItemIdsForDestructiveMutation } from '../collect-collected-item-ids.js';
 import { validateDescriptionStructure } from './validate-description-structure.js';
 import { validateDescriptionTreeSemantics } from './validate-description-tree-semantics.js';
 import type { NormalizedDescription } from './types.js';
@@ -409,7 +406,8 @@ export async function deleteDescriptionGroupSubtree(
     operation: 'delete-group-subtree',
     adapters,
     apply: (normalized) => {
-      const collectedItemIds = collectCollectedItemIdsForScreen(ctx);
+      // deleteItem / excludeItem と同じ fail-closed 判定（snapshot 不在・読取不能は削除しない）
+      const collectedItemIds = collectCollectedItemIdsForDestructiveMutation(ctx);
       const result: ApplyDeleteGroupSubtreeResult = applyDeleteGroupSubtree(
         normalized,
         deleteInput,
